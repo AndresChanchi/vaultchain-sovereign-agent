@@ -12,65 +12,73 @@ Before starting, ensure you have the following installed:
 rustup target add wasm32-unknown-unknown
 ```
 
-
 * **Cargo Stylus CLI**:
+
 ```bash
 cargo install --force cargo-stylus
 ```
 
 ## Quick Start
 
-Follow these steps to get the environment ready and verify the contract:
+Follow these steps to manage the project using the provided `Makefile`:
 
-### 1. Install Dependencies
+### 1. Setup & Build
 
-Since the `Cargo.lock` is included, this will ensure reproducible builds:
+Initialize the environment:
 
 ```bash
-cargo build
+make lock
+```
+and compile the contract to WASM
+```bash
+make build
+```
+### 2. Validate Stylus Compatibility
+
+Perform a dry-run check against Arbitrum Sepolia to verify contract size and WASM validity:
+
+```bash
+make check
 ```
 
-### 2. Run Unit Tests
+### 3. Run Unit Tests
 
-We use **Motsu** for fast, off-chain unit testing. Verify the logic without spending gas:
+Execute off-chain tests (currently targeted at the library level):
 
 ```bash
-cargo test
+make test
 ```
 
-### 3. Validate Stylus Compatibility
+### 4. Deploy to Testnet
 
-This command compiles the contract to WASM and checks if it meets Arbitrum's on-chain requirements (size, gas limits, etc.):
+Deploy the contract to Arbitrum Sepolia (Requires `PRIVATE_KEY` in `.env`):
 
 ```bash
-cargo stylus check
+make deploy
 ```
 
 ## Technical Architecture
 
 * **Framework**: Arbitrum Stylus SDK `v0.10.2`
 * **Memory Management**: `mini-alloc` for optimized WASM heap allocation.
-* **Storage**: `sol_storage!` for EVM-compatible state management.
-* **Logic**: Dual-purpose setup (`lib.rs` for on-chain logic, `main.rs` for ABI export).
+* **Storage**: HostIO trait-based storage management.
+* **Documentation**: NatSpec-compliant English documentation.
 
 ## Development Workflow
 
-1. **Iterate**: Use `cargo check` for fast syntax verification.
-2. **Test**: Add tests in `src/lib.rs` under `#[cfg(test)]` and run `cargo test`.
-3. **Export ABI**: If you change the public functions, update the frontend bindings:
+1. **Compilation**: Use `make build` for standard WASM compilation.
+2. **ABI Export**: To sync with the frontend, generate the Solidity interface:
 
 ```bash
-cargo stylus export-abi
+make abi
 ```
-## Deployment
+*Note: This outputs the Solidity interface. Use a compiler (solc) to generate the final JSON ABI.*
 
-To simulate a deployment on Arbitrum Sepolia:
-
+3. **Cleanup**: To remove build artifacts:
 ```bash
-cargo stylus check --private-key=$YOUR_PRIVATE_KEY --rpc-url=$RPC_URL
+make clean
 ```
 
 ---
 
 **VaultChain Sovereign Agent** - March 2026
-
