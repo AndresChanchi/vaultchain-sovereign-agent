@@ -1,0 +1,33 @@
+{
+  "project_info": {
+    "name": "vaultchain-sovereign-agent",
+    "version": "0.1.0",
+    "compiler": "Cargo Stylus (Rust)",
+    "timestamp": "2026-03-14T21:58:34.541Z",
+    "network": "Arbitrum Sepolia (Testnet)"
+  },
+  "deployment_fingerprint": {
+    "metadata_hash": "1ffd30891416bb84d87c0052d78deee2d28d6a3560f6047cf2bd6e7c5e96a358",
+    "contract_size_bytes": 21538,
+    "contract_size_kb": "21.5 KB"
+  },
+  "contract_details": {
+    "contract_address": "0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452",
+    "deployer_address": "0x0423B5C2B0B910cAAd1fC38B0140f3fC446d20Cb",
+    "deployment_tx_hash": "0x9d80a7c9d16f3e05e7fd526f23ac5a76554c76e6034d013405b0fb5f066fe1c5"
+  },
+  "activation_details": {
+    "status": "Successfully Activated",
+    "activation_tx_hash": "0x382ece3b5b3b03634647bb6f35fb2cb1e89814a8b8f4f1d285764205ecc3774d",
+    "wasm_data_fee_eth": "0.000130",
+    "explorer_url": "https://sepolia.arbiscan.io/address/0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452"
+  },
+  "files_included_in_hash": [
+    "contracts/Cargo.lock",
+    "contracts/Cargo.toml",
+    "contracts/rust-toolchain.toml",
+    "contracts/src/lib.rs",
+    "contracts/src/main.rs",
+    "contracts/src/tests.rs"
+  ]
+}
