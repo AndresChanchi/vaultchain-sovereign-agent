@@ -1,0 +1,98 @@
+# ===============================
+# 🧰 General
+# ===============================
+.DS_Store
+Thumbs.db
+*.log
+*.lock
+*.tmp
+*.swp
+*.swo
+*.bak
+*.old
+*.orig
+
+# ===============================
+# ⚙️ Bun / Node
+# ===============================
+bun.lockb
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===============================
+# ⚙️ TypeScript
+# ===============================
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+*.d.ts.map
+
+# ===============================
+# 🧩 Next.js / Rspack
+# ===============================
+.next/
+out/
+build/
+dist/
+.cache/
+.rspack-cache/
+.vercel/
+.vercel_build_output/
+*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ===============================
+# 🎨 Tailwind / CSS
+# ===============================
+public/output.css
+*.css.map
+
+# ===============================
+# 🔐 Env / Secrets
+# ===============================
+.env
+.env.*
+!.env.example
+
+# ===============================
+# 🧪 Tests / Coverage
+# ===============================
+coverage/
+__tests__/
+*.spec.ts
+*.test.ts
+*.spec.tsx
+*.test.tsx
+.playwright/
+test-results/
+vitest-results/
+.vitest/
+
+# ===============================
+# 💻 IDE / Editor
+# ===============================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ===============================
+# 🧱 OS-specific
+# ===============================
+ehthumbs.db
+Desktop.ini
+*.iml
+
+# ===============================
+# 🪶 Misc (biome, tailwind cli, rspack cache)
+# ===============================
+.biome/
+.rspack/
+.tailwind/
+public/output.css
+/public/output.css
+.vercel
