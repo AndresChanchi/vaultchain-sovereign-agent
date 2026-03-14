@@ -1,0 +1,58 @@
+# ==========================================
+# 1. RUST & STYLUS (Smart Contracts)
+# ==========================================
+# Match 'target' in any subfolder (monorepo friendly)
+**/target/
+
+# Stylus generated files
+**/*-abi.json
+**/stylus-deployment.json
+
+# Rust error logs
+**/cargo-timing.bin
+
+# ==========================================
+# 2. BUN, NEXT.JS & JAVASCRIPT
+# ==========================================
+# Dependencies and builds in any subfolder
+**/node_modules/
+**/.bun/
+**/.next/
+**/out/
+
+# Package manager logs
+**/bun.lockb
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# ==========================================
+# 3. SECURITY & SOVEREIGNTY (CRITICAL)
+# ==========================================
+# Environmental variables and secrets
+**/.env
+**/.env*.local
+**/*.keystore
+**/secrets.json
+
+# ==========================================
+# 4. NEOVIM & SYSTEM (Editor specific)
+# ==========================================
+*.swp
+*.swo
+*~
+.netrwhist
+**/undo/
+**/.shada
+**/.null-ls_*
+**/.eslintcache
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# 5. PERSONAL NOTES
+# ==========================================
+# Specific to your workspace
+ANOTACIONES.TXT
+*.notes
+*.todo
