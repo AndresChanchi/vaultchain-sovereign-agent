@@ -1,0 +1,13 @@
+[workspace]
+# Permite que cargo-stylus gestione múltiples contratos si creces el proyecto
+members = ["."]
+
+[workspace.networks]
+# Configuración directa para tu MVP
+sepolia = { endpoint = "https://sepolia-rollup.arbitrum.io/rpc", chain_id = 421614 }
+mainnet = { endpoint = "https://arb1.arbitrum.io/rpc", chain_id = 42161 }
+
+[contract]
+# Aquí puedes pre-configurar los límites de activación de ArbOS 52
+name = "vaultchain-contract"
+optimization = "speed"
