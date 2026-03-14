@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Habilitamos mini-alloc como feature para manejar Vec/String eficientemente en WASM
+# Enable mini-alloc to efficiently handle Vec/String in WASM
 stylus-sdk = { version = "0.10.2", features = ["mini-alloc", "hostio"] }
-alloy-primitives = { version = "0.8.20", default-features = false }
-alloy-sol-types = { version = "0.8.20", default-features = false }
+alloy-primitives = { version = "1.3.1", default-features = false }
+alloy-sol-types = { version = "1.3.1", default-features = false }
 
 [dev-dependencies]
-# Motsu 0.10.0 es el estándar de testing para ArbOS 52
+# Motsu 0.10.0 is the testing standard for ArbOS 52
 motsu = "0.10.0"
 arbitrary = { version = "1.4", features = ["derive"] }
 
@@ -20,6 +20,7 @@ std = [
     "alloy-primitives/std",
     "alloy-sol-types/std",
 ]
+
 export-abi = ["stylus-sdk/export-abi"]
 
 [lib]
@@ -29,6 +30,6 @@ crate-type = ["lib", "cdylib"]
 codegen-units = 1
 incremental = false
 lto = true
-opt-level = "z" # Máxima reducción de tamaño para el despliegue
+opt-level = "z" # Maximum size reduction for deployment
 panic = "abort"
 strip = true
