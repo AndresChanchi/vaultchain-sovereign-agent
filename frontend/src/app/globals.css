@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/* ───────────────────────────────
+    🎨 1. Design Tokens: Midnight Emerald
+    ─────────────────────────────── */
+@theme {
+  /* Kipio Core Palette */
+  --color-primary: #10b981;    /* emerald-500: main actions & success */
+  --color-secondary: #0f172a;  /* slate-900: headers & deep depth */
+  --color-tertiary: #1e293b;   /* slate-800: dashboard backgrounds */
+  --color-background: #020617; /* slate-950: global background */
+  --color-surface: #1e293b;    /* slate-800: cards and components */
+  --color-accent: #8b5cf6;     /* violet-500: unique highlights */
+  --color-highlight: #334155;  /* slate-700: subtle contrast */
+  --color-text-main: #f1f5f9;  /* slate-100: general text */
+  --color-on-primary: #020617; /* contrast text on primary */
+}
+
+/* ───────────────────────────────
+    🧩 2. Custom Utilities (Logic Preserved)
+    ─────────────────────────────── */
+
+@utility bg-primary {
+  background-color: var(--color-primary);
+}
+@utility bg-secondary {
+  background-color: var(--color-secondary);
+}
+@utility bg-tertiary {
+  background-color: var(--color-tertiary);
+}
+@utility bg-surface {
+  background-color: var(--color-surface);
+}
+@utility bg-background {
+  background-color: var(--color-background);
+}
+
+@utility text-main {
+  color: var(--color-text-main);
+}
+@utility text-primary {
+  color: var(--color-primary);
+}
+@utility text-accent {
+  color: var(--color-accent);
+}
+
+@utility border-primary {
+  border-color: var(--color-primary);
+}
+@utility border-secondary {
+  border-color: var(--color-secondary);
+}
+
+@utility container-responsive {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+
+  @media (min-width: 768px) {
+    max-width: 768px;
+  }
+  @media (min-width: 1024px) {
+    max-width: 1024px;
+  }
+  @media (min-width: 1280px) {
+    max-width: 1280px;
+  }
+}
+
+/* ───────────────────────────────
+    💡 3. Universal Icons
+    ─────────────────────────────── */
+.icon-wrapper {
+  @apply bg-slate-800 rounded-full flex items-center justify-center border border-slate-700;
+  width: 40px;
+  height: 40px;
+  color: var(--color-primary);
+  padding: 6px;
+}
+
+.icon-svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ───────────────────────────────
+    ✨ 4. Typography & Global Base
+    ─────────────────────────────── */
+html {
+  color-scheme: dark;
+  background-color: var(--color-background);
+}
+
+body {
+  @apply bg-background text-main;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3 {
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.hero-title {
+  color: var(--color-primary);
+  font-weight: 800;
+}
+
+.text-heading {
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  color: var(--color-primary);
+}
+
+.text-subheading {
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  color: var(--color-text-main);
+}
+
+/* ───────────────────────────────
+    📱 5. Mobile Behaviour
+    ─────────────────────────────── */
+.mobile-menu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+.mobile-menu.open {
+  max-height: 300px;
+  transition: max-height 0.3s ease-in;
+}
