@@ -1,0 +1,141 @@
+{
+	"deploy": {
+		"VM:-": {
+			"linkReferences": {},
+			"autoDeployLib": true
+		},
+		"main:1": {
+			"linkReferences": {},
+			"autoDeployLib": true
+		},
+		"sepolia:11155111": {
+			"linkReferences": {},
+			"autoDeployLib": true
+		},
+		"Custom": {
+			"linkReferences": {},
+			"autoDeployLib": true
+		}
+	},
+	"data": {
+		"bytecode": {
+			"functionDebugData": {},
+			"generatedSources": [],
+			"linkReferences": {},
+			"object": "",
+			"opcodes": "",
+			"sourceMap": ""
+		},
+		"deployedBytecode": {
+			"functionDebugData": {},
+			"generatedSources": [],
+			"immutableReferences": {},
+			"linkReferences": {},
+			"object": "",
+			"opcodes": "",
+			"sourceMap": ""
+		},
+		"gasEstimates": null,
+		"methodIdentifiers": {
+			"getMyGalleryPaginated(uint32,uint32)": "b7ee35e7",
+			"getMyPhoto(bytes32)": "6d4b5fc6",
+			"getMyTotalPhotos()": "ed533551",
+			"registerBatch(bytes32[],string[])": "4eb5ccba",
+			"registerUpload(bytes32,string)": "f50defaa"
+		}
+	},
+	"abi": [
+		{
+			"inputs": [
+				{
+					"internalType": "uint32",
+					"name": "offset",
+					"type": "uint32"
+				},
+				{
+					"internalType": "uint32",
+					"name": "limit",
+					"type": "uint32"
+				}
+			],
+			"name": "getMyGalleryPaginated",
+			"outputs": [
+				{
+					"internalType": "bytes32[]",
+					"name": "",
+					"type": "bytes32[]"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes32",
+					"name": "content_hash",
+					"type": "bytes32"
+				}
+			],
+			"name": "getMyPhoto",
+			"outputs": [
+				{
+					"internalType": "string",
+					"name": "",
+					"type": "string"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [],
+			"name": "getMyTotalPhotos",
+			"outputs": [
+				{
+					"internalType": "uint32",
+					"name": "",
+					"type": "uint32"
+				}
+			],
+			"stateMutability": "view",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes32[]",
+					"name": "hashes",
+					"type": "bytes32[]"
+				},
+				{
+					"internalType": "string[]",
+					"name": "encrypted_ids",
+					"type": "string[]"
+				}
+			],
+			"name": "registerBatch",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		},
+		{
+			"inputs": [
+				{
+					"internalType": "bytes32",
+					"name": "content_hash",
+					"type": "bytes32"
+				},
+				{
+					"internalType": "string",
+					"name": "encrypted_tx_id",
+					"type": "string"
+				}
+			],
+			"name": "registerUpload",
+			"outputs": [],
+			"stateMutability": "nonpayable",
+			"type": "function"
+		}
+	]
+}
