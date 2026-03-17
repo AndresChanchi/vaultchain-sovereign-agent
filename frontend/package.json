@@ -11,21 +11,26 @@
     "build:styles": "bunx @tailwindcss/cli -i ./src/app/globals.css -o ./public/output.css --watch"
   },
   "dependencies": {
+    "@irys/sdk": "^0.2.11",
     "@tailwindcss/cli": "^4.1.14",
     "@tanstack/react-query": "^5.37.1",
-    "next": "15.5.7",
-    "next-rspack": "^15.5.4",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "browser-image-compression": "^2.0.2",
+    "comlink": "^4.4.2",
+    "ethers": "^6.16.0",
+    "next": "^16.1.7",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "tailwindcss": "^4.1.14",
+    "uuid": "^13.0.0",
     "viem": "^2.38.0",
     "wagmi": "^2.14.16"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@biomejs/biome": "2.2.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@biomejs/biome": "2.2.0"
+    "@types/uuid": "^11.0.0",
+    "typescript": "^5"
   }
 }

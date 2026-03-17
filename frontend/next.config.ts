@@ -1,10 +1,8 @@
-import withRspack from "next-rspack";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  typedRoutes: false,
-
+  
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.pexels.com" },
@@ -13,18 +11,11 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  webpack: (config) => {
-    config.ignoreWarnings = [
-      /pino-pretty/,
-      /supportsColor/,
-      /debug/,
-      /metamask-sdk/,
-      /rainbowkit/,
-      /wagmi/,
-      /Rspack/,
-    ];
-    return config;
+  experimental: {
+    optimizePackageImports: ["wagmi", "viem", "lucide-react"],
   },
+
+  turbopack: {},
 };
 
-export default withRspack(nextConfig);
+export default nextConfig;
