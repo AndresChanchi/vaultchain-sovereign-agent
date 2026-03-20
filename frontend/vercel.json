@@ -1,0 +1,5 @@
+{
+  "installCommand": "bun install",
+  "buildCommand": "bunx @tailwindcss/cli -i ./src/app/globals.css -o ./public/output.css && bun run build",
+  "framework": "nextjs"
+}
