@@ -118,12 +118,16 @@ export function UploadOrchestrator() {
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
 
-      // STEP 5: IRYS STORAGE PROPAGATION
-      let activeIrys = sessionInstance || await initIrys();
+      // STEP 5: IRYS STORAGE PROPAGATION (Mobile-Ready & Resilient)
+      let activeIrys = sessionInstance;
+      let uploadReceipt = null;
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
 
-      if (!activeIrys) {
-	  activeIrys = await initIrys();
-	}
+      // Ensure fresh instance for mobile environments where sessions might stall
+      if (!activeIrys || !activeIrys.uploader) {
+        activeIrys = await initIrys();
+      }
 
       if (!activeIrys) throw new Error("IRYS_CONNECTION_FAILED");
 
@@ -133,7 +137,28 @@ export function UploadOrchestrator() {
         { name: "Encryption", value: "AES-GCM-256" }
       ];
 
-      const receipt = await activeIrys.upload(Buffer.from(encrypted) as any, { tags });
+      // Robust upload loop with exponential backoff for flaky networks
+      while (retryCount < MAX_RETRIES) {
+        try {
+          if (retryCount > 0) {
+            // Wait: 1.5s, 3s, 6s... depending on attempt
+            await new Promise(resolve => setTimeout(resolve, 1500 * Math.pow(2, retryCount)));
+          }
+
+          // Atomic execution of the buffer conversion and upload
+          uploadReceipt = await activeIrys.upload(Buffer.from(encrypted) as any, { tags });
+          
+          if (uploadReceipt?.id) break;
+        } catch (uploadErr: any) {
+          retryCount++;
+          if (retryCount >= MAX_RETRIES) {
+            throw new Error(`STORAGE_LAYER_TIMEOUT: ${uploadErr.message || "STALL"}`);
+          }
+        }
+      }
+
+      const receipt = uploadReceipt;
+      if (!receipt?.id) throw new Error("IRYS_ID_NOT_FOUND");
       setSteps(s => ({ ...s, storage: true }));
 
       // STEP 6: ARBITRUM STYLUS SETTLEMENT
