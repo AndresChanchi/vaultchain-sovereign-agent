@@ -81,7 +81,7 @@ export default function DashboardPage() {
           <div className="sticky top-8">
             <h2 className="text-sm font-mono text-primary mb-4 uppercase tracking-widest">Inbound Pipeline</h2>
             <UploadOrchestrator />
-            
+
             <div className="mt-6 p-4 rounded-xl bg-surface/50 border border-highlight/10">
               <h4 className="text-[10px] font-bold text-gray-500 uppercase mb-2">Protocol Stats</h4>
               <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
