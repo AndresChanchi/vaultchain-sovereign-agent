@@ -120,6 +120,11 @@ export function UploadOrchestrator() {
 
       // STEP 5: IRYS STORAGE PROPAGATION
       let activeIrys = sessionInstance || await initIrys();
+
+      if (!activeIrys) {
+	  activeIrys = await initIrys();
+	}
+
       if (!activeIrys) throw new Error("IRYS_CONNECTION_FAILED");
 
       const tags = [
@@ -146,11 +151,17 @@ export function UploadOrchestrator() {
       console.error("[CRITICAL] Pipeline Failure:", err);
       
       if (err.message === "ASSET_ALREADY_IN_VAULT") {
-        setErrorMsg("This file is already secured in your vault.");
+       	setErrorMsg("This file is already secured in your vault.");
       } else if (err.message.includes('rejected') || err.message.includes('denied')) {
         setErrorMsg("Signature rejected by user.");
       } else {
+	  if (err.message.includes('Irys') || !steps.storage) {
+         setErrorMsg("Storage Layer Error: Check your Irys balance/connection.");
+        } else if (err.message.includes('Stylus') || !steps.settlement) {
+         setErrorMsg("Blockchain Settlement Error: Arbitrum RPC is unstable.");
+        } else {
         setErrorMsg("Process failed. Please verify your connection.");
+        }
       }
       
       setStatus('ERROR');
