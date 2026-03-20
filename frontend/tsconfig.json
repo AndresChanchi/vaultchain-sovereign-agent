@@ -19,6 +19,9 @@
       ],
       "@interfaces/*": [
         "src/interfaces/*"
+      ],
+       "@context/*": [
+        "src/context/*"
       ]
     },
     "lib": [
