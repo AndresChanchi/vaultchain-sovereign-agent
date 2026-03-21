@@ -9,10 +9,10 @@ import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
 
 /**
- * @title Secure Vault Orchestrator V3.3
+ * @title Secure Vault Orchestrator V3.4
  * @author Kipio Engineering
- * @notice Refined pipeline with reactive watchdog for mobile signature persistence.
- * @dev Combines linear execution for Desktop and state-driven resumption for Mobile.
+ * @notice High-resiliency pipeline for mobile-first decentralized environments.
+ * @dev Implements macro-task yielding to prevent main-thread starvation during WASM/Crypto tasks.
  */
 export function UploadOrchestrator() {
   const { 
@@ -31,7 +31,6 @@ export function UploadOrchestrator() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
-  // Ref to prevent double-execution during React strict mode or state swings
   const processingRef = useRef(false);
 
   const [steps, setSteps] = useState({
@@ -42,6 +41,12 @@ export function UploadOrchestrator() {
     storage: false,
     settlement: false
   });
+
+  /**
+   * @dev Helper to yield execution to the browser's event loop.
+   * Essential for mobile browsers to allow UI painting and worker initialization.
+   */
+  const yieldThread = (ms: number = 100) => new Promise(r => setTimeout(r, ms));
 
   const resetSteps = useCallback(() => {
     setSteps({ 
@@ -56,7 +61,7 @@ export function UploadOrchestrator() {
 
   /**
    * @notice Core Secure Pipeline logic.
-   * @dev Logic separated to be callable by both manual clicks and the reactive watchdog.
+   * @dev Optimized with yields to prevent thread-locking on low-memory mobile devices.
    */
   const executePipeline = useCallback(async (file: File) => {
     if (processingRef.current) return;
@@ -64,11 +69,15 @@ export function UploadOrchestrator() {
 
     try {
       setStatus('PROCESSING');
+      
+      // Critical yield: Allows the UI to render the 'PROCESSING' state before CPU-heavy tasks.
+      await yieldThread(450);
 
       // 1. INTEGRITY FINGERPRINTING
       const originalBuffer = await file.arrayBuffer();
       const contentHash = sha256(new Uint8Array(originalBuffer));
       setSteps(s => ({ ...s, integrity: true }));
+      await yieldThread(100);
 
       // 2. COLLISION CHECK
       const existingId = await getPhotoId(contentHash);
@@ -76,15 +85,20 @@ export function UploadOrchestrator() {
         throw new Error("ASSET_ALREADY_IN_VAULT");
       }
       setSteps(s => ({ ...s, registry: true }));
+      await yieldThread(100);
 
-      // 3. WASM COMPRESSION
+      // 3. WASM OPTIMIZATION
+      // Verification of worker state before invocation to prevent silent hangs.
+      if (!imageReady) throw new Error("IMAGE_ENGINE_NOT_READY");
       const compressed = await compress(file);
       setSteps(s => ({ ...s, optim: true }));
+      await yieldThread(250);
 
       // 4. AES-GCM-256 ENCRYPTION
-      // This requires the vault to be unlocked (key available in worker)
+      if (!cryptoReady) throw new Error("CRYPTO_ENGINE_NOT_READY");
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
+      await yieldThread(150);
 
       // 5. DECENTRALIZED PROPAGATION
       const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -101,9 +115,9 @@ export function UploadOrchestrator() {
 
       while (attempts < MAX_RETRIES) {
         try {
-          // Mobile context-switching delay: allows the bridge to re-establish
+          // Mobile context-switching delay to stabilize connection bridge.
           if (isMobile && attempts > 0) {
-            await new Promise(r => setTimeout(r, 1500 + (attempts * 1000)));
+            await yieldThread(1500 + (attempts * 1000));
           }
 
           const activeIrys = await initIrys();
@@ -123,6 +137,7 @@ export function UploadOrchestrator() {
       
       if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
       setSteps(s => ({ ...s, storage: true }));
+      await yieldThread(100);
 
       // 6. FINAL SETTLEMENT
       await registerUpload(contentHash, uploadReceipt.id);
@@ -138,6 +153,8 @@ export function UploadOrchestrator() {
         setErrorMsg("Action cancelled by user.");
       } else if (msg === "ASSET_ALREADY_IN_VAULT") {
         setErrorMsg("This file is already secured in your vault.");
+      } else if (msg.includes("_NOT_READY")) {
+        setErrorMsg("Security engines initializing. Please try again in a moment.");
       } else {
         setErrorMsg("Pipeline execution failed.");
       }
@@ -145,19 +162,18 @@ export function UploadOrchestrator() {
     } finally {
       processingRef.current = false;
     }
-  }, [getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache]);
+  }, [getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache, imageReady, cryptoReady]);
 
   /**
    * @dev REACTIVE WATCHDOG
-   * Solves the "Two-Click" issue on mobile. If the user completes the signature
-   * and the vault unlocks, this hook detects the change and resumes the pipeline.
+   * Crucial for mobile UX. Detects when the user returns from a wallet app
+   * and the vault state unlocks, automatically resuming the pipeline.
    */
   useEffect(() => {
     if (!isLocked && selectedFile && status === 'AWAITING_SIGNATURE' && !processingRef.current) {
-        // Small grace period for mobile OS to return focus to the browser context
         const timer = setTimeout(() => {
             executePipeline(selectedFile);
-        }, 500);
+        }, 800); // Increased cooldown for mobile OS focus transitions.
         return () => clearTimeout(timer);
     }
   }, [isLocked, selectedFile, status, executePipeline]);
@@ -174,7 +190,6 @@ export function UploadOrchestrator() {
     setStatus('IDLE');
     resetSteps();
 
-    // Warm up Irys in background
     initIrys().catch(() => {});
   };
 
@@ -185,8 +200,6 @@ export function UploadOrchestrator() {
       setStatus('AWAITING_SIGNATURE');
       try {
         await unlockVault();
-        // On Desktop, this might continue immediately. 
-        // On Mobile, the Watchdog (useEffect) will catch the state change.
       } catch (lockErr) {
         setStatus('IDLE');
       }
@@ -205,14 +218,13 @@ export function UploadOrchestrator() {
     resetSteps();
   }, [previewUrl, resetSteps]);
 
-  // UI remains identical to v3.6...
   return (
     <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
       <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.3 Mobile-Optimized</p>
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.4 High-Performance</p>
           </div>
           <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
             status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
