@@ -9,10 +9,10 @@ import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
 
 /**
- * @title Secure Vault Orchestrator V3.4
+ * @title Secure Vault Orchestrator V3.5
  * @author Kipio Engineering
- * @notice High-resiliency pipeline for mobile-first decentralized environments.
- * @dev Implements macro-task yielding to prevent main-thread starvation during WASM/Crypto tasks.
+ * @notice Production-grade pipeline optimized for Mobile Context Suspension.
+ * @dev Implements a Timeout Race for WASM tasks and enhanced stabilization for mobile bridges.
  */
 export function UploadOrchestrator() {
   const { 
@@ -44,9 +44,9 @@ export function UploadOrchestrator() {
 
   /**
    * @dev Helper to yield execution to the browser's event loop.
-   * Essential for mobile browsers to allow UI painting and worker initialization.
+   * Increased default delay to allow mobile OS context restoration.
    */
-  const yieldThread = (ms: number = 100) => new Promise(r => setTimeout(r, ms));
+  const yieldThread = (ms: number = 150) => new Promise(r => setTimeout(r, ms));
 
   const resetSteps = useCallback(() => {
     setSteps({ 
@@ -61,7 +61,7 @@ export function UploadOrchestrator() {
 
   /**
    * @notice Core Secure Pipeline logic.
-   * @dev Optimized with yields to prevent thread-locking on low-memory mobile devices.
+   * @dev Includes a safety timeout for WASM optimization to prevent mobile hangs.
    */
   const executePipeline = useCallback(async (file: File) => {
     if (processingRef.current) return;
@@ -70,41 +70,54 @@ export function UploadOrchestrator() {
     try {
       setStatus('PROCESSING');
       
-      // Critical yield: Allows the UI to render the 'PROCESSING' state before CPU-heavy tasks.
-      await yieldThread(450);
+      // 1. STABILIZATION PHASE
+      // Critical delay: Mobile browsers need time to wake up the main thread after wallet return.
+      await yieldThread(1000);
 
-      // 1. INTEGRITY FINGERPRINTING
+      // 2. INTEGRITY & REGISTRY
       const originalBuffer = await file.arrayBuffer();
       const contentHash = sha256(new Uint8Array(originalBuffer));
       setSteps(s => ({ ...s, integrity: true }));
-      await yieldThread(100);
 
-      // 2. COLLISION CHECK
       const existingId = await getPhotoId(contentHash);
       if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
         throw new Error("ASSET_ALREADY_IN_VAULT");
       }
       setSteps(s => ({ ...s, registry: true }));
-      await yieldThread(100);
+      
+      // Secondary yield: Prepares worker message channel.
+      await yieldThread(400);
 
-      // 3. WASM OPTIMIZATION
-      // Verification of worker state before invocation to prevent silent hangs.
-      if (!imageReady) throw new Error("IMAGE_ENGINE_NOT_READY");
-      const compressed = await compress(file);
+      // 3. WASM OPTIMIZATION (Mobile Vulnerability Point)
+      if (!imageReady) throw new Error("IMAGE_ENGINE_DISCONNECTED");
+
+      // We implement a Race Condition guard: If WASM doesn't respond in 40s, we fail gracefully.
+      const compressionTask = compress(file);
+      const timeoutTask = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("OPTIMIZATION_TIMEOUT")), 40000)
+      );
+
+      const compressed = await Promise.race([compressionTask, timeoutTask]) as ArrayBuffer;
+      
+      if (!compressed || compressed.byteLength === 0) {
+        throw new Error("OPTIMIZATION_FAILED_NULL_BUFFER");
+      }
+
       setSteps(s => ({ ...s, optim: true }));
-      await yieldThread(250);
+      await yieldThread(200);
 
       // 4. AES-GCM-256 ENCRYPTION
-      if (!cryptoReady) throw new Error("CRYPTO_ENGINE_NOT_READY");
+      if (!cryptoReady) throw new Error("CRYPTO_ENGINE_DISCONNECTED");
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
-      await yieldThread(150);
+      await yieldThread(200);
 
       // 5. DECENTRALIZED PROPAGATION
       const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       let uploadReceipt = null;
       let attempts = 0;
-      const MAX_RETRIES = isMobile ? 3 : 1; 
+      // Increased retries for mobile network stability after context switches.
+      const MAX_RETRIES = isMobile ? 4 : 1; 
 
       const uploadData = Buffer.from(encrypted);
       const tags = [
@@ -115,9 +128,8 @@ export function UploadOrchestrator() {
 
       while (attempts < MAX_RETRIES) {
         try {
-          // Mobile context-switching delay to stabilize connection bridge.
           if (isMobile && attempts > 0) {
-            await yieldThread(1500 + (attempts * 1000));
+            await yieldThread(2000 * attempts);
           }
 
           const activeIrys = await initIrys();
@@ -137,7 +149,7 @@ export function UploadOrchestrator() {
       
       if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
       setSteps(s => ({ ...s, storage: true }));
-      await yieldThread(100);
+      await yieldThread(150);
 
       // 6. FINAL SETTLEMENT
       await registerUpload(contentHash, uploadReceipt.id);
@@ -153,8 +165,10 @@ export function UploadOrchestrator() {
         setErrorMsg("Action cancelled by user.");
       } else if (msg === "ASSET_ALREADY_IN_VAULT") {
         setErrorMsg("This file is already secured in your vault.");
-      } else if (msg.includes("_NOT_READY")) {
-        setErrorMsg("Security engines initializing. Please try again in a moment.");
+      } else if (msg === "OPTIMIZATION_TIMEOUT") {
+        setErrorMsg("Mobile resources exhausted. Please retry.");
+      } else if (msg.includes("DISCONNECTED")) {
+        setErrorMsg("Security engines initializing. Please wait.");
       } else {
         setErrorMsg("Pipeline execution failed.");
       }
@@ -166,14 +180,14 @@ export function UploadOrchestrator() {
 
   /**
    * @dev REACTIVE WATCHDOG
-   * Crucial for mobile UX. Detects when the user returns from a wallet app
-   * and the vault state unlocks, automatically resuming the pipeline.
+   * Crucial for mobile UX. Added a longer 1.2s delay to ensure the browser 
+   * has fully reclaimed foreground priority before starting compute-heavy tasks.
    */
   useEffect(() => {
     if (!isLocked && selectedFile && status === 'AWAITING_SIGNATURE' && !processingRef.current) {
         const timer = setTimeout(() => {
             executePipeline(selectedFile);
-        }, 800); // Increased cooldown for mobile OS focus transitions.
+        }, 1200); 
         return () => clearTimeout(timer);
     }
   }, [isLocked, selectedFile, status, executePipeline]);
@@ -224,7 +238,7 @@ export function UploadOrchestrator() {
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.4 High-Performance</p>
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.5 - Atomic Bridge</p>
           </div>
           <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
             status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
