@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { sha256 } from 'viem';
 import { Buffer } from 'buffer';
 import { useKipioCrypto } from '@hooks/useKipioCrypto';
@@ -9,12 +9,10 @@ import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
 
 /**
- * @title Secure Vault Orchestrator V3.2
+ * @title Secure Vault Orchestrator V3.3
  * @author Kipio Engineering
- * @notice Managed pipeline for client-side encryption and decentralized settlement.
- * @dev Optimized with useCallback for stable mobile provider connections and explicit 
- * error propagation to prevent generic "connection error" false positives.
- * Re-integrates reference stability to prevent regressions during mobile context-switching.
+ * @notice Refined pipeline with reactive watchdog for mobile signature persistence.
+ * @dev Combines linear execution for Desktop and state-driven resumption for Mobile.
  */
 export function UploadOrchestrator() {
   const { 
@@ -33,6 +31,9 @@ export function UploadOrchestrator() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
+  // Ref to prevent double-execution during React strict mode or state swings
+  const processingRef = useRef(false);
+
   const [steps, setSteps] = useState({
     optim: false,
     integrity: false,
@@ -42,9 +43,6 @@ export function UploadOrchestrator() {
     settlement: false
   });
 
-  /**
-   * @notice Reset pipeline state to initial values.
-   */
   const resetSteps = useCallback(() => {
     setSteps({ 
         optim: false, 
@@ -57,9 +55,113 @@ export function UploadOrchestrator() {
   }, []);
 
   /**
-   * @notice Initial file ingestion. 
-   * @dev Generates a local blob for preview. Does not trigger cryptographic tasks.
+   * @notice Core Secure Pipeline logic.
+   * @dev Logic separated to be callable by both manual clicks and the reactive watchdog.
    */
+  const executePipeline = useCallback(async (file: File) => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    try {
+      setStatus('PROCESSING');
+
+      // 1. INTEGRITY FINGERPRINTING
+      const originalBuffer = await file.arrayBuffer();
+      const contentHash = sha256(new Uint8Array(originalBuffer));
+      setSteps(s => ({ ...s, integrity: true }));
+
+      // 2. COLLISION CHECK
+      const existingId = await getPhotoId(contentHash);
+      if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
+        throw new Error("ASSET_ALREADY_IN_VAULT");
+      }
+      setSteps(s => ({ ...s, registry: true }));
+
+      // 3. WASM COMPRESSION
+      const compressed = await compress(file);
+      setSteps(s => ({ ...s, optim: true }));
+
+      // 4. AES-GCM-256 ENCRYPTION
+      // This requires the vault to be unlocked (key available in worker)
+      const encrypted = await encryptFile(compressed, contentHash);
+      setSteps(s => ({ ...s, crypto: true }));
+
+      // 5. DECENTRALIZED PROPAGATION
+      const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      let uploadReceipt = null;
+      let attempts = 0;
+      const MAX_RETRIES = isMobile ? 3 : 1; 
+
+      const uploadData = Buffer.from(encrypted);
+      const tags = [
+        { name: "Content-Type", value: "image/webp" },
+        { name: "App-Name", value: "Kipio-Vault-v1" },
+        { name: "Encryption", value: "AES-GCM-256" }
+      ];
+
+      while (attempts < MAX_RETRIES) {
+        try {
+          // Mobile context-switching delay: allows the bridge to re-establish
+          if (isMobile && attempts > 0) {
+            await new Promise(r => setTimeout(r, 1500 + (attempts * 1000)));
+          }
+
+          const activeIrys = await initIrys();
+          if (!activeIrys?.uploader) throw new Error("IRYS_CONNECTION_FAILED");
+
+          uploadReceipt = await activeIrys.upload(uploadData as any, { tags });
+          if (uploadReceipt?.id) break;
+          throw new Error("IRYS_UPLOAD_FAILED");
+          
+        } catch (storageErr: any) {
+          attempts++;
+          if (attempts >= MAX_RETRIES || storageErr.message?.includes('rejected')) {
+            throw storageErr;
+          }
+        }
+      }
+      
+      if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
+      setSteps(s => ({ ...s, storage: true }));
+
+      // 6. FINAL SETTLEMENT
+      await registerUpload(contentHash, uploadReceipt.id);
+      setSteps(s => ({ ...s, settlement: true }));
+
+      setStatus('SUCCESS');
+      invalidateVaultCache();
+      setTimeout(handleReset, 8000);
+
+    } catch (err: any) {
+      const msg = err.message || "";
+      if (msg.includes("rejected") || msg.includes("denied")) {
+        setErrorMsg("Action cancelled by user.");
+      } else if (msg === "ASSET_ALREADY_IN_VAULT") {
+        setErrorMsg("This file is already secured in your vault.");
+      } else {
+        setErrorMsg("Pipeline execution failed.");
+      }
+      setStatus('ERROR');
+    } finally {
+      processingRef.current = false;
+    }
+  }, [getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache]);
+
+  /**
+   * @dev REACTIVE WATCHDOG
+   * Solves the "Two-Click" issue on mobile. If the user completes the signature
+   * and the vault unlocks, this hook detects the change and resumes the pipeline.
+   */
+  useEffect(() => {
+    if (!isLocked && selectedFile && status === 'AWAITING_SIGNATURE' && !processingRef.current) {
+        // Small grace period for mobile OS to return focus to the browser context
+        const timer = setTimeout(() => {
+            executePipeline(selectedFile);
+        }, 500);
+        return () => clearTimeout(timer);
+    }
+  }, [isLocked, selectedFile, status, executePipeline]);
+
   const handleFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !cryptoReady || !imageReady) return;
@@ -71,112 +173,27 @@ export function UploadOrchestrator() {
     setErrorMsg(null);
     setStatus('IDLE');
     resetSteps();
+
+    // Warm up Irys in background
+    initIrys().catch(() => {});
   };
 
-  /**
-   * @notice Core Secure Pipeline
-   * @dev Wrapped in useCallback to maintain reference stability during mobile deep-linking.
-   * Execution strictly follows: Unlock -> Integrity -> Registry -> Compression -> Encryption -> Irys -> Stylus.
-   */
-  const startSecurePipeline = useCallback(async () => {
+  const startSecurePipeline = async () => {
     if (!selectedFile) return;
 
-    try {
-      // 1. VAULT AUTHENTICATION
-      // Ensures the local encryption key is available before starting WASM tasks.
-      if (isLocked) {
-        setStatus('AWAITING_SIGNATURE');
-        try {
-          await unlockVault();
-        } catch (lockErr: any) {
-          // Terminal rejection: User cancelled the unlock signature
-          setStatus('IDLE');
-          return;
-        }
+    if (isLocked) {
+      setStatus('AWAITING_SIGNATURE');
+      try {
+        await unlockVault();
+        // On Desktop, this might continue immediately. 
+        // On Mobile, the Watchdog (useEffect) will catch the state change.
+      } catch (lockErr) {
+        setStatus('IDLE');
       }
-
-      setStatus('PROCESSING');
-
-      // 2. INTEGRITY FINGERPRINTING
-      // Non-destructive SHA-256 hash of the original asset buffer.
-      const originalBuffer = await selectedFile.arrayBuffer();
-      const contentHash = sha256(new Uint8Array(originalBuffer));
-      setSteps(s => ({ ...s, integrity: true }));
-
-      // 3. COLLISION CHECK (Arbitrum Stylus)
-      // Query the on-chain registry to prevent redundant storage costs.
-      const existingId = await getPhotoId(contentHash);
-      if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
-        throw new Error("ASSET_ALREADY_IN_VAULT");
-      }
-      setSteps(s => ({ ...s, registry: true }));
-
-      // 4. WASM COMPRESSION
-      // Optimize asset to WebP to reduce Arweave transaction fees.
-      const compressed = await compress(selectedFile);
-      setSteps(s => ({ ...s, optim: true }));
-
-      // 5. AES-GCM-256 ENCRYPTION
-      // Encrypt file in-memory using the derived Vault Key.
-      const encrypted = await encryptFile(compressed, contentHash);
-      setSteps(s => ({ ...s, crypto: true }));
-
-      // 6. DECENTRALIZED PROPAGATION (Irys Network)
-      // Mobile-first delay to allow wallet bridge stability.
-      const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) await new Promise(r => setTimeout(r, 1200));
-
-      const activeIrys = await initIrys();
-      if (!activeIrys?.uploader) throw new Error("IRYS_CONNECTION_FAILED");
-
-      const uploadData = Buffer.from(encrypted);
-      const tags = [
-        { name: "Content-Type", value: "image/webp" },
-        { name: "App-Name", value: "Kipio-Vault-v1" },
-        { name: "Encryption", value: "AES-GCM-256" }
-      ];
-
-      // Single attempt for storage signature. Rejections are caught below.
-      const uploadReceipt = await activeIrys.upload(uploadData as any, { tags });
-      
-      if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
-      setSteps(s => ({ ...s, storage: true }));
-
-      // 7. FINAL SETTLEMENT (Arbitrum Stylus)
-      // Atomic link between asset fingerprint and storage manifest ID.
-      await registerUpload(contentHash, uploadReceipt.id);
-      setSteps(s => ({ ...s, settlement: true }));
-
-      setStatus('SUCCESS');
-      invalidateVaultCache();
-      
-      // Extended success timeout for better UX feedback
-      setTimeout(handleReset, 8000);
-
-    } catch (err: any) {
-      console.error("Pipeline Failure:", err);
-      const msg = err.message || "";
-      const isUserRejection = msg.toLowerCase().includes('rejected') || 
-                              msg.toLowerCase().includes('denied') || 
-                              msg.toLowerCase().includes('user rejected');
-
-      if (isUserRejection) {
-        setErrorMsg("Action cancelled by user.");
-      } else if (msg === "ASSET_ALREADY_IN_VAULT") {
-        setErrorMsg("This file is already secured in your vault.");
-      } else if (msg.includes("IRYS_CONNECTION")) {
-        setErrorMsg("Irys node unavailable. Check your internet or node status.");
-      } else if (msg.includes("IRYS_UPLOAD")) {
-        setErrorMsg("Storage failed. Ensure you have sufficient Irys balance.");
-      } else {
-        // Fallback for unexpected exceptions
-        setErrorMsg("Pipeline execution failed. Verify connection.");
-      }
-      
-      setStatus('ERROR');
+    } else {
+      executePipeline(selectedFile);
     }
-    // Dependencies listed for stability and SOLID compliance
-  }, [selectedFile, isLocked, unlockVault, getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache]);
+  };
 
   const handleReset = useCallback(() => {
     setStatus('IDLE');
@@ -184,17 +201,18 @@ export function UploadOrchestrator() {
     setPreviewUrl(null);
     setSelectedFile(null);
     setErrorMsg(null);
+    processingRef.current = false;
     resetSteps();
   }, [previewUrl, resetSteps]);
 
-  // UI remains identical to V3.1 to maintain visual consistency
+  // UI remains identical to v3.6...
   return (
-    <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl transition-all duration-500">
+    <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
       <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Production Shield v3.2</p>
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.3 Mobile-Optimized</p>
           </div>
           <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
             status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
@@ -223,7 +241,7 @@ export function UploadOrchestrator() {
               </div>
               <div className="text-center px-4">
                 <p className="text-sm font-bold text-gray-300">Secure New Asset</p>
-                <p className="text-[10px] text-gray-500 font-mono mt-1 uppercase">Encrypted in local RAM</p>
+                <p className="text-[10px] text-gray-500 font-mono mt-1 uppercase text-center">Encrypted in local RAM</p>
               </div>
             </div>
             <input type="file" className="hidden" accept="image/*" onChange={handleFileSelection} disabled={status === 'PROCESSING'} />
@@ -257,7 +275,7 @@ export function UploadOrchestrator() {
             {status === 'IDLE' && (
                 <button 
                     onClick={startSecurePipeline}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-[0.98]"
                 >
                     Finalize & Secure Asset
                 </button>
