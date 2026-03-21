@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { sha256 } from 'viem';
 import { Buffer } from 'buffer';
 import { useKipioCrypto } from '@hooks/useKipioCrypto';
@@ -9,13 +9,13 @@ import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
 
 /**
- * @title Secure Upload Orchestrator V3 (Refactored)
- * @notice High-integrity pipeline for asset encryption and decentralized storage.
- * @dev This component orchestrates the 6-step pipeline from local optimization to on-chain settlement.
- * It consumes the KipioContext to ensure that the Master Key never leaves the Secure Context.
+ * @title Secure Vault Orchestrator V3.1
+ * @author Kipio Engineering
+ * @notice Managed pipeline for client-side encryption and decentralized settlement.
+ * @dev This version implements a manual trigger pattern to respect user agency and 
+ * prevent signature loops during wallet rejections.
  */
 export function UploadOrchestrator() {
-  // HOOKS: Consuming our shared cryptographic and blockchain infrastructure
   const { 
     encryptFile, 
     isLocked, 
@@ -23,15 +23,14 @@ export function UploadOrchestrator() {
     workerReady: cryptoReady 
   } = useKipioCrypto();
 
-  const { instance: sessionInstance, initIrys } = useIrys();
+  const { initIrys } = useIrys();
   const { registerUpload, getPhotoId, isProcessing, invalidateVaultCache } = useVault();
   const { compress, isReady: imageReady } = useImageWorker();
   
-  // UI & PIPELINE STATE
   const [status, setStatus] = useState<'IDLE' | 'AWAITING_SIGNATURE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   const [steps, setSteps] = useState({
     optim: false,
@@ -43,150 +42,130 @@ export function UploadOrchestrator() {
   });
 
   /**
-   * @dev PIPELINE WATCHDOG
-   * Automatically resumes the execution pipeline once the user provides 
-   * the EIP-712 signature and the Vault becomes 'unlocked'.
-   */
-  useEffect(() => {
-    if (!isLocked && pendingFile && status === 'AWAITING_SIGNATURE') {
-      executeSecurePipeline(pendingFile);
-      setPendingFile(null);
-    }
-  }, [isLocked, pendingFile, status]);
-
-  /**
-   * @notice Handles initial file selection and vault authorization checks.
+   * @notice Initial file ingestion. 
+   * @dev Generates a local blob for preview without triggering the cryptographic pipeline.
    */
   const handleFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !cryptoReady || !imageReady) return;
 
-    // Cleanup: Prevent memory leaks from previous previews
     if (previewUrl) URL.revokeObjectURL(previewUrl);
 
     setPreviewUrl(URL.createObjectURL(file));
+    setSelectedFile(file);
     setErrorMsg(null);
+    setStatus('IDLE');
     resetSteps();
-
-    // If Vault is locked, we enter the 'Awaiting Signature' gate
-    if (isLocked) {
-      try {
-        setStatus('AWAITING_SIGNATURE');
-        setPendingFile(file);
-        await unlockVault();
-      } catch (err: any) {
-        console.error("[ORCHESTRATOR] Unlock rejected:", err);
-        setErrorMsg(err.message.includes('rejected') ? "Signature rejected by user." : "Failed to unlock vault.");
-        setStatus('ERROR');
-      }
-      return;
-    }
-
-    executeSecurePipeline(file);
   };
 
   const resetSteps = () => {
-    setSteps({ optim: false, integrity: false, registry: false, crypto: false, storage: false, settlement: false });
+    setSteps({ 
+        optim: false, 
+        integrity: false, 
+        registry: false, 
+        crypto: false, 
+        storage: false, 
+        settlement: false 
+    });
   };
 
   /**
-   * @notice Core Execution Logic: 6 Atomic Steps to Security.
-   * @param file The raw file blob from the input.
+   * @notice Core Secure Pipeline
+   * @dev Orchestrates: Vault Unlock -> Integrity -> Registry Check -> Compression -> Encryption -> Irys -> Stylus.
+   * Signature rejections are treated as terminal states to prevent UI loops.
    */
-  const executeSecurePipeline = async (file: File) => {
+  const startSecurePipeline = async () => {
+    if (!selectedFile) return;
+
     try {
+      // 1. SECURE CONTEXT INITIALIZATION
+      // If the local master key is locked, prompt for signature before resource-heavy WASM tasks.
+      if (isLocked) {
+        setStatus('AWAITING_SIGNATURE');
+        try {
+          await unlockVault();
+        } catch (lockErr: any) {
+          // User rejected the initial vault unlock signature
+          setStatus('IDLE');
+          return;
+        }
+      }
+
       setStatus('PROCESSING');
 
-      // STEP 1: WASM-BASED COMPRESSION (Optimizes storage costs)
-      const compressed = await compress(file);
-      setSteps(s => ({ ...s, optim: true }));
-
-      // STEP 2: CONTENT INTEGRITY (SHA-256 Fingerprint)
-      const contentHash = sha256(new Uint8Array(compressed));
+      // 2. DETERMINISTIC INTEGRITY CHECK
+      // Generate fingerprint in RAM before any modifications occur.
+      const originalBuffer = await selectedFile.arrayBuffer();
+      const contentHash = sha256(new Uint8Array(originalBuffer));
       setSteps(s => ({ ...s, integrity: true }));
 
-      // STEP 3: ON-CHAIN DEDUPLICATION (Gatekeeper Check)
-      // Prevents paying for storage of assets already present in Stylus.
+      // 3. ON-CHAIN COLLISION DETECTION
+      // Verify via Arbitrum Stylus if this asset fingerprint already exists.
       const existingId = await getPhotoId(contentHash);
-      if (existingId && existingId !== "" && existingId !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
+      if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
         throw new Error("ASSET_ALREADY_IN_VAULT");
       }
       setSteps(s => ({ ...s, registry: true }));
 
-      // STEP 4: AES-GCM-256 ENCRYPTION
-      // Key material is retrieved from Context and transferred to Worker.
+      // 4. WASM COMPRESSION LAYER
+      // Transform asset to WebP/Optimized format to minimize Irys storage costs.
+      const compressed = await compress(selectedFile);
+      setSteps(s => ({ ...s, optim: true }));
+
+      // 5. AES-GCM-256 SHIELDING
+      // Encrypt the compressed payload using the contentHash as an additional authenticated data (AAD) component.
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
 
-      // STEP 5: IRYS STORAGE PROPAGATION (Mobile-Ready & Resilient)
-      let activeIrys = sessionInstance;
-      let uploadReceipt = null;
-      let retryCount = 0;
-      const MAX_RETRIES = 3;
-
-      // Ensure fresh instance for mobile environments where sessions might stall
-      if (!activeIrys || !activeIrys.uploader) {
-        activeIrys = await initIrys();
+      // 6. DECENTRALIZED STORAGE PROPAGATION (Irys / Arweave)
+      const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        // Allow mobile wallet bridge context-switching delay
+        await new Promise(r => setTimeout(r, 1200));
       }
 
-      if (!activeIrys) throw new Error("IRYS_CONNECTION_FAILED");
+      const activeIrys = await initIrys();
+      if (!activeIrys?.uploader) throw new Error("IRYS_CONNECTION_FAILED");
 
+      const uploadData = Buffer.from(encrypted);
       const tags = [
         { name: "Content-Type", value: "image/webp" },
         { name: "App-Name", value: "Kipio-Vault-v1" },
         { name: "Encryption", value: "AES-GCM-256" }
       ];
 
-      // Robust upload loop with exponential backoff for flaky networks
-      while (retryCount < MAX_RETRIES) {
-        try {
-          if (retryCount > 0) {
-            // Wait: 1.5s, 3s, 6s... depending on attempt
-            await new Promise(resolve => setTimeout(resolve, 1500 * Math.pow(2, retryCount)));
-          }
-
-          // Atomic execution of the buffer conversion and upload
-          uploadReceipt = await activeIrys.upload(Buffer.from(encrypted) as any, { tags });
-          
-          if (uploadReceipt?.id) break;
-        } catch (uploadErr: any) {
-          retryCount++;
-          if (retryCount >= MAX_RETRIES) {
-            throw new Error(`STORAGE_LAYER_TIMEOUT: ${uploadErr.message || "STALL"}`);
-          }
-        }
-      }
-
-      const receipt = uploadReceipt;
-      if (!receipt?.id) throw new Error("IRYS_ID_NOT_FOUND");
+      // SIGNATURE REQUEST: User signs the Irys data bundle.
+      // Retries are removed here to respect "Cancel" actions in MetaMask/Brave.
+      const uploadReceipt = await activeIrys.upload(uploadData as any, { tags });
+      
+      if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
       setSteps(s => ({ ...s, storage: true }));
 
-      // STEP 6: ARBITRUM STYLUS SETTLEMENT
-      // Maps the ContentHash to the Irys TXID on the blockchain.
-      await registerUpload(contentHash, receipt.id);
+      // 7. ARBITRUM STYLUS SETTLEMENT
+      // Register the Irys Transaction ID against the original contentHash on-chain.
+      await registerUpload(contentHash, uploadReceipt.id);
       setSteps(s => ({ ...s, settlement: true }));
 
       setStatus('SUCCESS');
       invalidateVaultCache();
       
-      // Reset UI after 10 seconds of success
-      setTimeout(handleReset, 10000);
+      // Auto-reset UI after a brief success display
+      setTimeout(handleReset, 8000);
 
     } catch (err: any) {
-      console.error("[CRITICAL] Pipeline Failure:", err);
-      
-      if (err.message === "ASSET_ALREADY_IN_VAULT") {
-       	setErrorMsg("This file is already secured in your vault.");
-      } else if (err.message.includes('rejected') || err.message.includes('denied')) {
-        setErrorMsg("Signature rejected by user.");
+      const msg = err.message || "";
+      const isUserRejection = msg.toLowerCase().includes('rejected') || 
+                              msg.toLowerCase().includes('denied') || 
+                              msg.toLowerCase().includes('user rejected');
+
+      if (isUserRejection) {
+        setErrorMsg("Action cancelled by user.");
+      } else if (msg === "ASSET_ALREADY_IN_VAULT") {
+        setErrorMsg("This file is already secured in your vault.");
+      } else if (msg.includes("IRYS")) {
+        setErrorMsg("Storage Error: Verify Irys balance or node status.");
       } else {
-	  if (err.message.includes('Irys') || !steps.storage) {
-         setErrorMsg("Storage Layer Error: Check your Irys balance/connection.");
-        } else if (err.message.includes('Stylus') || !steps.settlement) {
-         setErrorMsg("Blockchain Settlement Error: Arbitrum RPC is unstable.");
-        } else {
-        setErrorMsg("Process failed. Please verify your connection.");
-        }
+        setErrorMsg("Process failed. Verify your network connection.");
       }
       
       setStatus('ERROR');
@@ -197,39 +176,39 @@ export function UploadOrchestrator() {
     setStatus('IDLE');
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
+    setSelectedFile(null);
     setErrorMsg(null);
-    setPendingFile(null);
     resetSteps();
   };
 
   return (
     <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl transition-all duration-500">
-      {/* Header with Dynamic Status Glow */}
-      <div className={`p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent`}>
+      {/* Header Section */}
+      <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Client-Side Shield v3</p>
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Production Shield v3.1</p>
           </div>
-          <div className={`h-2 w-2 rounded-full ${
+          <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
             status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
             status === 'ERROR' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 
-            'bg-blue-500 animate-pulse'
+            status === 'IDLE' ? 'bg-gray-800' : 'bg-blue-500 animate-pulse'
           }`} />
         </div>
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Real-time Pipeline Progress */}
-        <div className="space-y-2">
+        {/* Pipeline Status Indicator */}
+        <div className="space-y-2 opacity-90">
+          <StatusLine label="Integrity & Registry" active={steps.integrity && steps.registry} />
           <StatusLine label="WASM Optimization" active={steps.optim} />
-          <StatusLine label="On-Chain Registry Check" active={steps.registry} />
           <StatusLine label="AES-GCM Shielding" active={steps.crypto} />
-          <StatusLine label="Irys Layer Propagation" active={steps.storage} />
+          <StatusLine label="Decentralized Storage" active={steps.storage} />
           <StatusLine label="Stylus Finalization" active={steps.settlement} />
         </div>
 
-        {/* Dynamic Action Area */}
+        {/* Interaction Area */}
         {!previewUrl ? (
           <label className="group relative flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all">
             <div className="flex flex-col items-center justify-center space-y-3">
@@ -240,47 +219,54 @@ export function UploadOrchestrator() {
               </div>
               <div className="text-center px-4">
                 <p className="text-sm font-bold text-gray-300">Secure New Asset</p>
-                <p className="text-[10px] text-gray-500 font-mono mt-1 uppercase">Max 100MB // Encrypted in RAM</p>
+                <p className="text-[10px] text-gray-500 font-mono mt-1 uppercase">Encrypted in local RAM</p>
               </div>
             </div>
             <input type="file" className="hidden" accept="image/*" onChange={handleFileSelection} disabled={status === 'PROCESSING'} />
           </label>
         ) : (
-          <div className="relative rounded-2xl overflow-hidden border border-white/10 aspect-video bg-black group">
-            <img 
-              src={previewUrl} 
-              className={`w-full h-full object-cover transition-all duration-700 ${status === 'PROCESSING' ? 'blur-md grayscale' : ''}`} 
-              alt="Vault Preview" 
-            />
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+            <div className="relative rounded-2xl overflow-hidden border border-white/10 aspect-video bg-black group">
+              <img 
+                src={previewUrl} 
+                className={`w-full h-full object-cover transition-all duration-700 ${status === 'PROCESSING' ? 'blur-md grayscale' : ''}`} 
+                alt="Vault Preview" 
+              />
+              {status === 'PROCESSING' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+                  <span className="text-[10px] font-mono font-black text-white uppercase tracking-widest">Shielding Asset...</span>
+                </div>
+              )}
+              {(status === 'ERROR' || status === 'SUCCESS' || status === 'IDLE') && (
+                <button 
+                  onClick={handleReset}
+                  className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black rounded-full text-white/70 hover:text-white transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
             
-            {status === 'PROCESSING' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
-                <span className="text-[10px] font-mono font-black text-white uppercase tracking-widest text-center">
-                  Executing Secure<br/>Pipeline...
-                </span>
-              </div>
-            )}
-
-            {(status === 'ERROR' || status === 'SUCCESS') && (
-              <button 
-                onClick={handleReset}
-                className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black rounded-full text-white/70 hover:text-white transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            {status === 'IDLE' && (
+                <button 
+                    onClick={startSecurePipeline}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+                >
+                    Finalize & Secure Asset
+                </button>
             )}
           </div>
         )}
 
-        {/* UX Feedback Layer */}
+        {/* Detailed Status Feedback */}
         <div className="min-h-[40px] flex items-center justify-center">
           {status === 'ERROR' ? (
-            <div className="flex flex-col items-center gap-2 text-center">
+            <div className="flex flex-col items-center gap-1 text-center">
               <span className="text-[11px] font-bold text-red-400 uppercase tracking-tighter">⚠️ {errorMsg}</span>
-              <button onClick={handleReset} className="text-[9px] text-gray-500 underline hover:text-white uppercase font-mono tracking-widest">Retry Operation</button>
+              <button onClick={handleReset} className="text-[9px] text-gray-500 underline hover:text-white uppercase font-mono tracking-widest">Discard and Retry</button>
             </div>
           ) : status === 'AWAITING_SIGNATURE' ? (
             <div className="flex items-center gap-2 text-yellow-500">
@@ -290,12 +276,12 @@ export function UploadOrchestrator() {
           ) : isProcessing ? (
             <div className="flex items-center gap-2 text-blue-400">
               <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-              <span className="text-[11px] font-bold uppercase tracking-widest italic">Mining on Arbitrum Stylus...</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest italic tracking-wider">Settling on Arbitrum...</span>
             </div>
           ) : status === 'SUCCESS' ? (
             <span className="text-[11px] font-bold text-green-400 uppercase tracking-widest">✓ Final Settlement Verified</span>
           ) : (
-            <span className="text-[10px] font-mono text-gray-700 uppercase tracking-widest">Standby // Integrity Assured</span>
+            <span className="text-[10px] font-mono text-gray-700 uppercase tracking-[0.3em]">Integrity Assured</span>
           )}
         </div>
       </div>
@@ -304,7 +290,7 @@ export function UploadOrchestrator() {
 }
 
 /**
- * @dev Helper component for the pipeline progress UI.
+ * @notice Scannable status line for the cryptographic pipeline.
  */
 function StatusLine({ label, active }: { label: string, active: boolean }) {
   return (
