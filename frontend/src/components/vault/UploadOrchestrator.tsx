@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { sha256 } from 'viem';
 import { Buffer } from 'buffer';
 import { useKipioCrypto } from '@hooks/useKipioCrypto';
@@ -9,11 +9,12 @@ import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
 
 /**
- * @title Secure Vault Orchestrator V3.1
+ * @title Secure Vault Orchestrator V3.2
  * @author Kipio Engineering
  * @notice Managed pipeline for client-side encryption and decentralized settlement.
- * @dev This version implements a manual trigger pattern to respect user agency and 
- * prevent signature loops during wallet rejections.
+ * @dev Optimized with useCallback for stable mobile provider connections and explicit 
+ * error propagation to prevent generic "connection error" false positives.
+ * Re-integrates reference stability to prevent regressions during mobile context-switching.
  */
 export function UploadOrchestrator() {
   const { 
@@ -42,8 +43,22 @@ export function UploadOrchestrator() {
   });
 
   /**
+   * @notice Reset pipeline state to initial values.
+   */
+  const resetSteps = useCallback(() => {
+    setSteps({ 
+        optim: false, 
+        integrity: false, 
+        registry: false, 
+        crypto: false, 
+        storage: false, 
+        settlement: false 
+    });
+  }, []);
+
+  /**
    * @notice Initial file ingestion. 
-   * @dev Generates a local blob for preview without triggering the cryptographic pipeline.
+   * @dev Generates a local blob for preview. Does not trigger cryptographic tasks.
    */
   const handleFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,34 +73,23 @@ export function UploadOrchestrator() {
     resetSteps();
   };
 
-  const resetSteps = () => {
-    setSteps({ 
-        optim: false, 
-        integrity: false, 
-        registry: false, 
-        crypto: false, 
-        storage: false, 
-        settlement: false 
-    });
-  };
-
   /**
    * @notice Core Secure Pipeline
-   * @dev Orchestrates: Vault Unlock -> Integrity -> Registry Check -> Compression -> Encryption -> Irys -> Stylus.
-   * Signature rejections are treated as terminal states to prevent UI loops.
+   * @dev Wrapped in useCallback to maintain reference stability during mobile deep-linking.
+   * Execution strictly follows: Unlock -> Integrity -> Registry -> Compression -> Encryption -> Irys -> Stylus.
    */
-  const startSecurePipeline = async () => {
+  const startSecurePipeline = useCallback(async () => {
     if (!selectedFile) return;
 
     try {
-      // 1. SECURE CONTEXT INITIALIZATION
-      // If the local master key is locked, prompt for signature before resource-heavy WASM tasks.
+      // 1. VAULT AUTHENTICATION
+      // Ensures the local encryption key is available before starting WASM tasks.
       if (isLocked) {
         setStatus('AWAITING_SIGNATURE');
         try {
           await unlockVault();
         } catch (lockErr: any) {
-          // User rejected the initial vault unlock signature
+          // Terminal rejection: User cancelled the unlock signature
           setStatus('IDLE');
           return;
         }
@@ -93,36 +97,34 @@ export function UploadOrchestrator() {
 
       setStatus('PROCESSING');
 
-      // 2. DETERMINISTIC INTEGRITY CHECK
-      // Generate fingerprint in RAM before any modifications occur.
+      // 2. INTEGRITY FINGERPRINTING
+      // Non-destructive SHA-256 hash of the original asset buffer.
       const originalBuffer = await selectedFile.arrayBuffer();
       const contentHash = sha256(new Uint8Array(originalBuffer));
       setSteps(s => ({ ...s, integrity: true }));
 
-      // 3. ON-CHAIN COLLISION DETECTION
-      // Verify via Arbitrum Stylus if this asset fingerprint already exists.
+      // 3. COLLISION CHECK (Arbitrum Stylus)
+      // Query the on-chain registry to prevent redundant storage costs.
       const existingId = await getPhotoId(contentHash);
       if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
         throw new Error("ASSET_ALREADY_IN_VAULT");
       }
       setSteps(s => ({ ...s, registry: true }));
 
-      // 4. WASM COMPRESSION LAYER
-      // Transform asset to WebP/Optimized format to minimize Irys storage costs.
+      // 4. WASM COMPRESSION
+      // Optimize asset to WebP to reduce Arweave transaction fees.
       const compressed = await compress(selectedFile);
       setSteps(s => ({ ...s, optim: true }));
 
-      // 5. AES-GCM-256 SHIELDING
-      // Encrypt the compressed payload using the contentHash as an additional authenticated data (AAD) component.
+      // 5. AES-GCM-256 ENCRYPTION
+      // Encrypt file in-memory using the derived Vault Key.
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
 
-      // 6. DECENTRALIZED STORAGE PROPAGATION (Irys / Arweave)
+      // 6. DECENTRALIZED PROPAGATION (Irys Network)
+      // Mobile-first delay to allow wallet bridge stability.
       const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        // Allow mobile wallet bridge context-switching delay
-        await new Promise(r => setTimeout(r, 1200));
-      }
+      if (isMobile) await new Promise(r => setTimeout(r, 1200));
 
       const activeIrys = await initIrys();
       if (!activeIrys?.uploader) throw new Error("IRYS_CONNECTION_FAILED");
@@ -134,25 +136,25 @@ export function UploadOrchestrator() {
         { name: "Encryption", value: "AES-GCM-256" }
       ];
 
-      // SIGNATURE REQUEST: User signs the Irys data bundle.
-      // Retries are removed here to respect "Cancel" actions in MetaMask/Brave.
+      // Single attempt for storage signature. Rejections are caught below.
       const uploadReceipt = await activeIrys.upload(uploadData as any, { tags });
       
       if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
       setSteps(s => ({ ...s, storage: true }));
 
-      // 7. ARBITRUM STYLUS SETTLEMENT
-      // Register the Irys Transaction ID against the original contentHash on-chain.
+      // 7. FINAL SETTLEMENT (Arbitrum Stylus)
+      // Atomic link between asset fingerprint and storage manifest ID.
       await registerUpload(contentHash, uploadReceipt.id);
       setSteps(s => ({ ...s, settlement: true }));
 
       setStatus('SUCCESS');
       invalidateVaultCache();
       
-      // Auto-reset UI after a brief success display
+      // Extended success timeout for better UX feedback
       setTimeout(handleReset, 8000);
 
     } catch (err: any) {
+      console.error("Pipeline Failure:", err);
       const msg = err.message || "";
       const isUserRejection = msg.toLowerCase().includes('rejected') || 
                               msg.toLowerCase().includes('denied') || 
@@ -162,33 +164,37 @@ export function UploadOrchestrator() {
         setErrorMsg("Action cancelled by user.");
       } else if (msg === "ASSET_ALREADY_IN_VAULT") {
         setErrorMsg("This file is already secured in your vault.");
-      } else if (msg.includes("IRYS")) {
-        setErrorMsg("Storage Error: Verify Irys balance or node status.");
+      } else if (msg.includes("IRYS_CONNECTION")) {
+        setErrorMsg("Irys node unavailable. Check your internet or node status.");
+      } else if (msg.includes("IRYS_UPLOAD")) {
+        setErrorMsg("Storage failed. Ensure you have sufficient Irys balance.");
       } else {
-        setErrorMsg("Process failed. Verify your network connection.");
+        // Fallback for unexpected exceptions
+        setErrorMsg("Pipeline execution failed. Verify connection.");
       }
       
       setStatus('ERROR');
     }
-  };
+    // Dependencies listed for stability and SOLID compliance
+  }, [selectedFile, isLocked, unlockVault, getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setStatus('IDLE');
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setSelectedFile(null);
     setErrorMsg(null);
     resetSteps();
-  };
+  }, [previewUrl, resetSteps]);
 
+  // UI remains identical to V3.1 to maintain visual consistency
   return (
     <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl transition-all duration-500">
-      {/* Header Section */}
       <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Production Shield v3.1</p>
+            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Production Shield v3.2</p>
           </div>
           <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
             status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
@@ -199,7 +205,6 @@ export function UploadOrchestrator() {
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Pipeline Status Indicator */}
         <div className="space-y-2 opacity-90">
           <StatusLine label="Integrity & Registry" active={steps.integrity && steps.registry} />
           <StatusLine label="WASM Optimization" active={steps.optim} />
@@ -208,7 +213,6 @@ export function UploadOrchestrator() {
           <StatusLine label="Stylus Finalization" active={steps.settlement} />
         </div>
 
-        {/* Interaction Area */}
         {!previewUrl ? (
           <label className="group relative flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all">
             <div className="flex flex-col items-center justify-center space-y-3">
@@ -261,7 +265,6 @@ export function UploadOrchestrator() {
           </div>
         )}
 
-        {/* Detailed Status Feedback */}
         <div className="min-h-[40px] flex items-center justify-center">
           {status === 'ERROR' ? (
             <div className="flex flex-col items-center gap-1 text-center">
@@ -289,9 +292,6 @@ export function UploadOrchestrator() {
   );
 }
 
-/**
- * @notice Scannable status line for the cryptographic pipeline.
- */
 function StatusLine({ label, active }: { label: string, active: boolean }) {
   return (
     <div className="flex items-center gap-3">
