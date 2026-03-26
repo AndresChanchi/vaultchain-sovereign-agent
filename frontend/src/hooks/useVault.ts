@@ -12,15 +12,11 @@ import type { Hex, Client } from "viem";
 
 /**
  * Hook to interact with the Arbitrum Stylus Vault contract.
- * Manages both high-level write operations and imperative read access for the gallery.
- * * DESIGN PATTERN: We use the PublicClient for read operations to allow 
- * async orchestration within the gallery without triggering complex hook dependencies.
+ * Includes gas estimation for transparent cost reporting on mobile.
  */
 export function useVault() {
   const { address } = useAccount();
   const queryClient = useQueryClient();
-  
-  // Explicitly scope the client to the configured chain ID to prevent Mainnet/Sepolia type mismatches
   const publicClient = usePublicClient({ chainId: CHAIN_CONFIG.id });
   
   const { 
@@ -30,25 +26,28 @@ export function useVault() {
     error: writeError 
   } = useWriteContract();
 
-  /**
-   * Watches the transaction status on Arbitrum Sepolia/Mainnet.
-   * isConfirming: block is being mined.
-   * isSuccess: transaction is finalized.
-   */
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ 
     hash: txHash,
     chainId: CHAIN_CONFIG.id 
   });
 
-  // --- READ OPERATIONS (Imperative for Gallery Orchestration) ---
+  const estimateRegistrationCost = useCallback(async (contentHash: Hex, encryptedTxId: string): Promise<bigint> => {
+    if (!address || !publicClient) return 0n;
+    try {
+      return await publicClient.estimateContractGas({
+        address: VAULT_CONTRACT.address,
+        abi: VAULT_CONTRACT.abi.abi,
+        functionName: "registerUpload",
+        args: [contentHash, encryptedTxId],
+        account: address,
+      });
+    } catch (error) {
+      return 0n;
+    }
+  }, [address, publicClient]);
 
-  /**
-   * Returns the total number of entries in the user's private vault.
-   */
   const getTotalPhotos = useCallback(async (): Promise<number> => {
     if (!address || !publicClient) return 0;
-    
-    // Using 'as Client' to bypass strict blockExplorer URL validation in production builds
     const data = await readContract(publicClient as Client, {
       address: VAULT_CONTRACT.address,
       abi: VAULT_CONTRACT.abi.abi,
@@ -58,12 +57,8 @@ export function useVault() {
     return Number(data);
   }, [address, publicClient]);
 
-  /**
-   * Fetches a paginated list of B256 content hashes from Stylus.
-   */
   const getGallery = useCallback(async (offset: number, limit: number): Promise<Hex[]> => {
     if (!address || !publicClient) return [];
-    
     const data = await readContract(publicClient as Client, {
       address: VAULT_CONTRACT.address,
       abi: VAULT_CONTRACT.abi.abi,
@@ -74,12 +69,8 @@ export function useVault() {
     return data as Hex[];
   }, [address, publicClient]);
 
-  /**
-   * Retrieves the encrypted transaction ID (Irys ID) for a specific content hash.
-   */
   const getPhotoId = useCallback(async (contentHash: Hex): Promise<string> => {
     if (!address || !publicClient) return "";
-    
     const data = await readContract(publicClient as Client, {
       address: VAULT_CONTRACT.address,
       abi: VAULT_CONTRACT.abi.abi,
@@ -90,53 +81,58 @@ export function useVault() {
     return data as string;
   }, [address, publicClient]);
 
-  // --- WRITE OPERATIONS ---
-
   /**
-   * Links a content hash to its Irys transaction ID on-chain.
+   * Registers upload on Arbitrum Stylus.
+   * BUGFIX: Uses viem's native fee estimators instead of hardcoded priority fees
+   * to strictly prevent RLP non-canonical integer (-32000) errors on Arbitrum.
    */
   const registerUpload = useCallback(async (contentHash: Hex, encryptedTxId: string) => {
-    if (!address) throw new Error("WALLET_NOT_CONNECTED");
+    if (!address || !publicClient) throw new Error("WALLET_NOT_CONNECTED");
 
-    return await writeContractAsync({
-      address: VAULT_CONTRACT.address,
-      abi: VAULT_CONTRACT.abi.abi,
-      functionName: "registerUpload",
-      args: [contentHash, encryptedTxId],
-      chainId: CHAIN_CONFIG.id,
-    });
-  }, [address, writeContractAsync]);
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const maxRetries = isMobile ? 3 : 1;
+    let attempt = 0;
 
-  /**
-   * Optimized batch registration to save gas on multiple uploads.
-   */
-  const registerBatch = useCallback(async (hashes: Hex[], encryptedIds: string[]) => {
-    if (!address) throw new Error("WALLET_NOT_CONNECTED");
+    while (attempt < maxRetries) {
+      try {
+        /**
+         * RLP Canonical Safety & Mobile Latency:
+         * Arbitrum L2 rejects manual arbitrary priority fees if they create leading zero bytes.
+         * We use viem's native fee estimator and scale it by 30% to buffer 
+         * against mobile wallet latency, ensuring valid EIP-1559 RLP encoding.
+         */
+        const feeData = await publicClient.estimateFeesPerGas();
+        const maxFeePerGas = feeData.maxFeePerGas ? (feeData.maxFeePerGas * 130n) / 100n : undefined;
+        const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ? (feeData.maxPriorityFeePerGas * 130n) / 100n : undefined;
 
-    return await writeContractAsync({
-      address: VAULT_CONTRACT.address,
-      abi: VAULT_CONTRACT.abi.abi,
-      functionName: "registerBatch",
-      args: [hashes, encryptedIds],
-      chainId: CHAIN_CONFIG.id,
-    });
-  }, [address, writeContractAsync]);
+        return await writeContractAsync({
+          address: VAULT_CONTRACT.address,
+          abi: VAULT_CONTRACT.abi.abi,
+          functionName: "registerUpload",
+          args: [contentHash, encryptedTxId],
+          chainId: CHAIN_CONFIG.id,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+        });
+      } catch (error: any) {
+        attempt++;
+        const isGasError = error?.message?.includes("max fee per gas") || error?.message?.includes("base fee");
+        if (attempt >= maxRetries || !isGasError) throw error;
+        await new Promise(res => setTimeout(res, 1800));
+      }
+    }
+  }, [address, writeContractAsync, publicClient]);
 
-  /**
-   * Refreshes the gallery data across the app.
-   */
   const invalidateVaultCache = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['readContract'] });
   }, [queryClient]);
 
   return {
-    // Read methods
     getTotalPhotos,
     getGallery,
     getPhotoId,
-    // Write methods
+    estimateRegistrationCost,
     registerUpload,
-    registerBatch,
     invalidateVaultCache,
     isProcessing: isWriting || isConfirming,
     isSuccess,

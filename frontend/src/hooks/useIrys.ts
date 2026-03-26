@@ -5,10 +5,15 @@ import { useEthersSigner } from "./useEthersSigner";
 import { IRYS_CONFIG } from "@config/contracts";
 import type { IrysSession } from "@interfaces/vault";
 
+/**
+ * Enhanced Irys Hook for 2026 Programmable Datachain.
+ * Includes proactive cost estimation and atomic balance management.
+ */
 export function useIrys() {
-  const [session, setSession] = useState<IrysSession>({
+  const [session, setSession] = useState<IrysSession & { balanceAtomic: string }>({
     instance: null,
     balance: "0",
+    balanceAtomic: "0",
     address: null,
     isLoading: false,
   });
@@ -16,9 +21,7 @@ export function useIrys() {
   const signer = useEthersSigner();
 
   /**
-   * INITIALIZATION PIPELINE
-   * Critical for Judge Review: We return the 'WebIrys' instance directly to 
-   * bypass React's state update lag during the upload orchestration.
+   * Handshakes with the Irys node and retrieves account state.
    */
   const initIrys = useCallback(async (): Promise<WebIrys | null> => {
     if (!signer || !IRYS_CONFIG.node) return null;
@@ -26,14 +29,12 @@ export function useIrys() {
     try {
       setSession((s) => ({ ...s, isLoading: true }));
       
-      // ETHERS V6 BRIDGE: Irys requires the underlying provider from the signer
       const webIrys = new WebIrys({ 
         url: IRYS_CONFIG.node, 
         token: "arbitrum", 
         wallet: { name: "ethersv6", provider: signer.provider } 
       });
 
-      // Handshake with the Irys bundler
       await webIrys.ready();
       
       const loadedBalance = await webIrys.getLoadedBalance();
@@ -42,75 +43,86 @@ export function useIrys() {
       const newSession = {
         instance: webIrys,
         balance: webIrys.utils.fromAtomic(loadedBalance).toString(),
+        balanceAtomic: loadedBalance.toString(),
         address: address as `0x${string}`,
         isLoading: false,
       };
 
       setSession(newSession);
-      
-      // RETURN: Direct access for immediate use in the same execution context
       return webIrys;
     } catch (error) {
-      console.error("Irys connection failed:", error);
       setSession((s) => ({ ...s, isLoading: false }));
       return null;
     }
   }, [signer]);
 
   /**
-   * PERMANENT STORAGE UPLOAD
-   * Returns the Irys L1 Transaction ID (txID).
-   * Note: The data is already encrypted by our Web Crypto Worker before arrival.
+   * Fetches the storage price for a specific file size.
+   * Essential for UI cost estimation before upload.
+   * @param bytes Number of bytes to upload.
    */
-  const uploadFile = useCallback(async (data: ArrayBuffer, contentType: string) => {
-    // SECURITY: Validate session before attempting Arweave interaction
-    if (!session.instance) throw new Error("IRYS_NOT_INITIALIZED");
+  const getUploadPrice = useCallback(async (bytes: number): Promise<string> => {
+    const irys = session.instance || await initIrys();
+    if (!irys) return "0";
+    const price = await irys.getPrice(bytes);
+    return price.toString();
+  }, [session.instance, initIrys]);
+
+  /**
+   * Executes the permanent storage upload.
+   */
+  const uploadFile = useCallback(async (data: Buffer, tags: { name: string, value: string }[]) => {
+    const irys = session.instance || await initIrys();
+    if (!irys) throw new Error("IRYS_AUTH_FAILED");
     
-    const tags = [
-      { name: "Content-Type", value: contentType },
-      { name: "App-Name", value: "Kipio-Vault-v1" },
-      { name: "Storage-Layer", value: "Permanent" }
-    ];
+    try {
+      const receipt = await irys.upload(data as any, { tags });
+      return receipt;
+    } catch (error: any) {
+      if (error?.message?.includes("402")) {
+        throw new Error("INSUFFICIENT_NODE_BALANCE");
+      }
+      throw error;
+    }
+  }, [session.instance, initIrys]);
+
+  /**
+   * Top-up logic for the Irys Node balance.
+   * @param priceAtomic The base price fetched from the node.
+   */
+  const fundNode = useCallback(async (priceAtomic: string) => {
+    const irys = session.instance || await initIrys();
+    if (!irys) throw new Error("IRYS_NOT_INITIALIZED");
 
     try {
       /**
-       * TYPE CONVERSION: Irys SDK expects Node-like Buffer.
-       * We wrap the encrypted ArrayBuffer to satisfy the 'write/equals' type check.
+       * BUGFIX: Mobile floating point precision generates decimals in atomic strings.
+       * We extract the integer part of the string. 
+       * The '|| "0"' fallback satisfies TypeScript strict null checks.
        */
-      const dataToUpload = Buffer.from(data);
+      const integerPart = priceAtomic.split('.')[0] || "0";
+      const basePrice = BigInt(integerPart);
       
-      // UPLOAD: Moving the encrypted payload to the Bundler
-      const receipt = await session.instance.upload(dataToUpload as any, { tags });
-      
-      // SUCCESS: Return the Arweave TX ID for UI and Stylus registration
-      return receipt.id; 
-    } catch (error) {
-      console.error("Irys upload failed:", error);
-      throw new Error("UPLOAD_FAILED");
-    }
-  }, [session.instance]);
+      /**
+       * Safety Check: Ensure we never attempt to fund 0 or a malformed non-canonical value.
+       */
+      if (basePrice === 0n) return;
 
-  /**
-   * FUNDING PROTOCOL
-   * Allows users to deposit ETH to the bundler for storage credits.
-   */
-  const fundNode = useCallback(async (amountEth: string) => {
-    if (!session.instance) throw new Error("IRYS_NOT_INITIALIZED");
-
-    try {
-      const atomic = session.instance.utils.toAtomic(amountEth);
-      await session.instance.fund(atomic);
+      const bufferedAmount = (basePrice * 105n) / 100n;
       
-      const bal = await session.instance.getLoadedBalance();
+      await irys.fund(bufferedAmount.toString());
+      
+      const bal = await irys.getLoadedBalance();
       setSession(s => ({ 
         ...s, 
-        balance: session.instance!.utils.fromAtomic(bal).toString() 
+        balanceAtomic: bal.toString(),
+        balance: irys.utils.fromAtomic(bal).toString() 
       }));
-    } catch (error) {
-      console.error("Funding failed:", error);
-      throw new Error("FUNDING_FAILED");
+    } catch (error: any) {
+      const isRejected = error?.message?.includes("rejected") || error?.code === 4001;
+      throw isRejected ? new Error("ACTION_REJECTED") : new Error("FUNDING_FAILED");
     }
-  }, [session.instance]);
+  }, [session.instance, initIrys]);
 
-  return { ...session, initIrys, uploadFile, fundNode };
+  return { ...session, initIrys, uploadFile, fundNode, getUploadPrice };
 }
