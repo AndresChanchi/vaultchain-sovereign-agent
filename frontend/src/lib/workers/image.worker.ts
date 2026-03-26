@@ -3,48 +3,53 @@ import imageCompression from "browser-image-compression";
 
 /**
  * Image processing configuration for a professional gallery.
+ * Optimized for 2026 hardware-accelerated WebP encoding.
  */
 const COMPRESSION_OPTIONS = {
-  maxSizeMB: 2,            // Limit for Irys costs
-  maxWidthOrHeight: 1920,  // Full HD is enough for web preview
-  useWebWorker: false,     // False because WE ARE already in a worker
+  maxSizeMB: 2,           // Limit for Irys costs optimization
+  maxWidthOrHeight: 1920, // Full HD is sufficient for web previews
+  useWebWorker: false,    // Already running inside a worker context
   initialQuality: 0.8,
-  fileType: "image/webp",  // WebP is the gold standard for 2026
+  fileType: "image/webp", // 2026 Industry Standard for efficiency
 } as const;
 
 const imageWorkerApi = {
   /**
-   * Compresses an image file and returns an ArrayBuffer.
+   * Compresses an image using a flattened argument structure.
+   * Passing arguments separately (buffer, mimeType) prevents WebKit from 
+   * attempting to clone complex Proxy objects, solving 'DataCloneError' on mobile.
+   * * @param buffer The raw ArrayBuffer of the image.
+   * @param mimeType The original mime type (e.g., 'image/jpeg').
    */
-  async compressImage(file: File): Promise<ArrayBuffer> {
+  async compressImage(buffer: ArrayBuffer, mimeType: string): Promise<ArrayBuffer> {
     try {
-      const compressedFile = await imageCompression(file, COMPRESSION_OPTIONS);
-      const buffer = await compressedFile.arrayBuffer();
+      // Reconstruct Blob from the transferred (detached) buffer
+      const blob = new Blob([buffer], { type: mimeType || "image/jpeg" });
       
-      // Zero-copy transfer to main thread
-      return Comlink.transfer(buffer, [buffer]);
-    } catch (error) {
-      console.error("Compression worker error:", error);
-      throw new Error("IMAGE_COMPRESSION_FAILED");
-    }
-  },
+      let fileToCompress: File | Blob = blob;
+      if (typeof File !== 'undefined') {
+        fileToCompress = new File([blob], "asset", { type: mimeType || "image/jpeg" });
+      }
 
-  /**
-   * Generates a fast thumbnail for the UI.
-   */
-  async generateThumbnail(file: File): Promise<ArrayBuffer> {
-    const thumbOptions = {
-      ...COMPRESSION_OPTIONS,
-      maxSizeMB: 0.1,
-      maxWidthOrHeight: 400,
-    };
-    
-    const thumbFile = await imageCompression(file, thumbOptions);
-    const buffer = await thumbFile.arrayBuffer();
-    return Comlink.transfer(buffer, [buffer]);
+      const compressedFile = await imageCompression(fileToCompress as File, COMPRESSION_OPTIONS);
+      const outputBuffer = await compressedFile.arrayBuffer();
+      
+      /**
+       * ZERO-COPY TRANSFER:
+       * Detaches the outputBuffer from the worker thread and moves it to the main thread.
+       * This is high-performance memory management for 2026 web standards.
+       */
+      return Comlink.transfer(outputBuffer, [outputBuffer]);
+    } catch (error: any) {
+      /**
+       * WebKit cannot clone native 'Error' objects across threads via postMessage.
+       * Throwing an Error object causes a "DataCloneError" which masks the real issue.
+       * We MUST throw a primitive string to ensure the main thread receives the diagnostic.
+       */
+      throw `WASM_INTERNAL_ERR: ${error.message || "Memory Limit Exceeded"}`;
+    }
   }
 };
 
 Comlink.expose(imageWorkerApi);
-
 export type ImageWorkerAPI = typeof imageWorkerApi;
