@@ -15,7 +15,15 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["wagmi", "viem", "lucide-react"],
   },
 
-  turbopack: {},
+  turbopack: {
+    rules: {
+      'wasm': {
+        loaders: ['asset/resource'],
+        as: 'url',
+      },
+    },
+  },
+  
 };
 
 export default nextConfig;
