@@ -7,329 +7,326 @@ import { useKipioCrypto } from '@hooks/useKipioCrypto';
 import { useIrys } from '@hooks/useIrys';
 import { useVault } from '@hooks/useVault';
 import { useImageWorker } from '@hooks/useImageWorker';
+import { formatEther } from 'viem';
 
 /**
- * @title Secure Vault Orchestrator V3.5
- * @author Kipio Engineering
- * @notice Production-grade pipeline optimized for Mobile Context Suspension.
- * @dev Implements a Timeout Race for WASM tasks and enhanced stabilization for mobile bridges.
+ * @title Secure Vault Orchestrator V3.6
+ * @notice Refactored to delegate pricing and settlement retries to specialized hooks.
+ * @dev Pre-calculates costs for transparency before triggering the encryption/upload pipeline.
  */
 export function UploadOrchestrator() {
-  const { 
-    encryptFile, 
-    isLocked, 
-    unlockVault, 
-    workerReady: cryptoReady 
-  } = useKipioCrypto();
-
-  const { initIrys } = useIrys();
-  const { registerUpload, getPhotoId, isProcessing, invalidateVaultCache } = useVault();
+  const { encryptFile, isLocked, unlockVault, workerReady: cryptoReady } = useKipioCrypto();
+  const { initIrys, getUploadPrice, fundNode, balanceAtomic, instance: irysInstance } = useIrys();
+  const { registerUpload, getPhotoId, invalidateVaultCache, estimateRegistrationCost } = useVault();
   const { compress, isReady: imageReady } = useImageWorker();
   
   const [status, setStatus] = useState<'IDLE' | 'AWAITING_SIGNATURE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  
+  // Cost tracking states
+  const [costs, setCosts] = useState({ irys: "0", gas: 0n });
   
   const processingRef = useRef(false);
 
-  const [steps, setSteps] = useState({
-    optim: false,
-    integrity: false,
-    registry: false,
-    crypto: false,
-    storage: false,
-    settlement: false
-  });
+  const addLog = (msg: string) => {
+    const timestamp = new Date().toLocaleTimeString().split(' ')[0];
+    setLogs(prev => [`[${timestamp}] ${msg}`, ...prev].slice(0, 80));
+  };
 
-  /**
-   * @dev Helper to yield execution to the browser's event loop.
-   * Increased default delay to allow mobile OS context restoration.
-   */
+  const copyLogs = async () => {
+    try {
+      await navigator.clipboard.writeText(logs.join('\n'));
+      addLog("SYSTEM: Logs copied to clipboard");
+    } catch (e) {
+      addLog("ERROR: Clipboard access denied");
+    }
+  };
+
+  const [steps, setSteps] = useState({ optim: false, integrity: false, registry: false, crypto: false, storage: false, settlement: false });
+
   const yieldThread = (ms: number = 150) => new Promise(r => setTimeout(r, ms));
 
   const resetSteps = useCallback(() => {
-    setSteps({ 
-        optim: false, 
-        integrity: false, 
-        registry: false, 
-        crypto: false, 
-        storage: false, 
-        settlement: false 
-    });
+    setSteps({ optim: false, integrity: false, registry: false, crypto: false, storage: false, settlement: false });
   }, []);
 
+  const handleReset = useCallback(() => {
+    addLog("UI_ACTION: Full State Reset");
+    setStatus('IDLE');
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setSelectedFile(null);
+    setErrorMsg(null);
+    setCosts({ irys: "0", gas: 0n });
+    processingRef.current = false;
+    resetSteps();
+  }, [previewUrl, resetSteps]);
+
   /**
-   * @notice Core Secure Pipeline logic.
-   * @dev Includes a safety timeout for WASM optimization to prevent mobile hangs.
+   * Pre-flight estimation to show costs in the UI.
    */
+  const runEstimation = useCallback(async (file: File) => {
+    try {
+      const price = await getUploadPrice(file.size);
+      setCosts(prev => ({ ...prev, irys: price }));
+      
+      // Placeholder estimation for gas using a dummy ID
+      const dummyHash = sha256(new Uint8Array(8));
+      const dummyId = "A".repeat(43); 
+      const gasEst = await estimateRegistrationCost(dummyHash, dummyId);
+      setCosts(prev => ({ ...prev, gas: gasEst }));
+    } catch (err) {
+      // Silent fail for estimation to not block UI
+    }
+  }, [getUploadPrice, estimateRegistrationCost]);
+
   const executePipeline = useCallback(async (file: File) => {
     if (processingRef.current) return;
     processingRef.current = true;
+    
+    addLog(`PIPELINE_INIT: ${file.name}`);
 
     try {
       setStatus('PROCESSING');
       
-      // 1. STABILIZATION PHASE
-      // Critical delay: Mobile browsers need time to wake up the main thread after wallet return.
-      await yieldThread(1000);
+      // Stabilization phase for mobile bridge persistence
+      addLog("Stabilization phase (1800ms)...");
+      await yieldThread(1800);
 
-      // 2. INTEGRITY & REGISTRY
+      // --- 1. DATA PREP & INTEGRITY ---
+      addLog("Step: Generating Content Hash...");
       const originalBuffer = await file.arrayBuffer();
       const contentHash = sha256(new Uint8Array(originalBuffer));
       setSteps(s => ({ ...s, integrity: true }));
 
+      // --- 2. REGISTRY CHECK ---
+      addLog("Step: Validating Registry uniqueness...");
       const existingId = await getPhotoId(contentHash);
       if (existingId && existingId !== "" && !existingId.startsWith("0x00000000")) {
         throw new Error("ASSET_ALREADY_IN_VAULT");
       }
       setSteps(s => ({ ...s, registry: true }));
-      
-      // Secondary yield: Prepares worker message channel.
       await yieldThread(400);
 
-      // 3. WASM OPTIMIZATION (Mobile Vulnerability Point)
-      if (!imageReady) throw new Error("IMAGE_ENGINE_DISCONNECTED");
-
-      // We implement a Race Condition guard: If WASM doesn't respond in 40s, we fail gracefully.
-      const compressionTask = compress(file);
-      const timeoutTask = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("OPTIMIZATION_TIMEOUT")), 40000)
-      );
-
+      // --- 3. WASM OPTIMIZATION ---
+      if (!imageReady) throw new Error("WASM_ENGINE_NOT_LOADED");
+      addLog("WASM_Invoke: Compressing asset...");
+      
+      const compressionTask = compress(originalBuffer, file.type); 
+      const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error("WASM_TIMEOUT")), 40000));
       const compressed = await Promise.race([compressionTask, timeoutTask]) as ArrayBuffer;
       
-      if (!compressed || compressed.byteLength === 0) {
-        throw new Error("OPTIMIZATION_FAILED_NULL_BUFFER");
-      }
-
+      if (!compressed || compressed.byteLength === 0) throw new Error("WASM_NULL_BUFFER");
       setSteps(s => ({ ...s, optim: true }));
-      await yieldThread(200);
 
-      // 4. AES-GCM-256 ENCRYPTION
-      if (!cryptoReady) throw new Error("CRYPTO_ENGINE_DISCONNECTED");
+      // --- 4. CRYPTO ---
+      if (!cryptoReady) throw new Error("CRYPTO_ENGINE_OFFLINE");
+      addLog("Crypto: Applying AES-GCM Shield...");
       const encrypted = await encryptFile(compressed, contentHash);
       setSteps(s => ({ ...s, crypto: true }));
-      await yieldThread(200);
 
-      // 5. DECENTRALIZED PROPAGATION
+      // --- 5. STORAGE & AUTO-FUNDING ---
+      addLog("Irys: Connecting to Datachain...");
       const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      let uploadReceipt = null;
-      let attempts = 0;
-      // Increased retries for mobile network stability after context switches.
-      const MAX_RETRIES = isMobile ? 4 : 1; 
-
       const uploadData = Buffer.from(encrypted);
-      const tags = [
-        { name: "Content-Type", value: "image/webp" },
-        { name: "App-Name", value: "Kipio-Vault-v1" },
-        { name: "Encryption", value: "AES-GCM-256" }
-      ];
+      const tags = [{ name: "Content-Type", value: "image/webp" }, { name: "Encryption", value: "AES-GCM-256" }];
+
+      const priceAtomic = await getUploadPrice(uploadData.byteLength);
+      
+      if (BigInt(balanceAtomic) < BigInt(priceAtomic)) {
+        addLog("Irys: Funding node balance...");
+        await fundNode(priceAtomic);
+        addLog("Irys: Funding confirmed.");
+      }
+
+      // --- 6. STORAGE PROPAGATION (MOBILE RETRIES) ---
+      addLog("Irys: Propagating to L1...");
+      let receipt = null;
+      let attempts = 0;
+      const MAX_RETRIES = isMobile ? 4 : 1; 
 
       while (attempts < MAX_RETRIES) {
         try {
           if (isMobile && attempts > 0) {
-            await yieldThread(2000 * attempts);
+            addLog(`Irys: Retry attempt ${attempts + 1}...`);
+            await yieldThread(2500 * attempts);
           }
-
-          const activeIrys = await initIrys();
-          if (!activeIrys?.uploader) throw new Error("IRYS_CONNECTION_FAILED");
-
-          uploadReceipt = await activeIrys.upload(uploadData as any, { tags });
-          if (uploadReceipt?.id) break;
-          throw new Error("IRYS_UPLOAD_FAILED");
           
-        } catch (storageErr: any) {
+          const currentIrys = await initIrys();
+          if (!currentIrys?.uploader) throw new Error("IRYS_AUTH_FAILED");
+
+          receipt = await currentIrys.upload(uploadData as any, { tags });
+          if (receipt?.id) break;
+          throw new Error("UPLOAD_MISSING_ID");
+        } catch (e: any) {
+          const isRejected = e?.message?.includes("rejected") || e?.code === 4001 || e?.code === "ACTION_REJECTED";
+          if (isRejected) throw new Error("ACTION_REJECTED");
+
+          addLog(`Irys_Error: ${e.message}`);
           attempts++;
-          if (attempts >= MAX_RETRIES || storageErr.message?.includes('rejected')) {
-            throw storageErr;
-          }
+          if (attempts >= MAX_RETRIES) throw e;
         }
       }
       
-      if (!uploadReceipt?.id) throw new Error("IRYS_UPLOAD_FAILED");
+      if (!receipt?.id) throw new Error("STORAGE_TIMEOUT");
+      addLog(`Irys_Success: ID ${receipt.id.substring(0, 8)}`);
       setSteps(s => ({ ...s, storage: true }));
-      await yieldThread(150);
 
-      // 6. FINAL SETTLEMENT
-      await registerUpload(contentHash, uploadReceipt.id);
+      // --- 7. SETTLEMENT ---
+      addLog("Blockchain: Finalizing Settlement...");
+      // useVault.registerUpload handles its own mobile retries and RLP safety
+      await registerUpload(contentHash, receipt.id);
       setSteps(s => ({ ...s, settlement: true }));
 
+      addLog("PIPELINE_COMPLETE");
       setStatus('SUCCESS');
       invalidateVaultCache();
-      setTimeout(handleReset, 8000);
+      setTimeout(handleReset, 10000);
 
     } catch (err: any) {
-      const msg = err.message || "";
-      if (msg.includes("rejected") || msg.includes("denied")) {
-        setErrorMsg("Action cancelled by user.");
-      } else if (msg === "ASSET_ALREADY_IN_VAULT") {
-        setErrorMsg("This file is already secured in your vault.");
-      } else if (msg === "OPTIMIZATION_TIMEOUT") {
-        setErrorMsg("Mobile resources exhausted. Please retry.");
-      } else if (msg.includes("DISCONNECTED")) {
-        setErrorMsg("Security engines initializing. Please wait.");
-      } else {
-        setErrorMsg("Pipeline execution failed.");
+      let cleanMessage = err.message;
+      if (err.message === "ACTION_REJECTED" || err.code === "ACTION_REJECTED" || err.message?.includes("rejected")) {
+        cleanMessage = "User rejected the request.";
       }
+      addLog(`FATAL_EXCEPTION: ${cleanMessage}`);
+      setErrorMsg(err.message === "ASSET_ALREADY_IN_VAULT" ? "Asset already secured." : `Error: ${cleanMessage}`);
       setStatus('ERROR');
     } finally {
       processingRef.current = false;
     }
-  }, [getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache, imageReady, cryptoReady]);
+  }, [getPhotoId, compress, encryptFile, initIrys, registerUpload, invalidateVaultCache, imageReady, cryptoReady, getUploadPrice, fundNode, balanceAtomic]);
 
-  /**
-   * @dev REACTIVE WATCHDOG
-   * Crucial for mobile UX. Added a longer 1.2s delay to ensure the browser 
-   * has fully reclaimed foreground priority before starting compute-heavy tasks.
-   */
   useEffect(() => {
     if (!isLocked && selectedFile && status === 'AWAITING_SIGNATURE' && !processingRef.current) {
-        const timer = setTimeout(() => {
-            executePipeline(selectedFile);
-        }, 1200); 
+        addLog("WATCHDOG: Resuming pipeline...");
+        const timer = setTimeout(() => { executePipeline(selectedFile); }, 1800); 
         return () => clearTimeout(timer);
     }
   }, [isLocked, selectedFile, status, executePipeline]);
 
-  const handleFileSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !cryptoReady || !imageReady) return;
-
+    if (!file) return;
+    addLog(`UI_EVENT: Selected ${file.name}`);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-
     setPreviewUrl(URL.createObjectURL(file));
     setSelectedFile(file);
-    setErrorMsg(null);
     setStatus('IDLE');
+    setErrorMsg(null);
     resetSteps();
-
+    runEstimation(file);
     initIrys().catch(() => {});
   };
 
-  const startSecurePipeline = async () => {
+  const handleStartInteraction = async () => {
     if (!selectedFile) return;
-
     if (isLocked) {
       setStatus('AWAITING_SIGNATURE');
-      try {
-        await unlockVault();
-      } catch (lockErr) {
-        setStatus('IDLE');
+      try { 
+        await unlockVault(); 
+      } catch (e: any) { 
+        setStatus('IDLE'); 
+        addLog("CANCELLED: User rejected signature"); 
       }
     } else {
       executePipeline(selectedFile);
     }
   };
 
-  const handleReset = useCallback(() => {
-    setStatus('IDLE');
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setSelectedFile(null);
-    setErrorMsg(null);
-    processingRef.current = false;
-    resetSteps();
-  }, [previewUrl, resetSteps]);
-
   return (
-    <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-      <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
-        <div className="flex justify-between items-center">
+    <div className="flex flex-col gap-4">
+      <div className="w-full max-w-md bg-[#0a0c10] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent flex justify-between items-center">
           <div>
-            <h3 className="text-white font-bold tracking-tight text-lg">Vault Orchestrator</h3>
-            <p className="text-[10px] font-mono text-gray-500 uppercase tracking-widest text-blue-400/80">Shield v3.5 - Atomic Bridge</p>
+            <h3 className="text-white font-bold text-lg">Vault Orchestrator</h3>
+            <p className="text-[10px] font-mono text-blue-400/80 uppercase tracking-widest">Shield v3.6... Test</p>
           </div>
-          <div className={`h-2 w-2 rounded-full transition-all duration-500 ${
-            status === 'SUCCESS' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
-            status === 'ERROR' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 
-            status === 'IDLE' ? 'bg-gray-800' : 'bg-blue-500 animate-pulse'
+          <div className={`h-2.5 w-2.5 rounded-full shadow-lg transition-colors duration-500 ${
+            status === 'SUCCESS' ? 'bg-green-500 shadow-green-500/50' : 
+            status === 'ERROR' ? 'bg-red-500 shadow-red-500/50' : 
+            status === 'PROCESSING' || status === 'AWAITING_SIGNATURE' ? 'bg-blue-500 animate-pulse' : 'bg-gray-800'
           }`} />
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="space-y-2 opacity-80">
+            <StatusLine label="Integrity" active={steps.integrity} />
+            <StatusLine label="WASM Optimization" active={steps.optim} />
+            <StatusLine label="AES-GCM Crypto" active={steps.crypto} />
+            <StatusLine label="Irys Storage" active={steps.storage} />
+            <StatusLine label="Vault Settlement" active={steps.settlement} />
+          </div>
+
+          <div className="relative">
+            {!previewUrl ? (
+              <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:bg-white/5 transition-all">
+                <div className="text-center">
+                  <p className="text-sm font-bold text-gray-400">Secure New Asset</p>
+                  <p className="text-[9px] text-gray-600 mt-1 font-mono uppercase tracking-widest">Cypherpunk Protocol</p>
+                </div>
+                <input type="file" className="hidden" accept="image/*" onChange={handleFileSelection} />
+              </label>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative rounded-2xl overflow-hidden border border-white/10 aspect-video bg-black">
+                  <img src={previewUrl} className={`w-full h-full object-cover transition-opacity duration-500 ${status === 'PROCESSING' ? 'opacity-40 blur-sm' : 'opacity-100'}`} alt="Preview" />
+                  {(status === 'IDLE' || status === 'ERROR' || status === 'SUCCESS') && (
+                    <button onClick={handleReset} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-black">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </div>
+
+                {status === 'IDLE' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white/5 p-3 rounded-xl border border-white/5">
+                        <p className="text-[8px] uppercase text-gray-500 font-bold mb-1">Storage Cost</p>
+                        <p className="text-[10px] text-blue-400 font-mono">
+                          {costs.irys !== "0" ? `${(Number(costs.irys) / 1e18).toFixed(6)} ETH` : "Calculating..."}
+                        </p>
+                      </div>
+                      <div className="bg-white/5 p-3 rounded-xl border border-white/5">
+                        <p className="text-[8px] uppercase text-gray-500 font-bold mb-1">Vault Fee (Est)</p>
+                        <p className="text-[10px] text-purple-400 font-mono">
+                          {costs.gas > 0n ? `${formatEther(costs.gas).substring(0, 8)} ETH` : "Calculating..."}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={handleStartInteraction} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">
+                      Finalize & Secure Asset
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="h-6 flex items-center justify-center text-[10px] font-bold uppercase tracking-tight">
+            {status === 'ERROR' && <span className="text-red-400">⚠️ {errorMsg}</span>}
+            {status === 'AWAITING_SIGNATURE' && <span className="text-yellow-500 animate-pulse">Signature Required...</span>}
+            {status === 'SUCCESS' && <span className="text-green-400">Asset Securely Archived</span>}
+          </div>
         </div>
       </div>
 
-      <div className="p-6 space-y-6">
-        <div className="space-y-2 opacity-90">
-          <StatusLine label="Integrity & Registry" active={steps.integrity && steps.registry} />
-          <StatusLine label="WASM Optimization" active={steps.optim} />
-          <StatusLine label="AES-GCM Shielding" active={steps.crypto} />
-          <StatusLine label="Decentralized Storage" active={steps.storage} />
-          <StatusLine label="Stylus Finalization" active={steps.settlement} />
-        </div>
-
-        {!previewUrl ? (
-          <label className="group relative flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all">
-            <div className="flex flex-col items-center justify-center space-y-3">
-              <div className="p-4 bg-white/5 rounded-full group-hover:scale-110 transition-transform bg-blue-500/10">
-                <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-              </div>
-              <div className="text-center px-4">
-                <p className="text-sm font-bold text-gray-300">Secure New Asset</p>
-                <p className="text-[10px] text-gray-500 font-mono mt-1 uppercase text-center">Encrypted in local RAM</p>
-              </div>
-            </div>
-            <input type="file" className="hidden" accept="image/*" onChange={handleFileSelection} disabled={status === 'PROCESSING'} />
-          </label>
-        ) : (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-            <div className="relative rounded-2xl overflow-hidden border border-white/10 aspect-video bg-black group">
-              <img 
-                src={previewUrl} 
-                className={`w-full h-full object-cover transition-all duration-700 ${status === 'PROCESSING' ? 'blur-md grayscale' : ''}`} 
-                alt="Vault Preview" 
-              />
-              {status === 'PROCESSING' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
-                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
-                  <span className="text-[10px] font-mono font-black text-white uppercase tracking-widest">Shielding Asset...</span>
-                </div>
-              )}
-              {(status === 'ERROR' || status === 'SUCCESS' || status === 'IDLE') && (
-                <button 
-                  onClick={handleReset}
-                  className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black rounded-full text-white/70 hover:text-white transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-            
-            {status === 'IDLE' && (
-                <button 
-                    onClick={startSecurePipeline}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-[0.98]"
-                >
-                    Finalize & Secure Asset
-                </button>
-            )}
+      <div className="w-full max-w-md bg-black border border-white/5 rounded-xl p-4 shadow-2xl">
+        <div className="flex justify-between items-center mb-3 border-b border-white/10 pb-2">
+          <span className="text-blue-500 font-bold uppercase text-[9px] tracking-widest">Diagnostic Console</span>
+          <div className="flex gap-4">
+            <button onClick={copyLogs} className="text-[9px] text-blue-400 hover:text-white uppercase font-bold tracking-widest">Copy</button>
+            <button onClick={() => setLogs([])} className="text-[9px] text-gray-500 hover:text-white uppercase font-bold tracking-widest">Clear</button>
           </div>
-        )}
-
-        <div className="min-h-[40px] flex items-center justify-center">
-          {status === 'ERROR' ? (
-            <div className="flex flex-col items-center gap-1 text-center">
-              <span className="text-[11px] font-bold text-red-400 uppercase tracking-tighter">⚠️ {errorMsg}</span>
-              <button onClick={handleReset} className="text-[9px] text-gray-500 underline hover:text-white uppercase font-mono tracking-widest">Discard and Retry</button>
+        </div>
+        <div className="h-40 overflow-y-auto font-mono text-[9px] space-y-1 scrollbar-hide">
+          {logs.map((log, i) => (
+            <div key={i} className={`${log.includes('FATAL') || log.includes('Error') || log.includes('CANCELLED') || log.includes('REJECTED') ? 'text-red-400' : log.includes('Success') || log.includes('COMPLETE') ? 'text-green-400' : 'text-gray-500'}`}>
+              {log}
             </div>
-          ) : status === 'AWAITING_SIGNATURE' ? (
-            <div className="flex items-center gap-2 text-yellow-500">
-              <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-ping" />
-              <span className="text-[11px] font-bold uppercase tracking-widest">Awaiting Wallet Signature...</span>
-            </div>
-          ) : isProcessing ? (
-            <div className="flex items-center gap-2 text-blue-400">
-              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-              <span className="text-[11px] font-bold uppercase tracking-widest italic tracking-wider">Settling on Arbitrum...</span>
-            </div>
-          ) : status === 'SUCCESS' ? (
-            <span className="text-[11px] font-bold text-green-400 uppercase tracking-widest">✓ Final Settlement Verified</span>
-          ) : (
-            <span className="text-[10px] font-mono text-gray-700 uppercase tracking-[0.3em]">Integrity Assured</span>
-          )}
+          ))}
         </div>
       </div>
     </div>
@@ -340,7 +337,7 @@ function StatusLine({ label, active }: { label: string, active: boolean }) {
   return (
     <div className="flex items-center gap-3">
       <div className={`h-[1px] flex-1 transition-all duration-1000 ${active ? 'bg-gradient-to-r from-green-500/40 to-transparent' : 'bg-white/5'}`} />
-      <span className={`text-[9px] font-mono uppercase tracking-widest transition-colors duration-500 ${active ? 'text-green-400 font-bold' : 'text-gray-700'}`}>
+      <span className={`text-[9px] font-mono uppercase tracking-widest ${active ? 'text-green-400 font-bold' : 'text-gray-700'}`}>
         {label}
       </span>
       <div className={`w-1.5 h-1.5 rounded-full transition-all duration-700 ${active ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-900 border border-white/10'}`} />
