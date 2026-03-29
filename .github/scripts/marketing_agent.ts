@@ -1,5 +1,10 @@
 import { spawnSync } from "child_process";
 
+/**
+ * VaultChain Marketing Agent
+ * Role: Lead Marketing Engineer (March 2026)
+ * Resilience: Implements a failover mechanism for LLM providers.
+ */
 async function run() {
   // 1. GATHER ALL CONTEXT (The "Anti-Chambonada" Layer)
   const history = spawnSync("git", ["log", "--oneline", "-n", "30"]).stdout.toString();
@@ -19,7 +24,9 @@ async function run() {
     const memRes = await fetch(process.env.GOOGLE_DEPLOYMENT_URL!);
     const memData = await memRes.json();
     if (memData.length > 0) pastProposals = JSON.stringify(memData);
-  } catch (e) { console.log("New memory initialized."); }
+  } catch (e) {
+    // Silent fail for production resilience: memory becomes optional
+  }
 
   const prompt = `
     ROLE: Lead Marketing Engineer @ VaultChain (2026).
@@ -50,24 +57,40 @@ async function run() {
     5. Max 280 chars per post. No corporate fluff. No emojis.
   `;
 
+  // Resilience Logic: Array of models to try in order.
+  // Updated to Llama 3.3 and 3.1 8b for 2026 compatibility.
+  const models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+  let proposal = "";
+
+  for (const model of models) {
+    try {
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "system", content: prompt }],
+          temperature: 0.7
+        })
+      });
+
+      const data = await groqRes.json();
+      if (data.choices?.[0]?.message?.content) {
+        proposal = data.choices[0].message.content;
+        break; // Success: exit loop
+      }
+    } catch (err) {
+      // Continue to next model in loop
+    }
+  }
+
+  if (!proposal) throw new Error("All LLM models failed to respond.");
+
+  // 3. PERSIST & NOTIFY
   try {
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-70b-versatile",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.7
-      })
-    });
-
-    const data = await groqRes.json();
-    const proposal = data.choices[0].message.content;
-
-    // 3. PERSIST & NOTIFY
     await fetch(process.env.GOOGLE_DEPLOYMENT_URL!, {
       method: "POST",
       body: JSON.stringify({ action: "saveProposal", tag: currentTag, commit: commitMsg, proposal })
@@ -80,10 +103,8 @@ async function run() {
         content: `## 🛸 VaultChain Intelligence [${currentTag}]\n\n${proposal}\n\n---\n**Management:**\n[Open Memory Sheet](${process.env.SHEET_URL})`
       })
     });
-
-    console.log("Marketing intelligence dispatched.");
   } catch (err) {
-    console.error("Agent failed:", err);
+    // Critical failure if notification fails
     process.exit(1);
   }
 }

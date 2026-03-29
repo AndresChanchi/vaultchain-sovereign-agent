@@ -6,7 +6,7 @@ on:
 jobs:
   intelligence_pulse:
     runs-on: ubuntu-latest
-    # Filter: Only trigger on relevant updates to avoid spam
+    # Filter: Flexible detection for scoped commits
     if: |
       contains(github.event.head_commit.message, 'feat') || 
       contains(github.event.head_commit.message, 'fix') ||
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Get full history for the AI to analyze
+          fetch-depth: 0 # Full history required for context analysis
 
       - name: Setup Bun Environment
         uses: oven-sh/setup-bun@v1
