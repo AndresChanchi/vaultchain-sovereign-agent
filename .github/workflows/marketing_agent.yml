@@ -1,0 +1,31 @@
+name: VaultChain Marketing Agent
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  intelligence_pulse:
+    runs-on: ubuntu-latest
+    # Filter: Flexible detection for scoped commits
+    if: |
+      contains(github.event.head_commit.message, 'feat') || 
+      contains(github.event.head_commit.message, 'fix') ||
+      contains(github.event.head_commit.message, 'docs')
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history required for context analysis
+
+      - name: Setup Bun Environment
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.10
+
+      - name: Run Marketing Script
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GOOGLE_DEPLOYMENT_URL: ${{ secrets.GOOGLE_DEPLOYMENT_URL }}
+          SHEET_URL: ${{ secrets.SHEET_URL }}
+        run: bun run .github/scripts/marketing_agent.ts
