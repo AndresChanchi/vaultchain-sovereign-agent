@@ -1,0 +1,25 @@
+[package]
+name = "kipio_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stylus-sdk = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+[dev-dependencies]
+motsu = { workspace = true }
+arbitrary = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "alloy-primitives/std",
+    "alloy-sol-types/std",
+]
+
+export-abi = ["stylus-sdk/export-abi"]
+
+[lib]
+crate-type = ["lib","cdylib"]

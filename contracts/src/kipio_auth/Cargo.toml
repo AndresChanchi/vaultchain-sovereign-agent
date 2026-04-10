@@ -1,0 +1,31 @@
+[package]
+name = "kipio_auth"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stylus-sdk = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+# No_std cryptography for TPRE and Passkeys (secp256r1/k1)
+k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+
+# Required for precompiling ArbOS 52 Passkeys
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] } 
+
+[dev-dependencies]
+motsu = { workspace = true }
+arbitrary = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "alloy-primitives/std",
+    "alloy-sol-types/std",
+]
+
+export-abi = ["stylus-sdk/export-abi"]
+
+[lib]
+crate-type = ["lib","cdylib"]
