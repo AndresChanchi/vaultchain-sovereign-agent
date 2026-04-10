@@ -1,36 +1,24 @@
-[package]
-name = "kipio-contract"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+  "src/kipio_core",
+  "src/kipio_auth",
+  "src/kipio_access",
+  "src/kipio_registry",
+  "src/kipio_recovery"
+]
 
-[dependencies]
+resolver = "3"
+
+[workspace.dependencies]
 # Enable mini-alloc to efficiently handle Vec/String in WASM
 stylus-sdk = { version = "0.10.2", features = ["mini-alloc", "hostio"] }
 alloy-primitives = { version = "1.3.1", default-features = false }
 alloy-sol-types = { version = "1.3.1", default-features = false }
 
-# No_std cryptography for TPRE and Passkeys (secp256r1/k1)
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 
-# Required for precompiling ArbOS 52 Passkeys
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] } 
-
-[dev-dependencies]
 # Motsu 0.10.0 is the testing standard for ArbOS 52
 motsu = "0.10.0"
 arbitrary = { version = "1.4", features = ["derive"] }
-
-[features]
-default = ["std"]
-std = [
-    "alloy-primitives/std",
-    "alloy-sol-types/std",
-]
-
-export-abi = ["stylus-sdk/export-abi"]
-
-[lib]
-crate-type = ["lib", "cdylib"]
 
 [profile.release]
 codegen-units = 1
