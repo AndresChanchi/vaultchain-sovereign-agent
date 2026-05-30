@@ -2,6 +2,8 @@
 members = [
   "src/kipio_core",
   "src/kipio_auth",
+  "src/kipio_auth_verifier_p256",
+# "src/kipio_auth_verifier_k256",
   "src/kipio_access",
   "src/kipio_registry",
   "src/kipio_recovery"
@@ -11,9 +13,12 @@ resolver = "3"
 
 [workspace.dependencies]
 # Enable mini-alloc to efficiently handle Vec/String in WASM
-stylus-sdk = { version = "0.10.2", features = ["mini-alloc", "hostio"] }
-alloy-primitives = { version = "1.3.1", default-features = false }
-alloy-sol-types = { version = "1.3.1", default-features = false }
+# https://github.com/OffchainLabs/stylus-sdk-rs/releases
+stylus-sdk = { version = "0.10.7", features = ["mini-alloc", "hostio"] }
+# https://crates.io/crates/alloy-primitives 
+alloy-primitives = { version = "1.6.0", default-features = false }
+# https://crates.io/crates/alloy-sol-types 
+alloy-sol-types = { version = "1.6.0", default-features = false }
 
 
 # Motsu 0.10.0 is the testing standard for ArbOS 52
