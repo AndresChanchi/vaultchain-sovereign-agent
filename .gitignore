@@ -12,6 +12,11 @@
 **/cargo-timing.bin
 
 # ==========================================
+# Foundry
+**/dependencies
+**/cache
+
+# ==========================================
 # 2. BUN, NEXT.JS & JAVASCRIPT
 # ==========================================
 # Dependencies and builds in any subfolder
