@@ -1,0 +1,31 @@
+[package]
+name = "kipio_auth_verifier_p256"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stylus-sdk = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+# P256 verification delegated to ArbOS secp256r1 precompile (RIP-7212 style)
+
+[dev-dependencies]
+motsu = { workspace = true }
+arbitrary = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "alloy-primitives/std",
+    "alloy-sol-types/std",
+]
+
+export-abi = ["stylus-sdk/export-abi"]
+
+[lib]
+crate-type = ["lib","cdylib"]
+
+[[bin]]
+name = "export-abi"
+path = "src/bin/export_abi.rs"
