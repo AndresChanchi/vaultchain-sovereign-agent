@@ -20,6 +20,8 @@ alloy-primitives = { version = "1.6.0", default-features = false }
 # https://crates.io/crates/alloy-sol-types 
 alloy-sol-types = { version = "1.6.0", default-features = false }
 
+# 
+# k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 
 # Motsu 0.10.0 is the testing standard for ArbOS 52
 motsu = "0.10.0"
