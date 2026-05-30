@@ -7,6 +7,7 @@ endif
 # Configuration
 ENDPOINT_SEPOLIA = https://sepolia-rollup.arbitrum.io/rpc
 CONTRACT_PATH = ./contracts
+INTERFACES_DIR = interfaces
 
 # Optional contract selector (WORKSPACE vs SINGLE CRATE)
 ifdef contract
@@ -18,6 +19,14 @@ else
 	STYLUS_CMD = cargo stylus
 endif
 
+# ABI output names
+KIPIO_CORE_ABI = $(INTERFACES_DIR)/IKipioCore.sol
+KIPIO_REGISTRY_ABI = $(INTERFACES_DIR)/IKipioRegistry.sol
+KIPIO_ACCESS_ABI = $(INTERFACES_DIR)/IKipioAccess.sol
+KIPIO_AUTH_ABI = $(INTERFACES_DIR)/IKipioAuthP256.sol
+KIPIO_AUTH_VERIFIER_ABI = $(INTERFACES_DIR)/IKipioAuthVerifier.sol
+KIPIO_RECOVERY_ABI = $(INTERFACES_DIR)/IKipioRecovery.sol
+
 # ==========================================
 # 1. DEVELOPMENT & COMPILATION
 # ==========================================
@@ -28,7 +37,33 @@ build:
 
 ## @dev Generates the Solidity-compatible ABI. Required for frontend integration (ethers/viem).
 abi:
-	$(STYLUS_CMD) export-abi
+	@mkdir -p foundry/src/interfaces
+ifdef contract
+	@echo "📦 Exporting ABI for $(contract)"
+	@set -e; \
+	cd src/$(contract) && cargo stylus export-abi --output ../../foundry/src/interfaces/I$$(printf '%s' "$(contract)" | sed 's/_\([a-z]\)/\U\1/g; s/^/Kipio/; s/^\(Kipio\)\(.*\)/\1\2/').sol
+else
+	@echo "📦 Exporting ABI: KipioCore"
+	@cd src/kipio_core && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioCore.sol
+
+	@echo "📦 Exporting ABI: KipioRegistry"
+	@cd src/kipio_registry && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioRegistry.sol
+
+	@echo "📦 Exporting ABI: KipioAccess"
+	@cd src/kipio_access && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAccess.sol
+
+	@echo "📦 Exporting ABI: KipioAuthP256"
+	@cd src/kipio_auth && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuthP256.sol
+
+	@echo "📦 Exporting ABI: KipioAuthVerifier"
+	@cd src/kipio_auth_verifier && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuthVerifier.sol
+
+	@echo "📦 Exporting ABI: KipioRecovery"
+	@cd src/kipio_recovery && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioRecovery.sol
+
+	@echo ""
+	@echo "✅ All ABIs generated in ./foundry/src/interfaces"
+endif
 
 ## @dev Reconstructs the Cargo.lock file. Essential after manual deletions or deep cleaning.
 lock:

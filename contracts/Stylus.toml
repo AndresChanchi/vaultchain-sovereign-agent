@@ -2,6 +2,7 @@
 members = [
   "src/kipio_core",
   "src/kipio_auth",
+  "src/kipio_auth_verifier_p256",
   "src/kipio_access",
   "src/kipio_registry",
   "src/kipio_recovery"
