@@ -23,3 +23,7 @@ export-abi = ["stylus-sdk/export-abi"]
 
 [lib]
 crate-type = ["lib","cdylib"]
+
+[[bin]]
+name = "export-abi"
+path = "src/bin/export_abi.rs"

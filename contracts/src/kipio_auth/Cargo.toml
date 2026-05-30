@@ -8,12 +8,6 @@ stylus-sdk = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 
-# No_std cryptography for TPRE and Passkeys (secp256r1/k1)
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-
-# Required for precompiling ArbOS 52 Passkeys
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] } 
-
 [dev-dependencies]
 motsu = { workspace = true }
 arbitrary = { workspace = true }
@@ -29,3 +23,7 @@ export-abi = ["stylus-sdk/export-abi"]
 
 [lib]
 crate-type = ["lib","cdylib"]
+
+[[bin]]
+name = "export-abi"
+path = "src/bin/export_abi.rs"
