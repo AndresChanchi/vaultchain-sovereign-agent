@@ -52,11 +52,11 @@ else
 	@echo "📦 Exporting ABI: KipioAccess"
 	@cd src/kipio_access && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAccess.sol
 
-	@echo "📦 Exporting ABI: KipioAuthP256"
-	@cd src/kipio_auth && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuthP256.sol
+	@echo "📦 Exporting ABI: KipioAuth"
+	@cd src/kipio_auth && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuth.sol
 
-	@echo "📦 Exporting ABI: KipioAuthVerifier"
-	@cd src/kipio_auth_verifier && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuthVerifier.sol
+	@echo "📦 Exporting ABI: KipioAuthP256"
+	@cd src/kipio_auth_verifier_p256 && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioAuthVerifierP256.sol
 
 	@echo "📦 Exporting ABI: KipioRecovery"
 	@cd src/kipio_recovery && cargo stylus export-abi --output ../../foundry/src/interfaces/IKipioRecovery.sol
