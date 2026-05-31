@@ -89,7 +89,7 @@ impl KipioCore {
         &mut self,
         content_id: B256,
         grantee: Address,
-        kfrag_pointer: B256,
+        access_reference: B256,
     ) -> Result<(), Vec<u8>> {
         let access = self.access_module.get();
 
@@ -98,7 +98,7 @@ impl KipioCore {
         // DOES NOT BREAK RULES:
         // - Core stays minimal and immutable
         // - No cryptographic material is stored here
-        let _ = (access, content_id, grantee, kfrag_pointer);
+        let _ = (access, content_id, grantee, access_reference);
 
         Ok(())
     }
