@@ -7,13 +7,11 @@
 pragma solidity ^0.8.23;
 
 interface IKipioAccess {
-    function grantAccess(bytes32 content_id, address grantee, bytes32 kfrag_pointer) external;
+    function grantAccess(bytes32 content_id, address grantee) external;
 
     function revokeAccess(bytes32 content_id, address grantee) external;
 
     function hasAccess(address owner, bytes32 content_id, address grantee) external view returns (bool);
-
-    function getKfragPointer(address owner, bytes32 content_id, address grantee) external view returns (bytes32);
 
     function getSharedPaginated(address owner, bytes32 content_id, uint32 offset, uint32 limit) external view returns (address[] memory);
 }

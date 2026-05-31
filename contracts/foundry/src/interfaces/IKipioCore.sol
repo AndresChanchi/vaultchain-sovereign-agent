@@ -11,7 +11,7 @@ interface IKipioCore {
 
     function rotateContent(bytes32 content_id, string calldata new_tx) external;
 
-    function grantAccess(bytes32 content_id, address grantee, bytes32 kfrag_pointer) external;
+    function grantAccess(bytes32 content_id, address grantee, bytes32 access_reference) external;
 
     function revokeAccess(bytes32 content_id, address grantee) external;
 
