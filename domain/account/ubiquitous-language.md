@@ -1,151 +1,459 @@
 # Kipio Account Ubiquitous Language
 
-## Domain Purpose
+## Provisional Domain Definition — Phase 2 Consolidated
+
+> **Status:** Current semantic source of truth for the formalization of `Kipio Account`.
+>
+> This document reflects the domain decisions established during Phase 2.
+> Implementation details may still evolve, but Dafny, Rust and blockchain representations must conform to these semantics rather than redefine them.
+
+---
+
+# 1. Domain Purpose
 
 `Kipio Account` defines a primitive of **sovereign identity, authority, and execution over blockchain**.
 
 Its purpose is to allow an application to determine:
 
-1. who exercises an Identity;
+1. which sovereign `Identity` is exercising authority;
 2. what authority exists for that Identity;
-3. who can exercise that authority;
-4. under what conditions it can be exercised;
-5. what concrete action is requested;
-6. whether that action is authorized;
-7. and how an authorized execution can be materialized on blockchain.
+3. which subject or mechanism may exercise that authority;
+4. under what conditions it may be exercised;
+5. what action the consuming context requests;
+6. whether such exercise is authorized;
+7. and how an authorized decision can be materialized on blockchain.
 
-`Kipio Account` does not define the meaning of actions specific to an application.
+`Kipio Account` **does not define the meaning of business actions** of the consuming context.
 
-An application can use the same model to represent users, organizations, companies, agents, services, or other subjects, as long as those subjects can exercise authority through an Identity.
+The same model may be used by applications that work with:
 
-The domain is designed around blockchain because the sovereignty modeled by `Identity` requires a shared environment in which relevant state and transitions can be verifiable without relying exclusively on trust in a central authority.
+* people;
+* organizations;
+* companies;
+* agents;
+* services;
+* devices;
+* or other subjects.
 
-The domain, however, **is not defined by a blockchain, Account Abstraction standard, cryptographic mechanism, or concrete implementation**.
+The domain is designed around blockchain because the sovereignty represented by `Identity` requires a shared environment in which relevant states and transitions can be verified without relying exclusively on a central authority.
 
----
+However, the domain is not defined by:
 
-# 1. Identity
-
-An **Identity** represents a sovereign subject recognized by the protocol.
-
-An Identity is the entity over which authority exists and whose rights of exercise can be delegated, restricted, revoked, or recovered.
-
-An Identity is not:
-
-* a private key;
-* a Credential;
-* a specific address;
+* Ethereum;
+* EVM;
+* Arbitrum;
+* Stylus;
+* EIP-7702;
+* ERC-4337;
+* RIP-7560;
+* a cryptographic curve;
 * a wallet;
-* a Web2 application user account;
-* a cryptographic mechanism;
-* nor an authentication provider.
-
-An Identity can be exercised through different Credentials without ceasing to be the same Identity.
-
-The existence of an Identity is independent of the mechanism used to produce an Authorization.
-
-### Invariant
-
-Changing, adding, revoking, or recovering a Credential **does not imply creating a new Identity**, unless the protocol explicitly determines otherwise.
+* a blockchain address;
+* nor any other concrete implementation.
 
 ---
 
-# 2. Account
+# 2. External Identity and Authentication Context
 
-An **Account** is the sovereign component through which an Identity exercises authority over blockchain.
+An application may have identities and authentication mechanisms external to `Kipio Account`.
 
-The Account maintains the **operational state of authority** required to determine which exercise of authority can produce a valid execution.
+Examples:
 
-The Account manages, among other elements:
+```text
+email
+phone
+passkey
+WebAuthn credential
+OAuth identity
+EOA
+hardware authenticator
+```
+
+These elements belong to the external context and **are not automatically a Kipio `Identity`**.
+
+Therefore:
+
+```text
+External Identity
+    !=
+Kipio Identity
+
+Authentication Mechanism
+    !=
+Kipio Identity
+
+Blockchain Address
+    !=
+Kipio Identity
+```
+
+An external mechanism may produce evidence that is subsequently recognized by a `Credential`.
+
+The conceptual relationship is:
+
+```text
+External Identity / Authentication
+        ↓
+authentication evidence
+        ↓
+Credential
+        ↓
+Account recognition
+        ↓
+authority exercise
+        ↓
+blockchain execution
+```
+
+Loss or replacement of an external authentication mechanism **does not by itself imply the loss of the Kipio Identity**.
+
+This allows an Identity to maintain sovereign continuity even when the mechanisms through which it can be exercised change.
+
+---
+
+# 3. Subject
+
+A **Subject** represents the semantic actor to whom an Identity is attributed within Kipio.
+
+It may represent:
+
+* a person;
+* an organization;
+* a company;
+* an agent;
+* a service;
+* a device;
+* or another actor recognized by the consuming context.
+
+Subject is not:
+
+* an Identity;
+* a Credential;
+* an Account;
+* a blockchain address;
+* nor an authentication mechanism.
+
+The distinction is:
+
+```text
+Subject
+    =
+semantic actor
+
+Identity
+    =
+sovereign continuity within Kipio
+```
+
+A single Subject may be associated with multiple Identities:
+
+```text
+Subject
+    ├── Identity A
+    ├── Identity B
+    └── Identity C
+```
+
+This allows, for example, the same person to have distinct sovereign identities for different contexts, or an organization to have different sovereign continuities for different functions.
+
+### Cardinality
+
+```text
+Subject
+    1
+    │
+    └──── 0..N
+           Identities
+```
+
+Each `Identity` is attributed to exactly one `Subject`.
+
+Within Kipio, `Subject` is a **Value Object / semantic actor descriptor**.
+
+---
+
+# 4. Identity
+
+An **Identity** represents a sovereign continuity recognized by Kipio through which a Subject may exercise authority.
+
+`Identity` is an **Entity**.
+
+The identity of an Identity is independent of:
+
+* Credentials;
+* Accounts;
+* cryptographic mechanisms;
+* blockchain addresses;
+* Account Abstraction standards;
+* technical representations.
+
+An Identity may control multiple Accounts:
+
+```text
+Identity A
+    ├── Account A
+    ├── Account B
+    └── Account C
+```
+
+An Identity may also use multiple Credentials.
+
+Changing, adding, suspending, revoking, or recovering a Credential **does not automatically create a new Identity**.
+
+Creating or deleting an Account also does not automatically create a new Identity.
+
+Changing the blockchain representation of an Account also does not automatically change the Identity.
+
+### Identity Identifier
+
+An Identity has its own stable and individual identity:
+
+```text
+IdentityId
+```
+
+### Cardinality
+
+```text
+Subject
+    1
+    │
+    └──── 0..N
+           Identity
+```
+
+---
+
+# 5. Account
+
+An **Account** is the operational component through which an Identity exercises authority over blockchain.
+
+`Account` is an **Entity**.
+
+An Account has its own identity:
+
+```text
+AccountId
+```
+
+AccountId is different from a blockchain address.
+
+The Account maintains the operational state necessary to determine which exercises of authority may produce valid execution.
+
+That state may include:
 
 * Capabilities;
 * Credentials;
+* Credential Authorities;
 * Sessions;
 * Delegations;
-* state derived from Policies;
-* and the relationships necessary between them.
+* recognized Policy Effects;
+* and relationships among those elements.
 
-The Account does not determine the meaning of actions specific to an application.
+### Identity ↔ Account Cardinality
 
-The Account is also not responsible for implementing a specific cryptographic mechanism or a specific standard for execution.
+The sovereign relationship is:
 
-### Primary Responsibility
+```text
+Identity
+    1
+    │
+    └──── 0..N
+           Accounts
+```
 
-> **The Account manages the authority state required to allow authorized executions over blockchain.**
+Each Account has **exactly one sovereign Identity**.
 
-The Account does not itself execute an action simply because authority exists to perform it.
+Therefore:
+
+```text
+Account
+    └── sovereign Identity = exactly one
+```
+
+A second Identity may receive authority to operate an Account through:
+
+* Credential;
+* Delegation;
+* Session;
+* or other recognized mechanisms.
+
+That does not make the second Identity sovereign over that Account.
+
+Therefore:
+
+```text
+Identity A ─────► Account X
+     sovereign control
+
+Identity B ─────► Account X
+     authorized exercise
+```
+
+does not mean:
+
+```text
+Identity A ──┐
+             ├──► Account X
+Identity B ──┘
+    co-sovereignty
+```
+
+The domain **does not allow multiple direct sovereign Identities over the same Account**.
+
+Creating another Account creates another Entity even if it belongs to the same Identity.
 
 ---
 
-# 3. Authority
+# 6. Account Identity Representation
 
-**Authority** represents the effective ability to exercise specific Capabilities.
+An Account may have a technical representation on a specific blockchain.
 
-Authority is not an independent entity that necessarily needs to be persisted.
+For example:
 
-It is a semantic relationship that may result from the combination of:
+```text
+Account
+    ↓
+EVM representation
+    ↓
+Address
+```
 
-* Capabilities existing in an Account;
+Therefore:
+
+```text
+Account
+    !=
+Blockchain Address
+```
+
+A blockchain address represents how an Account is technically materialized.
+
+It does not represent:
+
+* the Identity;
+* sovereignty;
+* nor necessarily the AccountId.
+
+Switching between compatible materialization mechanisms does not automatically create another Account as long as the same Entity lifecycle continues.
+
+### Principle
+
+```text
+Identity
+    ≠
+Account
+    ≠
+Blockchain Address
+```
+
+---
+
+# 7. Authority
+
+**Authority** represents the effective ability to exercise particular Capabilities.
+
+Authority does not necessarily constitute a persistent Entity.
+
+It is a semantic relationship derived from:
+
+* available Capabilities;
 * Credential Authority;
 * Sessions;
 * Delegations;
 * Restrictions;
-* applicable Policies;
-* and other conditions currently in effect.
+* Policy Effects;
+* Scope;
+* temporal conditions;
+* context;
+* and other conditions in force.
 
 Authority answers:
 
-> **"What can this subject exercise in this context?"**
+> **what may be exercised, by whom, and under what conditions.**
 
-It does not answer:
-
-> "How do they cryptographically prove that they are who they are?"
-
-That belongs to Credential, Proof, and Verifier.
+Authority does not define how cryptographic evidence is produced.
 
 ---
 
-# 4. Capability
+# 8. Capability
 
-A **Capability** represents an ability that can be exercised by an Identity or by authority derived from it.
+A **Capability** represents an ability that may be exercised by an Identity or derived authority.
 
-A Capability expresses **what authority exists**.
+Capability expresses:
 
-Conceptual examples may include:
+> **what ability exists.**
 
-* storing;
-* transferring;
-* sharing;
-* administering;
-* executing;
-* delegating;
-* modifying a certain class of resource.
+Examples:
 
-The concrete meaning of a Capability belongs to the application using the domain.
+```text
+Upload
+Delete
+Share
+Transfer
+Approve
+Delegate
+Manage
+```
 
-`Kipio Account` does not need to know what a specific business action means.
+The specific meaning of a Domain Action remains the responsibility of the consuming bounded context.
 
 A Capability may be limited by:
 
 * Scope;
 * Restrictions;
-* time;
 * Session;
 * Delegation;
+* temporal conditions;
 * context;
-* or other conditions recognized by the domain.
+* Policy Effects;
+* and other recognized rules.
+
+## Capability as Value Object
+
+`Capability` is a **Value Object**.
+
+Two Capabilities with exactly the same semantic content represent the same ability:
+
+```text
+Capability A
+    ==
+Capability B
+```
+
+There is no separate individual identity for:
+
+```text
+Upload(Album123)
+```
+
+Therefore `Capability` **does not need a `CapabilityId`**.
+
+This means:
+
+```text
+Capability
+    =
+ability
+
+Credential / Delegation / Authorization
+    =
+mechanisms through which that ability may be exercised
+```
+
+Revoking a Credential does not revoke the semantic existence of the Capability; it only prevents that Credential from continuing to use it.
 
 ### Principle
 
-> **A Capability expresses an ability; it does not represent a concrete execution.**
+> **A Capability is an ability by value, not an individual historical grant.**
 
 ---
 
-# 5. Capability Kind
+# 9. Capability Kind
 
 A **Capability Kind** identifies the semantic class of a Capability.
 
-For example, an application may define:
+Examples:
 
 ```text
 Upload
@@ -155,25 +463,27 @@ Transfer
 Approve
 ```
 
-The Capability Kind expresses **what class of ability it represents**.
+Capability Kind:
 
-It does not by itself constitute a grant of authority.
+* does not grant authority;
+* does not represent an execution;
+* does not identify a specific Capability.
 
-An Account may know a Capability Kind without an Identity necessarily possessing a Capability of that type.
+`CapabilityKind` is a **Value Object**.
+
+Its meaning depends on its values.
 
 ---
 
-# 6. Capability Scope
+# 10. Capability Scope
 
-The **Capability Scope** determines the set of resources, objects, subjects, or areas over which a Capability can be exercised.
+The **Capability Scope** determines the set of resources, objects, subjects, or areas over which a Capability may be exercised.
 
 Scope expresses:
 
-> **"What can this ability be exercised over?"**
+> **where the ability may be exercised.**
 
-Scope belongs to the meaning of the authority.
-
-For example:
+Example:
 
 ```text
 Capability:
@@ -183,238 +493,349 @@ Scope:
     Album #123
 ```
 
-means that the authority is limited to the scope represented by `Album #123`.
+Scope is a **Value Object**.
 
-Scope does not necessarily identify where the action will be technically executed.
-
----
-
-# 7. Capability Metadata
-
-**Capability Metadata** contains descriptive information associated with a Capability that may be used by an application for presentation, classification, organization, or user experience.
-
-Metadata does not by itself modify the authority represented by the Capability.
-
-Metadata may contain information such as:
+It must not be confused with `Execution Target`:
 
 ```text
-label
-description
-created_by
-application_context
+Capability Scope
+    =
+where authority exists
+
+Execution Target
+    =
+where execution is technically materialized
 ```
-
-Metadata should not automatically be interpreted as public or private.
-
-### Privacy
-
-The domain **may support private metadata**, including metadata protected through cryptographic mechanisms or zero-knowledge proofs.
-
-The Account does not itself determine the mechanism through which an application protects metadata.
-
-Therefore:
-
-> **The metadata of a Capability may be public or private depending on the privacy model adopted by the application and the corresponding infrastructure.**
-
-The fact that a Capability has metadata does not imply that such metadata must be publicly observable.
 
 ---
 
-# 8. Credential
+# 11. Capability Metadata
 
-A **Credential** is a mechanism recognized by an Account through which an Identity can produce evidence of authorization.
+**Capability Metadata** contains descriptive information associated with a Capability.
 
-The Account recognizes Credentials as valid sources of authority.
+It may be used for:
 
-A Credential may use very different mechanisms to produce a valid Proof.
+* presentation;
+* classification;
+* organization;
+* discovery;
+* UX;
+* integration.
 
-The domain does not need to know whether a Credential uses:
+Metadata does not by itself modify authority.
+
+It may be:
+
+* public;
+* private;
+* encrypted;
+* protected through zero-knowledge proofs;
+* or other mechanisms.
+
+The Account does not determine the privacy mechanism.
+
+### Invariant
+
+> **Modifying Metadata does not by itself modify the authority represented by a Capability.**
+
+---
+
+# 12. Credential
+
+A **Credential** is a source recognized by an Account through which evidence may be produced to exercise authority.
+
+The Credential does not identify the Identity. The Credential is a recognized source through which authority associated with an Identity may be exercised. Therefore, any deterministic mechanism that derives an Account must be based on the continuity of the sovereign Identity, or on a deterministic resolution toward it, and not directly on a Credential that may be replaced during the Identity lifecycle.
+
+`Credential` is an **Entity**.
+
+A Credential has individual continuity during its lifecycle:
+
+```text
+active
+→ suspended
+→ reactivated
+→ revoked
+```
+
+Revoking a Credential does not create another Credential.
+
+A Credential may be based on:
 
 * passkey;
+* WebAuthn;
 * secp256k1;
 * P-256;
 * hardware;
 * multisig;
 * threshold cryptography;
-* a future mechanism;
-* or another cryptographic method.
+* future mechanisms;
+* or other mechanisms.
 
-The Credential expresses:
+The domain does not identify a Credential with any of those mechanisms.
 
-> **"This is a recognized source through which authority for this Identity can be exercised."**
+### Credential ≠ Identity
+
+A Credential does not represent sovereignty.
+
+A Credential does not become an Identity by producing a Proof.
+
+### Credential ≠ Account
+
+A Credential is not an Account either.
+
+It is a recognized source through which certain capabilities may be exercised over one or more Accounts.
 
 ---
 
-# 9. Credential Authority
+# 13. Credential ↔ Account Recognition
 
-**Credential Authority** is the set of Capabilities that a Credential is authorized to exercise for an Account.
+The relationship between Credential and Account is **contextual and explicit in Authorization State**.
 
-Credential Authority allows different Credentials belonging to the same Identity to have different levels of authority.
+A Credential may be recognized by one or more Accounts.
 
-For example:
+Therefore:
 
 ```text
-Identity A
-
 Credential A
-    Upload
-    Share
-
-Credential B
-    Transfer
-
-Credential C
-    Recovery
+    ├── recognized by Account A
+    ├── recognized by Account B
+    └── recognized by Account C
 ```
 
-A Credential cannot produce a valid Authorization for a Capability that is not within its current authority.
+Recognition is independent for each Account.
 
-### Fundamental Relationship
+A Credential recognized by an Account does not acquire sovereignty over it.
+
+Nor does it imply that the Accounts share sovereignty.
+
+The semantic relationship is:
 
 ```text
-Account Capabilities
-        ∩
-Credential Authority
-        ↓
-Capabilities that the Credential can attempt to exercise
+Credential
+    │
+    ├── Account A → Credential Authority A
+    ├── Account B → Credential Authority B
+    └── Account C → Credential Authority C
 ```
 
-Credential Authority does not replace the other restrictions of the domain.
+Therefore, the same Credential may have different authorities depending on the Account in which it is recognized.
 
-Sessions, Delegations, Restrictions, and Policies may reduce or modify the effective authority available.
+### Credential ↔ Identity
+
+The sovereign Identity belongs to the Account.
+
+A Credential may be used as a mechanism to exercise authority associated with the sovereign Identity of the Account or authority derived from it and recognized by it.
+
+The Credential **does not need to contain the Identity as part of its structural identity**.
+
+This preserves the separation:
+
+```text
+Identity
+    =
+sovereign continuity
+
+Credential
+    =
+recognized authority-exercise source
+
+Account
+    =
+operational authority state
+```
 
 ---
 
-# 10. Proof
+# 14. Credential Authority
 
-A **Proof** is cryptographic evidence presented to demonstrate that an Authorization was produced through a valid Credential according to the corresponding mechanism.
+**Credential Authority** represents the set of Capabilities that a Credential may attempt to exercise within a specific Account.
+
+Credential Authority is a **Value Object / authority relation value**.
+
+Two Credentials may have the same Credential Authority:
+
+```text
+CredentialAuthority(A)
+    ==
+CredentialAuthority(B)
+```
+
+without being the same Credential.
+
+### Invariant
+
+```text
+Requested Capability
+    ∈
+Credential Authority
+```
+
+is a necessary condition for a Credential to attempt to exercise that Capability.
+
+It is not sufficient for authority to be effective.
+
+Sessions, Delegations, Restrictions, Policies, and other conditions may subsequently reduce it.
+
+### Principle
+
+> **Credential Authority describes what a Credential may attempt to exercise over an Account; it does not grant sovereignty.**
+
+---
+
+# 15. Proof
+
+A **Proof** is cryptographic evidence used to demonstrate that an Authorization was produced through the corresponding Credential.
 
 Proof belongs to cryptographic infrastructure.
 
-Proof does not define:
+It does not define:
 
-* what Capability exists;
-* what an action means;
-* what Scope is valid;
-* nor what authority an Identity possesses.
+* Identity;
+* Capability;
+* Scope;
+* Authority;
+* Authorization validity.
 
-A cryptographically valid Proof **does not by itself imply that an Authorization is valid**.
+### Principle
+
+> **Proof validity is not authorization validity.**
 
 ---
 
-# 11. Verifier
+# 16. Verifier
 
-A **Verifier** is the component responsible for verifying a Proof using a specific cryptographic mechanism.
+A **Verifier** verifies a Proof using a specific cryptographic mechanism.
 
-Infrastructure examples may include:
+It may use:
 
 * P-256;
 * secp256k1;
 * BLS;
-* post-quantum mechanisms;
-* or other future mechanisms.
+* post-quantum cryptography;
+* or other mechanisms.
 
-The Verifier answers:
+The Verifier determines:
 
-> **"Is the Proof valid according to this mechanism?"**
+> **whether the evidence satisfies the cryptographic rules of its mechanism.**
 
-The Verifier does not by itself decide:
+It does not determine:
 
-> "Is this action authorized?"
-
----
-
-# 12. Authorization
-
-An **Authorization** represents a request or verifiable evidence of exercising a particular authority.
-
-An Authorization relates the authority intended to be exercised to the context necessary to determine whether that exercise is permitted.
-
-An Authorization may contain or reference information such as:
-
-* Credential;
-* requested Capabilities;
-* Scope;
-* restrictions;
-* context;
-* temporal information;
-* replay protection;
-* and Proof.
-
-An Authorization **does not execute an action**.
-
-An Authorization also does not automatically create a Capability.
-
-### Fundamental Rule
-
-An Authorization is valid only when the authority attempting to be exercised is within the **Effective Authority** applicable to the context.
-
-Formally:
-
-```text
-Requested Authority ⊆ Effective Authority
-```
-
-When this condition is not met:
-
-```text
-Valid Proof
-        ≠
-Valid Authorization
-```
-
-A correct signature over a Capability that the Credential cannot exercise remains an invalid Authorization.
+> **whether the exercise of authority is permitted.**
 
 ---
 
-# 13. Requested Authority
+# 17. Requested Authority
 
 **Requested Authority** represents the authority that an Authorization attempts to exercise.
 
-It answers:
+It may include:
 
-> **"What authority is this Authorization attempting to exercise?"**
-
-Requested Authority may include:
-
-* Capability;
+* Capabilities;
 * Scope;
 * Restrictions;
+* temporal conditions;
 * context;
-* temporality;
 * and other relevant conditions.
 
-Requested Authority does not grant authority.
+Requested Authority is a **Value Object**.
 
-It is a representation of what the Authorization requests to exercise.
+It does not grant authority.
+
+It only represents what an Authorization requests to exercise.
 
 ---
 
-# 14. Authorization Validation
+# 18. Authorization
 
-**Authorization Validation** determines whether an Authorization can be accepted by the Account under the current state and context.
+An **Authorization** represents a request or verifiable evidence of the exercise of authority.
 
-Validation must consider, at minimum:
+It contains or references:
 
-1. that the Credential is recognized;
-2. that the corresponding Proof is valid;
-3. that the Credential can exercise the requested Capabilities;
-4. that the Capabilities exist within the applicable authority state;
-5. that Scope and Restrictions are compatible;
-6. that Sessions and Delegations are applicable;
-7. that current Policies have been considered;
-8. that no temporal conditions are violated;
-9. and that the Authorization cannot be reused outside the permitted conditions.
+* Credential;
+* Requested Authority;
+* Restrictions;
+* temporal conditions;
+* Replay Protection;
+* Proof;
+* relevant context.
+
+Authorization is a **Value Object**.
+
+Two Authorizations are equal when they have the same complete semantic value.
+
+It does not need an `AuthorizationId`.
+
+### Main Rule
+
+An Authorization may be accepted only when:
+
+```text
+Requested Authority
+    ⊆
+Effective Authority
+```
+
+and the other Authorization Validation conditions are satisfied.
+
+Therefore:
+
+```text
+Valid Proof
+    ≠
+Valid Authorization
+```
+
+### Replay
+
+`replayKey` or any equivalent mechanism forms part of Replay Protection.
+
+It must not automatically be confused with an Entity identity.
+
+---
+
+# 19. Authorization Validation
+
+**Authorization Validation** determines whether an Authorization may be accepted by an Account in a given state and context.
+
+It must consider:
+
+1. recognized Credential;
+2. valid Proof;
+3. compatible Credential Authority;
+4. existing Capabilities;
+5. Scope;
+6. Restrictions;
+7. Sessions;
+8. Delegations;
+9. Policy Effects;
+10. temporal conditions;
+11. Replay Protection.
 
 ### Principle
 
-> **Proof verification demonstrates the cryptographic authenticity of the evidence. Authorization Validation determines authority.**
+> **Proof Verification validates cryptographic evidence; Authorization Validation determines domain authority.**
+
+Authority validation may be distributed among different bounded contexts or modules.
 
 ---
 
-# 15. Session
+# 20. Session
 
-A **Session** is a temporary authorization derived from a Credential that allows a subset of the available authority to be exercised under additional restrictions.
+A **Session** is temporary authorization derived from a Credential.
+
+`Session` is an **Entity**.
+
+It maintains identity throughout its lifecycle:
+
+```text
+active
+→ expired
+
+active
+→ revoked
+```
+
+Expiration or revocation does not create another Session.
 
 A Session may limit:
 
@@ -425,75 +846,84 @@ A Session may limit:
 * value;
 * context;
 * recipients;
-* or other conditions.
-
-A Session must never expand the authority of the Credential from which it originated.
+* other conditions.
 
 ### Invariant
 
 ```text
-Session Authority ⊆ Credential Authority
+Session Authority
+    ⊆
+Credential Authority
 ```
 
-An expired or revoked Session cannot produce a valid Authorization.
+A Session can never expand the authority of its source Credential.
+
+If the Credential ceases to be valid, Sessions dependent on it cease to be able to produce valid Authorization.
 
 ---
 
-# 16. Delegation
+# 21. Delegation
 
-A **Delegation** allows an Identity to authorize another subject to exercise specific Capabilities under explicitly defined conditions.
+A **Delegation** allows authority to be derived toward another Subject under explicit conditions.
 
-Delegation does not necessarily transfer the Identity of the delegating party.
+`Delegation` is an **Entity**.
 
-Delegation also does not imply that the delegatee becomes the owner of the original Capabilities.
-
-Conceptually:
+It maintains identity throughout its lifecycle:
 
 ```text
-Identity A
-    │
-    │ delegates authority
-    ▼
-Delegatee
+active
+→ revoked
 ```
 
-Delegated authority is limited by the authority that the delegating party is able to delegate.
+Revoking a Delegation does not create another Delegation.
+
+It does not automatically transfer:
+
+* Identity;
+* sovereignty;
+* ownership of the original Capabilities.
 
 ### Invariant
 
-A Delegation cannot produce authority greater than the authority that the source Identity can legitimately delegate.
+```text
+Delegated Authority
+    ⊆
+Delegatable Authority of source
+```
+
+Delegated authority can never exceed the authority that the source may legitimately delegate.
 
 ---
 
-# 17. Delegatee
+# 22. Delegatee
 
-A **Delegatee** is the subject to whom a Delegation allows authority to be exercised.
+A **Delegatee** is the Subject that receives derived authority through a Delegation.
 
-The domain does not require the Delegatee to necessarily be:
+It may represent:
 
-* a person;
-* an Account;
-* an organization;
-* a company;
-* an agent;
-* a service;
-* or a device.
+* person;
+* organization;
+* agent;
+* service;
+* device;
+* Account;
+* another Subject.
 
-The semantic requirement is that it be an identifiable subject to whom the exercise of delegated authority can be attributed.
-
-The concrete type of subject belongs to the application's context.
+Delegatee does not mean sovereign owner.
 
 ---
 
-# 18. Restriction
+# 23. Restriction
 
-A **Restriction** limits the conditions under which a Capability can be exercised.
+A **Restriction** limits the conditions under which a Capability may be exercised.
 
-A Restriction does not create a new Capability.
+Restriction is a **Value Object**.
 
-It may limit, among other things:
+It does not create new Capabilities.
 
-* quantity;
+It may limit:
+
+* amount;
 * value;
 * frequency;
 * time;
@@ -503,89 +933,25 @@ It may limit, among other things:
 * operation type;
 * number of executions.
 
-For example:
+Example:
 
 ```text
-Capability:
-    Spend
-
-Restriction:
-    maximum_value = X
-    valid_until = T
+Spend
+    +
+maximum_value = X
+    +
+valid_until = T
 ```
 
-This expresses a single ability with limiting conditions, not a new class of Capability.
+Its meaning depends on its values.
 
 ---
 
-# 19. Policy
+# 24. Effective Authority
 
-A **Policy** is a decision produced by an external governance, recovery, or control mechanism that the domain recognizes as capable of producing specific changes to the operational state of an Account.
+**Effective Authority** represents the authority that may actually be exercised in a specific context.
 
-A Policy is not an ordinary Authorization.
-
-A Policy is also not necessarily a rule that the Runtime evaluates on every execution.
-
-A Policy may produce changes such as:
-
-* revoking a Credential;
-* enabling recovery;
-* modifying an operational condition;
-* activating or deactivating a derived capability;
-* or other changes explicitly recognized by the domain.
-
-The mechanism that produces or approves a Policy remains outside the responsibility of the Account.
-
-### Principle
-
-> **The Account consumes the recognized result of a Policy; the Account does not need to know the process through which that result was produced.**
-
----
-
-# 20. Policy Consumer
-
-The **Policy Consumer** is the responsibility in charge of interpreting a Policy accepted by the domain and reflecting its effects on the operational state of the Account.
-
-The Policy Consumer does not necessarily participate in approving the Policy.
-
-Its responsibility is:
-
-```text
-Policy
-   ↓
-interpretation
-   ↓
-Authorization State change
-```
-
-Approval and application of a Policy are conceptually distinct responsibilities.
-
----
-
-# 21. Authorization State
-
-The **Authorization State** is the operational state of an Account required to determine the authority available at a given point in time.
-
-It includes, as applicable:
-
-* Capabilities;
-* Credentials;
-* Credential Authorities;
-* Sessions;
-* Delegations;
-* Restrictions;
-* consumed effects of Policies;
-* and other state required to evaluate authority.
-
-Authorization State does not represent a concrete execution.
-
-Its purpose is to provide the basis upon which the Runtime can determine effective authority.
-
----
-
-# 22. Effective Authority
-
-**Effective Authority** is the authority that can actually be exercised in a given context after applying all relevant conditions to the available Authorization State.
+It is a **derived, contextual, and by-value** representation.
 
 Conceptually:
 
@@ -596,252 +962,510 @@ Credential Authority
         ∩
 Session Authority
         ∩
-Delegation Authority
+Delegated Authority
         ∩
-Scope
+Scope Conditions
         ∩
 Restrictions
         ∩
 Temporal Conditions
         ∩
-Applicable Policies
+Applicable Policy Effects
         ↓
 Effective Authority
 ```
 
-Effective Authority is contextual.
+Effective Authority does not need its own identity.
 
 The same Credential may produce different Effective Authorities depending on:
 
+* Account;
 * Session;
 * Delegation;
 * Scope;
 * time;
 * Restrictions;
-* operational state;
-* or any other applicable condition.
+* Authorization State;
+* Policy Effects;
+* Execution Context.
 
 ---
 
-# 23. Authorization State Transition
+# 25. Authorization State
 
-An **Authorization State Transition** is a valid change to the Authorization State of an Account.
+**Authorization State** represents the operational authorization state maintained by an Account.
 
-Conceptual examples:
+It may contain:
 
-* registering a Credential;
-* revoking a Credential;
-* creating a Session;
-* revoking a Session;
-* creating a Delegation;
-* revoking a Delegation;
-* applying a Policy;
-* modifying a Capability.
+* Credentials;
+* Credential ↔ Account recognition;
+* Credential Authorities;
+* Sessions;
+* Delegations;
+* Capabilities;
+* Restrictions;
+* recognized Policy Effects;
+* structural relationships necessary to evaluate authority.
 
-Authority transitions are part of the Account domain.
+Authorization State does not represent an execution.
 
-They must not be confused with application executions over external resources.
+Authorization State is the state from which Effective Authority is resolved.
+
+### Important
+
+`Credential`, `Session`, `Delegation`, `Capability`, etc. may exist as independent concepts, but **the relationships between them belong to Authorization State when those relationships are part of the operational state of an Account**.
+
+This avoids artificially introducing those relationships inside the value objects.
 
 ---
 
-# 24. Domain Action
+# 26. Authorization State Transition
 
-A **Domain Action** represents a concrete intention of an application that may require authorization.
+An **Authorization State Transition** represents a valid change to Authorization State.
 
-`Kipio Account` **does not define what the Domain Actions of an application are**.
+Examples:
 
-For example, an application may define:
+* register Credential;
+* recognize Credential in Account;
+* establish Credential Authority;
+* modify Credential Authority;
+* revoke Credential;
+* create Session;
+* revoke Session;
+* create Delegation;
+* revoke Delegation;
+* modify Capabilities;
+* apply Policy Effect.
+
+These transitions belong to the Account domain.
+
+They do not represent business executions over external resources.
+
+---
+
+# 27. Policy
+
+A **Policy** represents an external decision recognized by Account as capable of producing one or more changes to Authorization State.
+
+The Policy **does not need its own identity within Account**.
+
+In external contexts, an Entity may exist that represents the procedure that produced that decision.
+
+For example:
+
+```text
+RecoveryPolicyRequest
+```
+
+may be an Entity of the Recovery bounded context with:
+
+* requestId;
+* lifecycle;
+* approval;
+* expiration;
+* cancellation;
+* consumption.
+
+But:
+
+```text
+RecoveryPolicyRequest
+    ≠
+Policy Effect
+```
+
+and:
+
+```text
+RecoveryPolicyRequest
+    ≠
+Account Policy Value
+```
+
+Account consumes the recognized decision; it does not need to know the entire lifecycle of the producing bounded context.
+
+---
+
+# 28. Policy Effect
+
+A **Policy Effect** represents the semantic change that a Policy produces over Authorization State.
+
+Examples:
+
+```text
+RevokeCredential(X)
+EnableRecovery
+DisableCapability(Y)
+ModifyAuthorizationCondition(Z)
+```
+
+`PolicyEffect` is a **Value Object**.
+
+Two different Policies may produce the same effect:
+
+```text
+PolicyRequest #1
+    → RevokeCredential(X)
+
+PolicyRequest #2
+    → RevokeCredential(X)
+```
+
+and:
+
+```text
+RevokeCredential(X)
+    ==
+RevokeCredential(X)
+```
+
+Historical identity belongs to the external procedure, not to the effect.
+
+---
+
+# 29. Policy Consumption
+
+**Policy Consumption** represents the recognition and application of a Policy by Account.
+
+Conceptually:
+
+```text
+External Policy
+      ↓
+Policy Recognition
+      ↓
+Policy Consumption
+      ↓
+Policy Effect(s)
+      ↓
+Authorization State Transition
+```
+
+Account does not need to know how the Policy was approved.
+
+Approval belongs to the producing bounded context.
+
+A Policy may produce **one or more Policy Effects**.
+
+The semantics of:
+
+* atomicity;
+* ordering;
+* idempotency;
+* duplication;
+* partial consumption;
+
+belong to the formalization of Policy Consumption and Account Transitions.
+
+`PolicyConsumption` is a **Value Object / transition value** as long as no historical lifecycle of its own is discovered within Account.
+
+---
+
+# 30. Domain Action
+
+A **Domain Action** represents a concrete intention of the consuming bounded context.
+
+Examples:
 
 ```text
 UploadPhoto
 DeletePhoto
-ShareAlbum
 TransferFunds
 ApprovePayroll
 CreateInvoice
+ShareAlbum
 ```
 
-Another application may define completely different actions.
+Kipio Account does not define:
 
-The Runtime does not need to know the internal meaning of those actions.
+* the catalog;
+* the meaning;
+* the lifecycle;
+* the internal identity;
+* the business rules.
 
-The domain only needs to receive a sufficiently precise representation to determine:
+Domain Action is an **external Value Object**.
 
-> **"Does the available authority allow this action to be executed under this context?"**
-
-Therefore, Domain Action is a concept that may originate from the **consuming bounded context**.
-
-It must not become a catalog of actions specific to Kipio Account.
+Kipio only needs a sufficient representation to determine whether authority exists to execute the action.
 
 ---
 
-# 25. Execution Request
+# 31. Execution Request
 
-An **Execution Request** represents a request to materialize a Domain Action through an execution over blockchain.
+An **Execution Request** represents a request to materialize a Domain Action.
 
 It may contain:
 
 * Domain Action;
-* application context;
+* Authorization;
 * Requested Authority;
 * Execution Target;
-* restrictions;
-* information required to construct the Execution Context.
+* Execution Constraints;
+* context required by Runtime.
 
-An Execution Request does not yet constitute an execution.
+Execution Request is a **Value Object / request value**.
 
-It is the input that allows the Runtime to determine whether a requested action can be materialized.
+It does not represent a materialized Execution.
 
 ---
 
-# 26. Execution Target
+# 32. Execution Target
 
-An **Execution Target** identifies the concrete resource, contract, service, or infrastructure over which an Execution must be materialized.
+An **Execution Target** identifies the technical destination on which execution will be materialized.
 
-Execution Target belongs to the materialization context.
+It may represent:
 
-It must not be confused with Capability Scope.
+* contract;
+* resource;
+* service;
+* infrastructure;
+* or another compatible destination.
 
-### Fundamental Difference
+It does not define Authority.
+
+The difference is:
 
 ```text
 Capability Scope
-    = what authority exists over
+    =
+where authority exists
 
 Execution Target
-    = where the execution is technically materialized
+    =
+where execution is materialized
 ```
-
-Example:
-
-```text
-Capability:
-    Upload
-
-Scope:
-    Album #123
-
-Execution Target:
-    Storage Contract #ABC
-```
-
-Scope expresses domain meaning.
-
-Execution Target expresses the concrete destination of materialization.
 
 ---
 
-# 27. Execution Context
+# 33. Execution Context
 
-An **Execution Context** is the complete and validated representation of the state required to allow an execution.
+An **Execution Context** represents the complete and validated decision necessary for an execution to be materialized.
 
-It is constructed from:
+It may incorporate the results of:
 
-* Execution Request;
 * Authorization;
-* Authorization State;
 * Effective Authority;
-* applicable Policies;
+* Authorization State;
+* Policy Effects;
 * Restrictions;
-* context;
-* and other necessary conditions.
+* Execution Constraints;
+* Domain Action;
+* Execution Target;
+* and other relevant conditions.
 
-A valid Execution Context represents a complete decision by the Runtime:
+A valid Execution Context means:
 
-> **the requested action can be executed under the authority and restrictions currently in effect.**
+> **the required authority and necessary conditions have been evaluated and execution may proceed under that context.**
 
-The Execution Context is the **only valid input to the Execution Engine**.
+The Execution Context is a **Value Object / complete execution decision**.
 
-The Execution Engine does not reinterpret authority.
+The Execution Engine receives only valid contexts.
+
+It does not decide Authority again.
 
 ---
 
-# 28. Runtime
+# 34. Execution Constraints
 
-The **Runtime** is the component that maintains the operational behavior of an Account and determines whether an Execution Request can become a valid Execution Context.
+**Execution Constraints** represent conditions that must be satisfied to materialize an Execution Context.
+
+They may include:
+
+* limits;
+* temporal conditions;
+* atomicity;
+* operational limits;
+* materialization conditions;
+* other recognized restrictions.
+
+Execution Constraints do not create Authority.
+
+They only condition the materialization of an authorized decision.
+
+---
+
+# 35. Runtime
+
+The **Runtime** is the transient component that **orchestrates the distributed evaluation and operational materialization** of a request.
 
 The Runtime:
 
-1. obtains the relevant Authorization State;
-2. validates the presented Authorization;
-3. determines the Effective Authority;
-4. verifies the applicable restrictions;
-5. constructs the Execution Context;
-6. and delivers only valid contexts to the Execution Engine.
+1. receives an Execution Request;
+2. coordinates obtaining the relevant Authorization State;
+3. coordinates Authorization validation;
+4. coordinates determination of Effective Authority;
+5. coordinates application of relevant Policy Effects and Restrictions;
+6. verifies Execution Constraints;
+7. constructs Execution Context;
+8. delivers only valid contexts to the Execution Engine.
 
-The Runtime **evaluates authority**.
+### Important
 
-It does not implement the cryptographic mechanism used to verify Proofs.
+Runtime **is not the owner of all authority rules**.
 
-It does not directly materialize execution over a concrete infrastructure.
+Evaluation may be distributed among bounded contexts or specialized modules, for example:
+
+```text
+Authentication / Credential Verification
+Authorization
+Recovery
+Access
+Registry
+Economics
+Execution Gateway
+```
+
+Runtime coordinates those results.
+
+Therefore:
+
+```text
+Runtime
+    =
+Authority / Execution Orchestration
+```
+
+not:
+
+```text
+Runtime
+    =
+owner of every authorization rule
+```
 
 ---
 
-# 29. Execution Engine
+# 36. Execution Engine
 
-The **Execution Engine** transforms a valid Execution Context into one or more verifiable execution operations.
+The **Execution Engine** receives a valid Execution Context and transforms that decision into materializable operations.
 
-Its input is exclusively:
+Its conceptual input is:
 
 ```text
 Execution Context
 ```
 
-The Execution Engine does not:
+Not:
 
-* produce Authorizations;
 * interpret Credentials;
-* decide authority;
-* implement cryptographic mechanisms;
-* nor define the application's business rules.
+* decide Authority;
+* create Authorization;
+* define Domain Actions;
+* redefine Policy;
+* implement cryptographic rules.
 
-Its responsibility is to transform a decision already made by the domain into a materializable execution.
+Its responsibility is:
+
+> **to materialize a decision that has already been made.**
+
+It may produce one or multiple operations when the infrastructure supports:
+
+* batching;
+* multicall;
+* atomicity;
+* or other equivalent mechanisms.
 
 ---
 
-# 30. Execution
+# 37. Execution
 
-An **Execution** is the concrete materialization of an authorized action.
+An **Execution** represents the concrete process/materialization of an authorized action.
 
-An Execution occurs after the Runtime has produced a valid Execution Context.
+It is not currently an Entity of the `Account domain`.
 
-An Execution may consist of one or more operations when the infrastructure allows it.
+The current architecture distinguishes:
 
-The domain may require properties for an Execution such as:
+```text
+Execution Request
+        ↓
+Execution Context
+        ↓
+Runtime orchestration
+        ↓
+Execution Engine
+        ↓
+Adapter
+        ↓
+physical execution
+```
+
+An execution may consist of:
+
+```text
+one operation
+```
+
+or:
+
+```text
+multiple operations
+```
+
+The infrastructure determines how the following are guaranteed:
 
 * atomicity;
 * integrity;
-* replay prevention;
-* compliance with restrictions.
+* replay protection;
+* constraint compliance.
 
-The concrete way of achieving these properties belongs to the execution infrastructure.
+### Lifecycle
+
+Runtime may have an operational lifecycle:
+
+```text
+Validation
+→ PreFlight
+→ Accounting
+→ Dispatch
+→ Settlement
+```
+
+and results such as:
+
+```text
+Completed
+Reverted
+Aborted
+Expired
+Cancelled
+Failed
+```
+
+but these represent **the lifecycle of the operational workflow**, not a persistent `Execution` Entity of the Account domain.
+
+Therefore:
+
+```text
+Execution
+    ≠
+Execution Entity
+```
+
+and no `ExecutionId` is introduced.
 
 ---
 
-# 31. Adapter
+# 38. Adapter
 
-An **Adapter** materializes an execution expressed in terms of Kipio using the primitives of a concrete infrastructure.
+An **Adapter** materializes an Execution over a specific infrastructure.
 
-The Adapter adapts **the infrastructure to the domain's execution model**, not the other way around.
-
-Examples may include:
+Examples:
 
 * EIP-7702;
 * ERC-4337;
 * RIP-7560;
-* future account abstractions;
-* or other compatible mechanisms.
+* future forms of Account Abstraction;
+* other compatible infrastructures.
 
-The Adapter does not modify the meaning of:
+The Adapter transforms:
 
-* Identity;
-* Capability;
-* Credential;
-* Authorization;
-* Delegation;
-* Session;
-* Effective Authority;
-* Execution Context.
+```text
+Kipio Execution Semantics
+        ↓
+Infrastructure primitives
+```
+
+and not the other way around.
 
 ### Principle
 
@@ -849,15 +1473,19 @@ The Adapter does not modify the meaning of:
 
 ---
 
-# 32. Blockchain
+# 39. Blockchain
 
-**Blockchain** is a fundamental infrastructure of the Kipio domain because it provides the shared environment in which sovereign identities can exercise authority and produce verifiable state without relying exclusively on a central authority.
+**Blockchain** is part of the fundamental context of Kipio.
 
-Kipio Account does not attempt to abstract away the existence of blockchain.
+It provides the shared environment where Accounts may:
 
-What it abstracts are the differences between specific mechanisms used to operate over it.
+* exercise authority;
+* produce verifiable changes;
+* materialize executions.
 
-Therefore:
+Kipio does not abstract away the existence of blockchain.
+
+It abstracts the differences between the concrete infrastructures used to operate over it.
 
 ```text
 Blockchain
@@ -866,28 +1494,24 @@ Ethereum
     ≠
 EVM
     ≠
+Arbitrum
+    ≠
+Stylus
+    ≠
 EIP-7702
     ≠
 ERC-4337
-    ≠
-Stylus
 ```
-
-Blockchain is part of the fundamental context of the domain.
-
-Specific blockchain standards and mechanisms belong to the infrastructure.
 
 ---
 
-# 33. Gas Payment
+# 40. Gas Payment
 
-**Gas Payment** represents the provision of the economic resources required to materialize an Execution over blockchain.
+**Gas Payment** represents the provision of the economic resources necessary to materialize an Execution.
 
 Gas Payment is independent of Authority.
 
-An entity may pay for an Execution without possessing authority over the action being executed.
-
-Therefore:
+An entity may pay for an Execution without acquiring authority over it.
 
 ```text
 Authority
@@ -895,238 +1519,490 @@ Authority
 Gas Payment
 ```
 
-The domain must not interpret the ability to pay gas as an ability to authorize the execution.
+Paying does not grant authorization.
 
 ---
 
-# 34. Execution Sponsor
+# 41. Execution Sponsor
 
-An **Execution Sponsor** is an entity that provides the resources required to pay for an Execution.
+An **Execution Sponsor** provides resources to pay for an Execution on behalf of another subject.
 
-The Sponsor may act for the benefit of another subject without acquiring authority over the action.
+The Sponsor does not automatically acquire Authority.
 
-The concrete mechanism may involve:
+Concrete mechanisms may include:
 
 * relayers;
 * paymasters;
-* sponsoring accounts;
-* native infrastructure mechanisms;
-* or other systems.
+* sponsored accounts;
+* native mechanisms;
+* or others.
 
-These mechanisms are not part of the meaning of Authority.
+Sponsorship belongs to infrastructure/economics.
 
 ---
 
-# 35. Replay Protection
+# 42. Replay Protection
 
-**Replay Protection** is the property by which an Authorization or Execution cannot be reused outside the conditions for which it was created.
+**Replay Protection** ensures that an Authorization or Execution cannot be reused outside the conditions for which it was created.
 
-Replay Protection may depend on:
+It may depend on:
 
-* temporality;
-* identifiers;
-* sequences;
+* replay keys;
 * nonces;
-* state;
+* sequence numbers;
 * expiration;
+* consumption markers;
+* state;
+* temporal conditions;
 * or other mechanisms.
 
-The domain requires the property:
+The domain requires:
 
-> **A valid Authorization in one context must not automatically become a valid Authorization in a different or later context when the conditions for its use are no longer met.**
+> **A valid Authorization in one context must not automatically become a valid Authorization in a later or different context when its original conditions are no longer satisfied.**
 
-The domain does not require a specific nonce format.
+Replay Protection does not imply that an `Authorization` Entity exists.
+
+Its operational state may belong to Authorization State or to a specific replay state.
 
 ---
 
-# 36. Authentication
+# 43. Authentication
 
-**Authentication** describes the process by which a system obtains evidence that a presented Credential corresponds to the subject or mechanism attempting to exercise it.
+**Authentication** is the process through which evidence is obtained that a Credential corresponds to the mechanism or subject attempting to exercise it.
 
 Authentication is not equivalent to Authorization.
 
 ```text
 Authentication
-    = "who produced the evidence?"
+    =
+who / what produced the evidence
 
 Authorization
-    = "what authority can be exercised?"
+    =
+what authority may be exercised
 ```
 
-Correct authentication does not grant a Capability that does not exist.
+Successful authentication does not automatically grant a Capability.
 
 ---
 
-# 37. Identity Sovereignty
+# 44. Identity Sovereignty
 
-**Identity Sovereignty** is the principle according to which an Identity retains control over the exercise of its authority regardless of the specific mechanism through which that authority is authenticated, delegated, or materialized.
+**Identity Sovereignty** means that the sovereign continuity of an Identity does not depend on the specific mechanism through which its authority is authenticated, exercised, delegated, or materialized.
 
-This implies that:
+This implies:
 
-* changing Credentials should not automatically change the Identity;
-* a Delegation should not automatically transfer the sovereignty of the Identity;
-* an application should not automatically become the owner of the Identity;
-* an Execution Sponsor does not acquire authority by paying;
-* a specific infrastructure does not define the meaning of authority.
+* changing Credentials does not automatically change Identity;
+* changing Accounts does not automatically change Identity;
+* changing blockchain representation does not automatically change Identity;
+* Delegation does not automatically transfer sovereignty;
+* a Sponsor does not acquire Authority by paying;
+* a cryptographic mechanism does not define Identity;
+* an address does not define Identity.
 
-Sovereignty belongs to the Identity.
-
----
-
-# 38. Authority Abstraction
-
-**Authority Abstraction** is the ability of the domain to represent who can exercise what authority and under what conditions without requiring the conceptual model to know the specific cryptographic mechanism, wallet, authentication provider, or standard used to materialize that authority.
-
-Authority Abstraction is an architectural property of the model.
-
-It does not mean abstracting away blockchain.
-
-It means abstracting **the concrete implementations used to exercise authority over blockchain**.
+Sovereignty belongs to `Identity`.
 
 ---
 
-# 39. Universal Account Stress Test
+# 45. Authority Abstraction
 
-Every new concept proposed for `Kipio Account` must be justified through a real and recurring problem.
+**Authority Abstraction** is the ability to represent:
 
-Before introducing a new entity, concept, or relationship, these questions must be answered:
+```text
+who may exercise
+what authority
+under what conditions
+```
+
+without requiring the conceptual model to know:
+
+* cryptographic curve;
+* wallet;
+* authentication provider;
+* specific blockchain;
+* Account Abstraction standard;
+* address representation;
+* or another implementation.
+
+Authority Abstraction does not mean removing blockchain from the model.
+
+It means abstracting the concrete implementations through which authority is exercised over blockchain.
+
+---
+
+# 46. Entity and Value Object Classification
+
+The consolidated classification is:
+
+## Entities
+
+```text
+Identity
+Account
+Credential
+Session
+Delegation
+```
+
+These entities have their own individual identity and continuity/lifecycle.
+
+Their identifiers are:
+
+```text
+IdentityId
+AccountId
+CredentialId
+SessionId
+DelegationId
+```
+
+## Value Objects
+
+```text
+Subject
+Capability
+CapabilityKind
+Scope
+Restriction
+CredentialAuthority
+EffectiveAuthority
+RequestedAuthority
+Authorization
+Policy
+PolicyEffect
+PolicyConsumption
+DomainAction
+ExecutionRequest
+ExecutionContext
+ExecutionConstraints
+Timestamp
+```
+
+## Operational / Infrastructure Concepts
+
+```text
+Proof
+Verifier
+Runtime
+Execution Engine
+Execution
+Adapter
+Blockchain
+Gas Payment
+Execution Sponsor
+Authentication
+```
+
+The latter must not be artificially given Entity identity within the Account domain.
+
+---
+
+# 47. Identifier Semantics
+
+An **Identifier** represents a stable reference used to distinguish an Entity whose individual identity is part of its semantics.
+
+The current identifiers are:
+
+```text
+Identity       → IdentityId
+Account        → AccountId
+Credential     → CredentialId
+Session        → SessionId
+Delegation     → DelegationId
+```
+
+No identifiers of their own are assigned to:
+
+```text
+Capability
+PolicyEffect
+Authorization
+ExecutionContext
+DomainAction
+Restriction
+Scope
+```
+
+because their meaning is determined by their content.
+
+### Identifier ≠ representation
+
+An Identifier is not automatically:
+
+* hash;
+* nonce;
+* address;
+* B256;
+* private key;
+* public key;
+* classification.
+
+### Size
+
+The domain does not currently establish:
+
+```text
+|Identifier| = 32 bytes
+```
+
+The physical representation may be defined by infrastructure without necessarily changing the semantics of the Identifier.
+
+### Uniqueness
+
+Each Entity must be distinguishable within the identity scope required by its lifecycle.
+
+The concrete way to guarantee such uniqueness belongs to the design of the state and corresponding infrastructure.
+
+### Generation
+
+The domain does not require a single generation mechanism.
+
+It may be:
+
+* deterministic;
+* random;
+* derived;
+* assigned;
+* external;
+* or another compatible mechanism.
+
+---
+
+# 48. Universal Account Stress Test
+
+Every new abstraction must be justified through a real and recurring problem.
+
+Before introducing a new Entity, Value Object, relationship, or rule, the following must be verified:
 
 ### 1. Real Problem
 
-> What concrete and recurring problem does it solve?
+What concrete and recurring problem does it solve?
 
-### 2. Reusability
+### 2. Reuse
 
-> Does the problem appear in more than one application or context?
+Does it appear in more than one application or context?
 
 ### 3. Application Independence
 
-> Can the solution exist without knowing the specific business model of an application?
+Can it exist without knowing the specific business model of an application?
 
 ### 4. Infrastructure Independence
 
-> Can the solution be expressed without depending on Ethereum, EVM, EIP-7702, ERC-4337, Stylus, or another specific implementation?
+Can it be expressed without depending on a concrete implementation?
 
 ### 5. Composition
 
-> Can the problem be solved by composing existing concepts before introducing a new one?
+Can it be solved by composing existing concepts?
 
 ### 6. Semantics
 
-> Does the new concept represent a reality of the domain or merely an implementation need?
+Does it represent a domain reality or an implementation need?
 
 ### 7. Reuse Across Subjects
 
-> Can the concept be used by different types of subjects without creating unnecessary variants?
+Can it be used with different types of Subject?
 
-An abstraction that exists only to address a hypothetical future use case should not be incorporated into the core without evidence that it represents a real need of the domain.
+### 8. Identity Requirement
 
----
+Does it need its own individual identity, or is its meaning completely determined by its values?
 
-# 40. Official Architectural Principles
-
-The following principles are derived from this language:
-
-1. **Identity represents the sovereign subject; a Credential represents a mechanism through which that Identity can produce evidence of authority.**
-
-2. **The Account manages the authority state of an Identity over blockchain.**
-
-3. **Capabilities represent abilities; they do not represent executions.**
-
-4. **A Credential can exercise only the authority granted to it through its Credential Authority and the other conditions currently in effect.**
-
-5. **An Authorization never creates authority by itself.**
-
-6. **A cryptographically valid Proof does not imply a valid Authorization.**
-
-7. **Proof Verification and Authorization Validation are distinct responsibilities.**
-
-8. **Effective Authority is contextual and results from applying the current conditions to the available authority.**
-
-9. **A Session can only reduce or restrict the authority that can be exercised by the Credential from which it originated.**
-
-10. **A Delegation allows derived authority to be exercised without automatically transferring the sovereignty of the source Identity.**
-
-11. **A Restriction limits existing authority; it does not need to create a new Capability.**
-
-12. **Policies produce recognized effects on Authorization State, but the mechanism that produces those Policies remains outside the Account.**
-
-13. **The Runtime evaluates authority and constructs valid Execution Contexts.**
-
-14. **The Execution Engine does not decide authority; it materializes valid Execution Contexts.**
-
-15. **Adapters materialize the domain's execution model over specific infrastructures.**
-
-16. **Blockchain is a fundamental part of Kipio's domain context; specific blockchain standards and mechanisms belong to the infrastructure.**
-
-17. **The domain must not depend on a specific Account Abstraction standard.**
-
-18. **Authentication, Authorization, and Gas Payment represent different responsibilities and must not be conflated.**
-
-19. **Domain Actions belong to the context of the application using Kipio Account; Account must not become a catalog of business actions.**
-
-20. **Capability Scope expresses where authority exists in domain terms; Execution Target expresses where an execution is technically materialized.**
-
-21. **The privacy of information associated with a Capability is a property that can be guaranteed through specific privacy mechanisms, but it must not be confused with the meaning of the authority itself.**
-
-22. **A new abstraction must be justified by a real and recurring problem, not merely by a possible future use case.**
+The absence of a clear need for identity must prevent the introduction of an artificial Identifier.
 
 ---
 
-# 41. Summarized Conceptual Model
+# 49. Official Architectural Principles
+
+1. **Subject, Identity, Account, and Blockchain Address are different concepts.**
+
+2. **External Identity and Authentication Mechanism are not automatically Kipio Identity.**
+
+3. **Subject represents the semantic actor.**
+
+4. **Identity represents sovereign continuity.**
+
+5. **An Identity may control multiple Accounts.**
+
+6. **Each Account has exactly one sovereign Identity.**
+
+7. **Authorization of another Identity over an Account does not create co-sovereignty.**
+
+8. **Account is a distinct Entity from a Blockchain Address.**
+
+9. **Capability is a Value Object.**
+
+10. **Capability expresses an ability and not an individual historical grant.**
+
+11. **Capability does not need CapabilityId.**
+
+12. **CapabilityKind and Scope are Value Objects.**
+
+13. **Credential is an Entity independent of Identity.**
+
+14. **A Credential may be recognized by one or more Accounts.**
+
+15. **Credential recognition is specific to each Account.**
+
+16. **Credential Authority is a Value Object that describes the authority a Credential may attempt to exercise over an Account.**
+
+17. **A Credential does not acquire sovereignty by being recognized by an Account.**
+
+18. **A Session is a temporary Entity derived from a Credential.**
+
+19. **Session Authority can never exceed Credential Authority.**
+
+20. **Delegation is an Entity with its own lifecycle.**
+
+21. **Delegated Authority can never exceed the source's Delegatable Authority.**
+
+22. **Restriction is a Value Object that limits existing authority.**
+
+23. **Effective Authority is contextual, derived, and by value.**
+
+24. **Authorization is a Value Object.**
+
+25. **Authorization does not need AuthorizationId.**
+
+26. **Requested Authority is a Value Object.**
+
+27. **Proof Verification and Authorization Validation are different responsibilities.**
+
+28. **A valid Proof does not imply a valid Authorization.**
+
+29. **Policy is an external decision recognized by Account and does not need its own identity within Account.**
+
+30. **RecoveryPolicyRequest or other historical entities belong to their producing bounded contexts.**
+
+31. **PolicyEffect is a Value Object.**
+
+32. **A Policy may produce one or more Policy Effects.**
+
+33. **Policy Consumption produces recognized changes over Authorization State.**
+
+34. **Authorization State contains operational relationships among Credentials, Accounts, Sessions, Delegations, Capabilities, and Policy Effects.**
+
+35. **Authorization State Transition represents valid changes to that state.**
+
+36. **Domain Action belongs to the consuming bounded context.**
+
+37. **Execution Request is a Value Object.**
+
+38. **Execution Context is a Value Object and represents a complete, already-validated decision.**
+
+39. **Execution Constraints do not create Authority.**
+
+40. **Runtime coordinates distributed authority evaluation and execution orchestration.**
+
+41. **Runtime does not own all authorization rules.**
+
+42. **Execution Engine materializes valid Execution Contexts and does not decide Authority.**
+
+43. **Execution is an operational process/materialization, not an Entity of the Account domain.**
+
+44. **No ExecutionId is introduced.**
+
+45. **An Execution may produce multiple operations when the infrastructure supports batching, multicall, or atomicity.**
+
+46. **Adapters materialize domain semantics over concrete infrastructures.**
+
+47. **Blockchain is a fundamental part of the Kipio context.**
+
+48. **Authentication, Authorization, and Gas Payment are different responsibilities.**
+
+49. **Capability Scope and Execution Target are different concepts.**
+
+50. **Metadata does not by itself modify authority.**
+
+51. **Identifiers exist because certain Entities need individual identity.**
+
+52. **Not every domain concept needs an Identifier.**
+
+53. **An Identifier is not automatically a hash, nonce, address, B256, or cryptographic key.**
+
+54. **The domain does not currently establish a specific Identifier size.**
+
+55. **Replay Protection is a cross-cutting property and does not turn Authorization into an Entity.**
+
+56. **A new abstraction must be justified by a real and recurring need.**
+
+57. **Dafny formalization must be derived from DDD meaning and must not use Rust/EVM details to redefine the domain.**
+
+---
+
+# 50. Consolidated Conceptual Model
 
 ```text
-                         IDENTITY
-                            │
-                            ▼
-                         ACCOUNT
-                            │
-             ┌──────────────┼──────────────┐
-             │              │              │
-        CAPABILITIES    CREDENTIALS     POLICIES
-             │              │              │
-             │        CREDENTIAL           │
-             │          AUTHORITY          │
-             │              │              │
-             │          SESSIONS           │
-             │              │              │
-             │        DELEGATIONS          │
-             │              │              │
-             └──────────────┼──────────────┘
-                            │
-                      RESTRICTIONS
-                            │
-                            ▼
-                    EFFECTIVE AUTHORITY
-                            │
-              ┌─────────────┴─────────────┐
-              │                           │
-       AUTHORIZATION                DOMAIN ACTION
-              │                           │
-              └─────────────┬─────────────┘
-                            │
-                  EXECUTION REQUEST
-                            │
-                            ▼
-                         RUNTIME
-                            │
-                            ▼
-                   EXECUTION CONTEXT
-                            │
-                            ▼
-                    EXECUTION ENGINE
-                            │
-                            ▼
-                         ADAPTER
-                            │
-             ┌──────────────┼──────────────┐
-             │              │              │
-           7702            4337           7560
-             │              │              │
-             └──────────────┼──────────────┘
-                            │
-                            ▼
-                       BLOCKCHAIN
+                         EXTERNAL WORLD
+                               │
+                 ┌─────────────┴─────────────┐
+                 │                           │
+          External Identity          Authentication
+          email / phone / EOA         mechanisms
+                 │                           │
+                 └─────────────┬─────────────┘
+                               │
+                         authentication
+                           evidence
+                               │
+                               ▼
+                           CREDENTIAL
+                               │
+                    recognized by Account
+                               │
+                               ▼
+                           IDENTITY
+                               │
+                  sovereign ownership
+                               │
+                  ┌────────────┼────────────┐
+                  │            │            │
+               Account A    Account B    Account C
+                  │            │            │
+                  └────────────┼────────────┘
+                               │
+                     AUTHORIZATION STATE
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        │                      │                      │
+   CAPABILITIES            CREDENTIALS            POLICIES
+        │                      │                      │
+        │              CREDENTIAL AUTHORITY       POLICY EFFECTS
+        │                      │                      │
+        │                   SESSIONS                 │
+        │                      │                      │
+        │                 DELEGATIONS                │
+        │                      │                      │
+        └──────────────────────┼──────────────────────┘
+                               │
+                         RESTRICTIONS
+                               │
+                               ▼
+                     EFFECTIVE AUTHORITY
+                               │
+                    ┌──────────┴──────────┐
+                    │                     │
+              AUTHORIZATION         DOMAIN ACTION
+                    │                     │
+                    └──────────┬──────────┘
+                               │
+                      EXECUTION REQUEST
+                               │
+                               ▼
+                            RUNTIME
+                               │
+                  distributed authority
+                     / orchestration
+                               │
+                               ▼
+                     EXECUTION CONTEXT
+                               │
+                               ▼
+                      EXECUTION ENGINE
+                               │
+                               ▼
+                            ADAPTER
+                               │
+                               ▼
+                          BLOCKCHAIN
 ```
 
 Cross-cutting infrastructure:
@@ -1135,76 +2011,238 @@ Cross-cutting infrastructure:
 Proof
 Verifier
 Authentication mechanisms
+Replay Protection
 Gas Payment
 Execution Sponsor
-Replay Protection
 Privacy mechanisms
+Blockchain Address representations
 ```
-
-These responsibilities may participate in the system without thereby becoming central concepts of authority.
 
 ---
 
-# 42. The Fundamental Distinction of the Domain
-
-The architecture can be understood through three primary responsibilities:
+# 51. Fundamental Domain Distinction
 
 ```text
+SUBJECT
+    =
+SEMANTIC ACTOR
+
+IDENTITY
+    =
+SOVEREIGN CONTINUITY
+
 ACCOUNT
     =
-AUTHORITY STATE
+OPERATIONAL COMPONENT THROUGH WHICH
+AN IDENTITY EXERCISES AUTHORITY ON BLOCKCHAIN
+
+CAPABILITY
+    =
+WHAT AUTHORITY EXISTS
+
+CREDENTIAL
+    =
+RECOGNIZED SOURCE FOR PRODUCING
+AUTHORIZATION EVIDENCE
+
+CREDENTIAL AUTHORITY
+    =
+WHAT A CREDENTIAL MAY ATTEMPT TO EXERCISE
+ON AN ACCOUNT
+
+AUTHORIZATION
+    =
+WHAT AUTHORITY IS REQUESTED / EVIDENCED
+
+RESTRICTION / SCOPE / SESSION / DELEGATION
+    =
+UNDER WHAT CONDITIONS
+
+EFFECTIVE AUTHORITY
+    =
+WHAT MAY ACTUALLY BE EXERCISED IN CONTEXT
+
+AUTHORIZATION STATE
+    =
+OPERATIVE AUTHORITY STATE
 
 RUNTIME
     =
-AUTHORITY EVALUATION
+DISTRIBUTED AUTHORITY / EXECUTION ORCHESTRATION
+
+EXECUTION CONTEXT
+    =
+COMPLETE VALID EXECUTION DECISION
 
 EXECUTION ENGINE
     =
 EXECUTION MATERIALIZATION
+
+EXECUTION
+    =
+OPERATIONAL MATERIALIZATION PROCESS
+
+ADAPTER
+    =
+INFRASTRUCTURE-SPECIFIC MATERIALIZATION
 ```
 
-And around them:
+And the fundamental separations:
 
 ```text
-Identity
-    =
-WHO
-
-Capability
-    =
-WHAT AUTHORITY EXISTS
-
-Credential
-    =
-WHO CAN PRODUCE AUTHORIZATION
-
-Authorization
-    =
-WHAT AUTHORITY IS BEING EXERCISED
-
-Restrictions / Scope / Session / Delegation
-    =
-UNDER WHAT CONDITIONS
-
-Runtime
-    =
-IS THIS EXERCISE ALLOWED?
-
-Execution Context
-    =
-COMPLETE VALID DECISION
-
-Execution Engine
-    =
-HOW IS THAT DECISION MATERIALIZED?
-
-Adapter
-    =
-HOW IS IT MATERIALIZED ON THIS INFRASTRUCTURE?
+External Identity
+    ≠
+Subject
+    ≠
+Kipio Identity
+    ≠
+Account
+    ≠
+Blockchain Address
 ```
 
-This separation constitutes the semantic core of `Kipio Account`.
+and:
 
-The intention is not to remove blockchain from the model.
+```text
+Capability
+    ≠
+Credential Authority
+    ≠
+Effective Authority
+    ≠
+Authorization
+    ≠
+Execution
+```
 
-The intention is for **the meaning of authority to remain stable even when the specific way in which blockchain materializes that authority changes**.
+---
+
+# 52. Closed Decisions of Phase 2
+
+The second iteration has closed the following decisions:
+
+```text
+Subject
+    → Value Object
+
+Identity
+    → Entity
+
+Account
+    → Entity
+
+Capability
+    → Value Object
+
+CapabilityKind
+    → Value Object
+
+Scope
+    → Value Object
+
+Restriction
+    → Value Object
+
+Credential
+    → Entity
+
+CredentialAuthority
+    → Value Object
+
+Session
+    → Entity
+
+Delegation
+    → Entity
+
+EffectiveAuthority
+    → Value Object
+
+RequestedAuthority
+    → Value Object
+
+Authorization
+    → Value Object
+
+Policy
+    → recognized external decision/value
+
+PolicyEffect
+    → Value Object
+
+PolicyConsumption
+    → Value Object / transition value
+
+DomainAction
+    → external Value Object
+
+ExecutionRequest
+    → Value Object
+
+ExecutionContext
+    → Value Object
+
+ExecutionConstraints
+    → Value Object
+
+Execution
+    → operational process, not Entity
+```
+
+And:
+
+```text
+Identity 1
+    └── 0..N Accounts
+
+Account 1
+    └── exactly 1 sovereign Identity
+
+Credential 1
+    └── 0..N recognized Accounts
+
+Subject 1
+    └── 0..N Identities
+```
+
+---
+
+# 53. Rule for Formalization
+
+The formal priority is:
+
+```text
+DDD semantic invariant
+        ↓
+Dafny domain model
+        ↓
+formal law
+        ↓
+proof
+        ↓
+Rust / blockchain representation
+```
+
+Never:
+
+```text
+Rust / EVM convenience
+        ↓
+Dafny type
+        ↓
+DDD retrofitted afterwards
+```
+
+When Dafny encounters an ambiguity:
+
+```text
+Dafny ambiguity
+      ↓
+DDD clarification
+      ↓
+formal law
+      ↓
+proof
+```
+
+A domain ambiguity must not be resolved simply by introducing a convenient structure in Dafny.
