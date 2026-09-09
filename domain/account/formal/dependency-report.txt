@@ -1,0 +1,2025 @@
+Dafny Dependency Report
+=======================
+
+Root: /home/chanchi/projects/vaultchain-sovereign-agent/domain/account/formal
+Dafny files: 57
+Modules found: 57
+
+SOURCE OF TRUTH: current .dfy files on disk
+This report was rebuilt completely during this execution.
+
+Structural validation
+---------------------
+OK: every .dfy file declares a module
+
+OK: module names are unique
+
+OK: files scanned successfully
+
+Graph overview
+--------------
+Edge semantics: A -> B means A depends on B.
+fan-out = direct dependencies.
+fan-in  = direct dependents.
+
+Combined edges: 518
+Foundation files: 5
+Leaf files: 18
+
+All Dafny files — fan-out / fan-in
+----------------------------------
+This section is the complete file-level dependency map.
+Every discovered .dfy file is listed, including files with zero
+dependencies and zero dependents.
+
+01. account/Account.dfy
+    module       : KipioAccountAccount
+    fan-out      : 3
+    fan-in       : 28
+    transitive-out: 12
+    transitive-in : 29
+    layer        : 6
+    role         : INTERMEDIATE
+    refactor score: 323
+    depends on:
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+02. account/AccountTransitions.dfy
+    module       : KipioAccountAccountTransitions
+    fan-out      : 13
+    fan-in       : 14
+    transitive-out: 19
+    transitive-in : 18
+    layer        : 8
+    role         : INTERMEDIATE
+    refactor score: 129
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [import_opened]
+    depended on by:
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+
+03. authority/AuthorizationState.dfy
+    module       : KipioAccountAuthorizationState
+    fan-out      : 11
+    fan-in       : 30
+    transitive-out: 11
+    transitive-in : 31
+    layer        : 5
+    role         : INTERMEDIATE
+    refactor score: 324
+    depends on:
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by:
+      <- account/Account.dfy [include, import_opened]
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- laws/PolicyLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+04. authority/Credential.dfy
+    module       : KipioAccountCredential
+    fan-out      : 1
+    fan-in       : 21
+    transitive-out: 1
+    transitive-in : 32
+    layer        : 1
+    role         : INTERMEDIATE
+    refactor score: 270
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+05. authority/CredentialAuthority.dfy
+    module       : KipioAccountCredentialAuthority
+    fan-out      : 1
+    fan-in       : 22
+    transitive-out: 3
+    transitive-in : 39
+    layer        : 3
+    role         : INTERMEDIATE
+    refactor score: 292
+    depends on:
+      -> foundation/Capability.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/EffectiveAuthority.dfy [include, import_opened]
+      <- authority/Session.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- laws/AuthorityLaws.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+06. authority/Delegation.dfy
+    module       : KipioAccountDelegation
+    fan-out      : 4
+    fan-in       : 16
+    transitive-out: 5
+    transitive-in : 38
+    layer        : 3
+    role         : INTERMEDIATE
+    refactor score: 221
+    depends on:
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/EffectiveAuthority.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- laws/AuthorityLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+07. authority/EffectiveAuthority.dfy
+    module       : KipioAccountEffectiveAuthority
+    fan-out      : 4
+    fan-in       : 27
+    transitive-out: 8
+    transitive-in : 34
+    layer        : 5
+    role         : INTERMEDIATE
+    refactor score: 321
+    depends on:
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/AuthorityLaws.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/CapabilityLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+08. authority/Session.dfy
+    module       : KipioAccountSession
+    fan-out      : 4
+    fan-in       : 19
+    transitive-out: 5
+    transitive-in : 38
+    layer        : 4
+    role         : INTERMEDIATE
+    refactor score: 250
+    depends on:
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/EffectiveAuthority.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- laws/AuthorityLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [include, import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+09. authorization/Authorization.dfy
+    module       : KipioAccountAuthorization
+    fan-out      : 8
+    fan-in       : 21
+    transitive-out: 12
+    transitive-in : 31
+    layer        : 6
+    role         : INTERMEDIATE
+    refactor score: 242
+    depends on:
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+    depended on by:
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- authorization/Replay.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionRequest.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+10. authorization/AuthorizationAcceptanceTransition.dfy
+    module       : KipioAccountAuthorizationAcceptanceTransition
+    fan-out      : 10
+    fan-in       : 1
+    transitive-out: 21
+    transitive-in : 1
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: -27
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+
+11. authorization/AuthorizationValidation.dfy
+    module       : KipioAccountAuthorizationValidation
+    fan-out      : 14
+    fan-in       : 16
+    transitive-out: 19
+    transitive-in : 18
+    layer        : 8
+    role         : INTERMEDIATE
+    refactor score: 146
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+    depended on by:
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+12. authorization/Replay.dfy
+    module       : KipioAccountReplay
+    fan-out      : 2
+    fan-in       : 14
+    transitive-out: 13
+    transitive-in : 29
+    layer        : 7
+    role         : INTERMEDIATE
+    refactor score: 185
+    depends on:
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+13. execution/ExecutionConstraints.dfy
+    module       : KipioAccountExecutionConstraints
+    fan-out      : 0
+    fan-in       : 10
+    transitive-out: 0
+    transitive-in : 11
+    layer        : 0
+    role         : FOUNDATION
+    refactor score: 222
+    depends on: NONE
+    depended on by:
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionRequest.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+
+14. execution/ExecutionContext.dfy
+    module       : KipioAccountExecutionContext
+    fan-out      : 10
+    fan-in       : 9
+    transitive-out: 22
+    transitive-in : 9
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: 69
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- execution/ExecutionSemantics.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+
+15. execution/ExecutionRequest.dfy
+    module       : KipioAccountExecutionRequest
+    fan-out      : 4
+    fan-in       : 10
+    transitive-out: 14
+    transitive-in : 10
+    layer        : 7
+    role         : INTERMEDIATE
+    refactor score: 101
+    depends on:
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+    depended on by:
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+
+16. execution/ExecutionSemantics.dfy
+    module       : KipioAccountExecutionSemantics
+    fan-out      : 11
+    fan-in       : 8
+    transitive-out: 23
+    transitive-in : 8
+    layer        : 10
+    role         : INTERMEDIATE
+    refactor score: 53
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [import_opened]
+      -> authority/EffectiveAuthority.dfy [import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/Chain.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+    depended on by:
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+
+17. foundation/Capability.dfy
+    module       : KipioAccountCapability
+    fan-out      : 2
+    fan-in       : 39
+    transitive-out: 2
+    transitive-in : 45
+    layer        : 2
+    role         : INTERMEDIATE
+    refactor score: 472
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/CredentialAuthority.dfy [include, import_opened]
+      <- authority/Delegation.dfy [include, import_opened]
+      <- authority/EffectiveAuthority.dfy [include, import_opened]
+      <- authority/Session.dfy [include, import_opened]
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/AuthorityLaws.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/CapabilityLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- policy/PolicyEffect.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+18. foundation/Chain.dfy
+    module       : KipioAccountChain
+    fan-out      : 0
+    fan-in       : 11
+    transitive-out: 0
+    transitive-in : 32
+    layer        : 0
+    role         : FOUNDATION
+    refactor score: 274
+    depends on: NONE
+    depended on by:
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+19. foundation/DomainAction.dfy
+    module       : KipioAccountDomainAction
+    fan-out      : 0
+    fan-in       : 12
+    transitive-out: 0
+    transitive-in : 32
+    layer        : 0
+    role         : FOUNDATION
+    refactor score: 284
+    depends on: NONE
+    depended on by:
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- execution/ExecutionRequest.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+20. foundation/DomainPrimitives.dfy
+    module       : KipioAccountDomainPrimitives
+    fan-out      : 0
+    fan-in       : 43
+    transitive-out: 0
+    transitive-in : 52
+    layer        : 0
+    role         : FOUNDATION
+    refactor score: 634
+    depends on: NONE
+    depended on by:
+      <- account/Account.dfy [include, import_opened]
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/Credential.dfy [include, import_opened]
+      <- authority/Delegation.dfy [include, import_opened]
+      <- authority/Session.dfy [include, import_opened]
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- authorization/Replay.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- foundation/Capability.dfy [include, import_opened]
+      <- foundation/Identity.dfy [include, import_opened]
+      <- foundation/Restriction.dfy [include, import_opened]
+      <- foundation/Scope.dfy [include, import_opened]
+      <- foundation/Subject.dfy [include, import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- laws/IdentityLaws.dfy [include, import_opened]
+      <- laws/SessionLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- policy/PolicyEffect.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+21. foundation/ExecutionTarget.dfy
+    module       : KipioAccountExecutionTarget
+    fan-out      : 0
+    fan-in       : 13
+    transitive-out: 0
+    transitive-in : 32
+    layer        : 0
+    role         : FOUNDATION
+    refactor score: 294
+    depends on: NONE
+    depended on by:
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- execution/ExecutionRequest.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+22. foundation/Identity.dfy
+    module       : KipioAccountIdentity
+    fan-out      : 2
+    fan-in       : 30
+    transitive-out: 2
+    transitive-in : 34
+    layer        : 2
+    role         : INTERMEDIATE
+    refactor score: 360
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by:
+      <- account/Account.dfy [include, import_opened]
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- execution/ExecutionContext.dfy [include, import_opened]
+      <- execution/ExecutionSemantics.dfy [import_opened]
+      <- laws/AuthorizationLaws.dfy [include, import_opened]
+      <- laws/DelegationLaws.dfy [include, import_opened]
+      <- laws/ExecutionLaws.dfy [include, import_opened]
+      <- laws/IdentityLaws.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorityProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      <- proofs/isolated/ExecutionProofs.dfy [import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/AgentProof.dfy [import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+23. foundation/Restriction.dfy
+    module       : KipioAccountRestriction
+    fan-out      : 1
+    fan-in       : 17
+    transitive-out: 1
+    transitive-in : 44
+    layer        : 1
+    role         : INTERMEDIATE
+    refactor score: 254
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [include, import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authority/Delegation.dfy [include, import_opened]
+      <- authority/Session.dfy [include, import_opened]
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- policy/PolicyEffect.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+
+24. foundation/Scope.dfy
+    module       : KipioAccountScope
+    fan-out      : 1
+    fan-in       : 18
+    transitive-out: 1
+    transitive-in : 46
+    layer        : 1
+    role         : INTERMEDIATE
+    refactor score: 268
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- authorization/Authorization.dfy [include, import_opened]
+      <- authorization/AuthorizationValidation.dfy [include, import_opened]
+      <- foundation/Capability.dfy [include, import_opened]
+      <- laws/CapabilityLaws.dfy [include, import_opened]
+      <- policy/PolicyEffect.dfy [include, import_opened]
+      <- proofs/isolated/AuthorizationProofs.dfy [import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+25. foundation/Subject.dfy
+    module       : KipioAccountSubject
+    fan-out      : 1
+    fan-in       : 10
+    transitive-out: 1
+    transitive-in : 42
+    layer        : 1
+    role         : INTERMEDIATE
+    refactor score: 180
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- authority/AuthorizationState.dfy [import_opened]
+      <- authority/Delegation.dfy [include, import_opened]
+      <- foundation/Identity.dfy [include, import_opened]
+      <- laws/IdentityLaws.dfy [include, import_opened]
+      <- proofs/isolated/FoundationProofs.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/IncompleteExecutionContextProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+      <- proofs/scenarios/UnprovenAuthorityProof.dfy [include, import_opened]
+
+26. laws/AuthorityLaws.dfy
+    module       : KipioAccountAuthorityLaws
+    fan-out      : 5
+    fan-in       : 2
+    transitive-out: 9
+    transitive-in : 7
+    layer        : 6
+    role         : INTERMEDIATE
+    refactor score: 13
+    depends on:
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+    depended on by:
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+
+27. laws/AuthorizationLaws.dfy
+    module       : KipioAccountAuthorizationLaws
+    fan-out      : 10
+    fan-in       : 2
+    transitive-out: 20
+    transitive-in : 2
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: -15
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- proofs/scenarios/CryptobroProof.dfy [include]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+
+28. laws/CapabilityLaws.dfy
+    module       : KipioAccountCapabilityLaws
+    fan-out      : 3
+    fan-in       : 0
+    transitive-out: 9
+    transitive-in : 0
+    layer        : 6
+    role         : LEAF
+    refactor score: -15
+    depends on:
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+    depended on by: NONE
+
+29. laws/DelegationLaws.dfy
+    module       : KipioAccountDelegationLaws
+    fan-out      : 8
+    fan-in       : 2
+    transitive-out: 20
+    transitive-in : 7
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: 1
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include]
+
+30. laws/ExecutionLaws.dfy
+    module       : KipioAccountExecutionLaws
+    fan-out      : 14
+    fan-in       : 3
+    transitive-out: 24
+    transitive-in : 6
+    layer        : 11
+    role         : INTERMEDIATE
+    refactor score: -11
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> execution/ExecutionSemantics.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+    depended on by:
+      <- proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+
+31. laws/IdentityLaws.dfy
+    module       : KipioAccountIdentityLaws
+    fan-out      : 3
+    fan-in       : 0
+    transitive-out: 3
+    transitive-in : 0
+    layer        : 3
+    role         : LEAF
+    refactor score: -12
+    depends on:
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by: NONE
+
+32. laws/PolicyLaws.dfy
+    module       : KipioAccountPolicyLaws
+    fan-out      : 5
+    fan-in       : 0
+    transitive-out: 23
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -25
+    depends on:
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> policy/AuthorizationStateTransition.dfy [include, import_opened]
+      -> policy/Policy.dfy [include, import_opened]
+      -> policy/PolicyConsumption.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by: NONE
+
+33. laws/SessionLaws.dfy
+    module       : KipioAccountSessionLaws
+    fan-out      : 6
+    fan-in       : 2
+    transitive-out: 12
+    transitive-in : 7
+    layer        : 6
+    role         : INTERMEDIATE
+    refactor score: 10
+    depends on:
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+    depended on by:
+      <- proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+
+34. policy/AuthorizationStateTransition.dfy
+    module       : KipioAccountAuthorizationStateTransition
+    fan-out      : 12
+    fan-in       : 3
+    transitive-out: 22
+    transitive-in : 3
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: -9
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> policy/Policy.dfy [include, import_opened]
+      -> policy/PolicyConsumption.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by:
+      <- laws/PolicyLaws.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+
+35. policy/Policy.dfy
+    module       : KipioAccountPolicy
+    fan-out      : 1
+    fan-in       : 5
+    transitive-out: 5
+    transitive-in : 5
+    layer        : 4
+    role         : INTERMEDIATE
+    refactor score: 53
+    depends on:
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by:
+      <- laws/PolicyLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- policy/PolicyConsumption.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+
+36. policy/PolicyConsumption.dfy
+    module       : KipioAccountPolicyConsumption
+    fan-out      : 2
+    fan-in       : 4
+    transitive-out: 6
+    transitive-in : 4
+    layer        : 5
+    role         : INTERMEDIATE
+    refactor score: 37
+    depends on:
+      -> policy/Policy.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by:
+      <- laws/PolicyLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+
+37. policy/PolicyEffect.dfy
+    module       : KipioAccountPolicyEffect
+    fan-out      : 4
+    fan-in       : 10
+    transitive-out: 4
+    transitive-in : 34
+    layer        : 3
+    role         : INTERMEDIATE
+    refactor score: 153
+    depends on:
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+    depended on by:
+      <- account/AccountTransitions.dfy [import_opened]
+      <- authority/AuthorizationState.dfy [include, import_opened]
+      <- laws/PolicyLaws.dfy [include, import_opened]
+      <- policy/AuthorizationStateTransition.dfy [include, import_opened]
+      <- policy/Policy.dfy [include, import_opened]
+      <- policy/PolicyConsumption.dfy [include, import_opened]
+      <- proofs/isolated/AccountProofs.dfy [import_opened]
+      <- proofs/isolated/PolicyProofs.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [import_opened]
+      <- proofs/scenarios/PolicyAtomicityProof.dfy [include, import_opened]
+
+38. proofs/isolated/AccountProofs.dfy
+    module       : KipioAccountProofs
+    fan-out      : 12
+    fan-in       : 5
+    transitive-out: 20
+    transitive-in : 5
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: 15
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> foundation/Restriction.dfy [import_opened]
+      -> policy/PolicyEffect.dfy [import_opened]
+    depended on by:
+      <- proofs/scenarios/AgentProof.dfy [include, import_opened]
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [include, import_opened]
+
+39. proofs/isolated/AuthorityProofs.dfy
+    module       : KipioAccountAuthorityProofs
+    fan-out      : 14
+    fan-in       : 6
+    transitive-out: 23
+    transitive-in : 6
+    layer        : 10
+    role         : INTERMEDIATE
+    refactor score: 20
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> laws/AuthorityLaws.dfy [include, import_opened]
+      -> laws/DelegationLaws.dfy [include, import_opened]
+      -> laws/SessionLaws.dfy [include, import_opened]
+    depended on by:
+      <- proofs/scenarios/AgentProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/EnterpriseProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+
+40. proofs/isolated/AuthorizationProofs.dfy
+    module       : KipioAccountAuthorizationProofs
+    fan-out      : 13
+    fan-in       : 8
+    transitive-out: 20
+    transitive-in : 8
+    layer        : 9
+    role         : INTERMEDIATE
+    refactor score: 48
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [import_opened]
+      -> foundation/Scope.dfy [import_opened]
+    depended on by:
+      <- proofs/scenarios/AgentProof.dfy [include, import_opened]
+      <- proofs/scenarios/CryptobroProof.dfy [include]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [include, import_opened]
+      <- proofs/scenarios/InvalidAccountAcceptanceProof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+      <- proofs/scenarios/RecoveryProof.dfy [include, import_opened]
+
+41. proofs/isolated/ExecutionProofs.dfy
+    module       : KipioAccountExecutionProofs
+    fan-out      : 15
+    fan-in       : 5
+    transitive-out: 25
+    transitive-in : 5
+    layer        : 12
+    role         : INTERMEDIATE
+    refactor score: 3
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [import_opened]
+      -> authority/EffectiveAuthority.dfy [import_opened]
+      -> authorization/Authorization.dfy [import_opened]
+      -> execution/ExecutionConstraints.dfy [import_opened]
+      -> execution/ExecutionContext.dfy [import_opened]
+      -> execution/ExecutionRequest.dfy [import_opened]
+      -> execution/ExecutionSemantics.dfy [import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/Chain.dfy [import_opened]
+      -> foundation/DomainAction.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/ExecutionTarget.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> laws/ExecutionLaws.dfy [include, import_opened]
+    depended on by:
+      <- proofs/scenarios/AgentProof.dfy [include, import_opened]
+      <- proofs/scenarios/DeFiProof.dfy [include, import_opened]
+      <- proofs/scenarios/FutureAdapterProof.dfy [include, import_opened]
+      <- proofs/scenarios/GameProof.dfy [include, import_opened]
+      <- proofs/scenarios/GrandmotherProof.dfy [include, import_opened]
+
+42. proofs/isolated/FoundationProofs.dfy
+    module       : KipioAccountFoundationProofs
+    fan-out      : 6
+    fan-in       : 2
+    transitive-out: 6
+    transitive-in : 2
+    layer        : 3
+    role         : INTERMEDIATE
+    refactor score: 3
+    depends on:
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by:
+      <- proofs/scenarios/EIP7702Proof.dfy [include, import_opened]
+      <- proofs/scenarios/MultiChainProof.dfy [include, import_opened]
+
+43. proofs/isolated/PolicyProofs.dfy
+    module       : KipioAccountPolicyProofs
+    fan-out      : 11
+    fan-in       : 0
+    transitive-out: 23
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -43
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> policy/AuthorizationStateTransition.dfy [include, import_opened]
+      -> policy/Policy.dfy [include, import_opened]
+      -> policy/PolicyConsumption.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by: NONE
+
+44. proofs/scenarios/AgentProof.dfy
+    module       : KipioAccountAgentProof
+    fan-out      : 23
+    fan-in       : 0
+    transitive-out: 33
+    transitive-in : 0
+    layer        : 13
+    role         : LEAF
+    refactor score: -82
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> account/AccountTransitions.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [import_opened]
+      -> authority/Credential.dfy [import_opened]
+      -> authority/CredentialAuthority.dfy [import_opened]
+      -> authority/EffectiveAuthority.dfy [import_opened]
+      -> authority/Session.dfy [import_opened]
+      -> authorization/Authorization.dfy [import_opened]
+      -> authorization/AuthorizationValidation.dfy [import_opened]
+      -> authorization/Replay.dfy [import_opened]
+      -> execution/ExecutionConstraints.dfy [import_opened]
+      -> execution/ExecutionContext.dfy [import_opened]
+      -> execution/ExecutionRequest.dfy [import_opened]
+      -> execution/ExecutionSemantics.dfy [import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainAction.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/ExecutionTarget.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> proofs/isolated/AccountProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      -> proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+45. proofs/scenarios/CryptobroProof.dfy
+    module       : KipioAccountCryptobroProof
+    fan-out      : 22
+    fan-in       : 0
+    transitive-out: 24
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -76
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationAcceptanceTransition.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> laws/AuthorizationLaws.dfy [include]
+      -> proofs/isolated/AuthorizationProofs.dfy [include]
+    depended on by: NONE
+
+46. proofs/scenarios/DeFiProof.dfy
+    module       : KipioAccountDeFiProof
+    fan-out      : 25
+    fan-in       : 0
+    transitive-out: 32
+    transitive-in : 0
+    layer        : 13
+    role         : LEAF
+    refactor score: -88
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> execution/ExecutionSemantics.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      -> proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+47. proofs/scenarios/EIP7702Proof.dfy
+    module       : KipioAccountEIP7702Proof
+    fan-out      : 18
+    fan-in       : 0
+    transitive-out: 22
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -64
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Replay.dfy [import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [import_opened]
+      -> proofs/isolated/AccountProofs.dfy [include, import_opened]
+      -> proofs/isolated/FoundationProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+48. proofs/scenarios/EnterpriseProof.dfy
+    module       : KipioAccountEnterpriseProof
+    fan-out      : 15
+    fan-in       : 0
+    transitive-out: 24
+    transitive-in : 0
+    layer        : 11
+    role         : LEAF
+    refactor score: -56
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> laws/DelegationLaws.dfy [include]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+49. proofs/scenarios/FutureAdapterProof.dfy
+    module       : KipioAccountFutureAdapterProof
+    fan-out      : 14
+    fan-in       : 0
+    transitive-out: 26
+    transitive-in : 0
+    layer        : 13
+    role         : LEAF
+    refactor score: -55
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> execution/ExecutionSemantics.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> laws/ExecutionLaws.dfy [include, import_opened]
+      -> proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+50. proofs/scenarios/GameProof.dfy
+    module       : KipioAccountGameProof
+    fan-out      : 24
+    fan-in       : 0
+    transitive-out: 33
+    transitive-in : 0
+    layer        : 13
+    role         : LEAF
+    refactor score: -85
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> execution/ExecutionSemantics.dfy [include, import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/Chain.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> laws/AuthorityLaws.dfy [include, import_opened]
+      -> laws/AuthorizationLaws.dfy [include, import_opened]
+      -> laws/ExecutionLaws.dfy [include, import_opened]
+      -> laws/SessionLaws.dfy [include, import_opened]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      -> proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+51. proofs/scenarios/GrandmotherProof.dfy
+    module       : KipioAccountGrandmotherProof
+    fan-out      : 22
+    fan-in       : 0
+    transitive-out: 33
+    transitive-in : 0
+    layer        : 13
+    role         : LEAF
+    refactor score: -79
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> account/AccountTransitions.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [import_opened]
+      -> authority/Credential.dfy [import_opened]
+      -> authority/CredentialAuthority.dfy [import_opened]
+      -> authority/EffectiveAuthority.dfy [import_opened]
+      -> authorization/Authorization.dfy [import_opened]
+      -> authorization/AuthorizationValidation.dfy [import_opened]
+      -> authorization/Replay.dfy [import_opened]
+      -> execution/ExecutionConstraints.dfy [import_opened]
+      -> execution/ExecutionContext.dfy [import_opened]
+      -> execution/ExecutionRequest.dfy [import_opened]
+      -> execution/ExecutionSemantics.dfy [import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainAction.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/ExecutionTarget.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> proofs/isolated/AccountProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      -> proofs/isolated/ExecutionProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+52. proofs/scenarios/IncompleteExecutionContextProof.dfy
+    module       : KipioAccountIncompleteExecutionContextProof
+    fan-out      : 22
+    fan-in       : 0
+    transitive-out: 24
+    transitive-in : 0
+    layer        : 11
+    role         : LEAF
+    refactor score: -77
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> execution/ExecutionConstraints.dfy [include, import_opened]
+      -> execution/ExecutionContext.dfy [include, import_opened]
+      -> execution/ExecutionRequest.dfy [include, import_opened]
+      -> execution/ExecutionSemantics.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by: NONE
+
+53. proofs/scenarios/InvalidAccountAcceptanceProof.dfy
+    module       : KipioAccountInvalidAccountAcceptanceProof
+    fan-out      : 15
+    fan-in       : 0
+    transitive-out: 23
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -55
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+      -> proofs/isolated/AccountProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+54. proofs/scenarios/MultiChainProof.dfy
+    module       : KipioAccountMultiChainProof
+    fan-out      : 21
+    fan-in       : 0
+    transitive-out: 27
+    transitive-in : 0
+    layer        : 11
+    role         : LEAF
+    refactor score: -74
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> foundation/Restriction.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> proofs/isolated/AuthorityProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+      -> proofs/isolated/FoundationProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+55. proofs/scenarios/PolicyAtomicityProof.dfy
+    module       : KipioAccountPolicyAtomicityScenario
+    fan-out      : 13
+    fan-in       : 0
+    transitive-out: 23
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -49
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> account/AccountTransitions.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+      -> policy/AuthorizationStateTransition.dfy [include, import_opened]
+      -> policy/Policy.dfy [include, import_opened]
+      -> policy/PolicyConsumption.dfy [include, import_opened]
+      -> policy/PolicyEffect.dfy [include, import_opened]
+    depended on by: NONE
+
+56. proofs/scenarios/RecoveryProof.dfy
+    module       : KipioAccountRecoveryProof
+    fan-out      : 15
+    fan-in       : 0
+    transitive-out: 23
+    transitive-in : 0
+    layer        : 10
+    role         : LEAF
+    refactor score: -55
+    depends on:
+      -> account/Account.dfy [import_opened]
+      -> account/AccountTransitions.dfy [import_opened]
+      -> authority/AuthorizationState.dfy [import_opened]
+      -> authority/Credential.dfy [import_opened]
+      -> authority/CredentialAuthority.dfy [import_opened]
+      -> authority/EffectiveAuthority.dfy [import_opened]
+      -> authority/Session.dfy [import_opened]
+      -> authorization/Authorization.dfy [import_opened]
+      -> authorization/AuthorizationValidation.dfy [import_opened]
+      -> authorization/Replay.dfy [import_opened]
+      -> foundation/Capability.dfy [import_opened]
+      -> foundation/DomainPrimitives.dfy [import_opened]
+      -> foundation/Identity.dfy [import_opened]
+      -> proofs/isolated/AccountProofs.dfy [include, import_opened]
+      -> proofs/isolated/AuthorizationProofs.dfy [include, import_opened]
+    depended on by: NONE
+
+57. proofs/scenarios/UnprovenAuthorityProof.dfy
+    module       : KipioAccountUnprovenAuthorityProof
+    fan-out      : 18
+    fan-in       : 0
+    transitive-out: 20
+    transitive-in : 0
+    layer        : 9
+    role         : LEAF
+    refactor score: -63
+    depends on:
+      -> account/Account.dfy [include, import_opened]
+      -> authority/AuthorizationState.dfy [include, import_opened]
+      -> authority/Credential.dfy [include, import_opened]
+      -> authority/CredentialAuthority.dfy [include, import_opened]
+      -> authority/Delegation.dfy [include, import_opened]
+      -> authority/EffectiveAuthority.dfy [include, import_opened]
+      -> authority/Session.dfy [include, import_opened]
+      -> authorization/Authorization.dfy [include, import_opened]
+      -> authorization/AuthorizationValidation.dfy [include, import_opened]
+      -> authorization/Replay.dfy [include, import_opened]
+      -> foundation/Capability.dfy [include, import_opened]
+      -> foundation/Chain.dfy [include, import_opened]
+      -> foundation/DomainAction.dfy [include, import_opened]
+      -> foundation/DomainPrimitives.dfy [include, import_opened]
+      -> foundation/ExecutionTarget.dfy [include, import_opened]
+      -> foundation/Identity.dfy [include, import_opened]
+      -> foundation/Scope.dfy [include, import_opened]
+      -> foundation/Subject.dfy [include, import_opened]
+    depended on by: NONE
+
+Foundation files
+-----------------
+Files with fan-out = 0.
+These are the natural starting candidates for dependency-first
+refactoring, although fan-in and semantic importance must also be
+considered.
+
+- foundation/DomainPrimitives.dfy (fan-in: 43)
+- foundation/ExecutionTarget.dfy (fan-in: 13)
+- foundation/DomainAction.dfy (fan-in: 12)
+- foundation/Chain.dfy (fan-in: 11)
+- execution/ExecutionConstraints.dfy (fan-in: 10)
+
+Highest fan-in files
+--------------------
+These files are consumed by the greatest number of other files.
+
+- foundation/DomainPrimitives.dfy fan-in=43 fan-out=0
+- foundation/Capability.dfy fan-in=39 fan-out=2
+- authority/AuthorizationState.dfy fan-in=30 fan-out=11
+- foundation/Identity.dfy fan-in=30 fan-out=2
+- account/Account.dfy fan-in=28 fan-out=3
+- authority/EffectiveAuthority.dfy fan-in=27 fan-out=4
+- authority/CredentialAuthority.dfy fan-in=22 fan-out=1
+- authority/Credential.dfy fan-in=21 fan-out=1
+- authorization/Authorization.dfy fan-in=21 fan-out=8
+- authority/Session.dfy fan-in=19 fan-out=4
+- foundation/Scope.dfy fan-in=18 fan-out=1
+- foundation/Restriction.dfy fan-in=17 fan-out=1
+- authority/Delegation.dfy fan-in=16 fan-out=4
+- authorization/AuthorizationValidation.dfy fan-in=16 fan-out=14
+- account/AccountTransitions.dfy fan-in=14 fan-out=13
+- authorization/Replay.dfy fan-in=14 fan-out=2
+- foundation/ExecutionTarget.dfy fan-in=13 fan-out=0
+- foundation/DomainAction.dfy fan-in=12 fan-out=0
+- foundation/Chain.dfy fan-in=11 fan-out=0
+- execution/ExecutionConstraints.dfy fan-in=10 fan-out=0
+- execution/ExecutionRequest.dfy fan-in=10 fan-out=4
+- foundation/Subject.dfy fan-in=10 fan-out=1
+- policy/PolicyEffect.dfy fan-in=10 fan-out=4
+- execution/ExecutionContext.dfy fan-in=9 fan-out=10
+- execution/ExecutionSemantics.dfy fan-in=8 fan-out=11
+- proofs/isolated/AuthorizationProofs.dfy fan-in=8 fan-out=13
+- proofs/isolated/AuthorityProofs.dfy fan-in=6 fan-out=14
+- policy/Policy.dfy fan-in=5 fan-out=1
+- proofs/isolated/AccountProofs.dfy fan-in=5 fan-out=12
+- proofs/isolated/ExecutionProofs.dfy fan-in=5 fan-out=15
+- policy/PolicyConsumption.dfy fan-in=4 fan-out=2
+- laws/ExecutionLaws.dfy fan-in=3 fan-out=14
+- policy/AuthorizationStateTransition.dfy fan-in=3 fan-out=12
+- laws/AuthorityLaws.dfy fan-in=2 fan-out=5
+- laws/AuthorizationLaws.dfy fan-in=2 fan-out=10
+- laws/DelegationLaws.dfy fan-in=2 fan-out=8
+- laws/SessionLaws.dfy fan-in=2 fan-out=6
+- proofs/isolated/FoundationProofs.dfy fan-in=2 fan-out=6
+- authorization/AuthorizationAcceptanceTransition.dfy fan-in=1 fan-out=10
+
+Dependency-first order
+-----------------------
+A dependency appears before every file that depends on it.
+
+01. execution/ExecutionConstraints.dfy (layer=0, fan-in=10, fan-out=0)
+02. foundation/Chain.dfy (layer=0, fan-in=11, fan-out=0)
+03. foundation/DomainAction.dfy (layer=0, fan-in=12, fan-out=0)
+04. foundation/DomainPrimitives.dfy (layer=0, fan-in=43, fan-out=0)
+05. authority/Credential.dfy (layer=1, fan-in=21, fan-out=1)
+06. foundation/ExecutionTarget.dfy (layer=0, fan-in=13, fan-out=0)
+07. foundation/Restriction.dfy (layer=1, fan-in=17, fan-out=1)
+08. foundation/Scope.dfy (layer=1, fan-in=18, fan-out=1)
+09. foundation/Capability.dfy (layer=2, fan-in=39, fan-out=2)
+10. authority/CredentialAuthority.dfy (layer=3, fan-in=22, fan-out=1)
+11. authority/Session.dfy (layer=4, fan-in=19, fan-out=4)
+12. foundation/Subject.dfy (layer=1, fan-in=10, fan-out=1)
+13. authority/Delegation.dfy (layer=3, fan-in=16, fan-out=4)
+14. authority/EffectiveAuthority.dfy (layer=5, fan-in=27, fan-out=4)
+15. authorization/Authorization.dfy (layer=6, fan-in=21, fan-out=8)
+16. authorization/Replay.dfy (layer=7, fan-in=14, fan-out=2)
+17. execution/ExecutionRequest.dfy (layer=7, fan-in=10, fan-out=4)
+18. foundation/Identity.dfy (layer=2, fan-in=30, fan-out=2)
+19. laws/AuthorityLaws.dfy (layer=6, fan-in=2, fan-out=5)
+20. laws/CapabilityLaws.dfy (layer=6, fan-in=0, fan-out=3)
+21. laws/IdentityLaws.dfy (layer=3, fan-in=0, fan-out=3)
+22. policy/PolicyEffect.dfy (layer=3, fan-in=10, fan-out=4)
+23. authority/AuthorizationState.dfy (layer=5, fan-in=30, fan-out=11)
+24. account/Account.dfy (layer=6, fan-in=28, fan-out=3)
+25. account/AccountTransitions.dfy (layer=8, fan-in=14, fan-out=13)
+26. authorization/AuthorizationValidation.dfy (layer=8, fan-in=16, fan-out=14)
+27. authorization/AuthorizationAcceptanceTransition.dfy (layer=9, fan-in=1, fan-out=10)
+28. execution/ExecutionContext.dfy (layer=9, fan-in=9, fan-out=10)
+29. execution/ExecutionSemantics.dfy (layer=10, fan-in=8, fan-out=11)
+30. laws/AuthorizationLaws.dfy (layer=9, fan-in=2, fan-out=10)
+31. laws/DelegationLaws.dfy (layer=9, fan-in=2, fan-out=8)
+32. laws/ExecutionLaws.dfy (layer=11, fan-in=3, fan-out=14)
+33. laws/SessionLaws.dfy (layer=6, fan-in=2, fan-out=6)
+34. policy/Policy.dfy (layer=4, fan-in=5, fan-out=1)
+35. policy/PolicyConsumption.dfy (layer=5, fan-in=4, fan-out=2)
+36. policy/AuthorizationStateTransition.dfy (layer=9, fan-in=3, fan-out=12)
+37. laws/PolicyLaws.dfy (layer=10, fan-in=0, fan-out=5)
+38. proofs/isolated/AccountProofs.dfy (layer=9, fan-in=5, fan-out=12)
+39. proofs/isolated/AuthorityProofs.dfy (layer=10, fan-in=6, fan-out=14)
+40. proofs/isolated/AuthorizationProofs.dfy (layer=9, fan-in=8, fan-out=13)
+41. proofs/isolated/ExecutionProofs.dfy (layer=12, fan-in=5, fan-out=15)
+42. proofs/isolated/FoundationProofs.dfy (layer=3, fan-in=2, fan-out=6)
+43. proofs/isolated/PolicyProofs.dfy (layer=10, fan-in=0, fan-out=11)
+44. proofs/scenarios/AgentProof.dfy (layer=13, fan-in=0, fan-out=23)
+45. proofs/scenarios/CryptobroProof.dfy (layer=10, fan-in=0, fan-out=22)
+46. proofs/scenarios/DeFiProof.dfy (layer=13, fan-in=0, fan-out=25)
+47. proofs/scenarios/EIP7702Proof.dfy (layer=10, fan-in=0, fan-out=18)
+48. proofs/scenarios/EnterpriseProof.dfy (layer=11, fan-in=0, fan-out=15)
+49. proofs/scenarios/FutureAdapterProof.dfy (layer=13, fan-in=0, fan-out=14)
+50. proofs/scenarios/GameProof.dfy (layer=13, fan-in=0, fan-out=24)
+51. proofs/scenarios/GrandmotherProof.dfy (layer=13, fan-in=0, fan-out=22)
+52. proofs/scenarios/IncompleteExecutionContextProof.dfy (layer=11, fan-in=0, fan-out=22)
+53. proofs/scenarios/InvalidAccountAcceptanceProof.dfy (layer=10, fan-in=0, fan-out=15)
+54. proofs/scenarios/MultiChainProof.dfy (layer=11, fan-in=0, fan-out=21)
+55. proofs/scenarios/PolicyAtomicityProof.dfy (layer=10, fan-in=0, fan-out=13)
+56. proofs/scenarios/RecoveryProof.dfy (layer=10, fan-in=0, fan-out=15)
+57. proofs/scenarios/UnprovenAuthorityProof.dfy (layer=9, fan-in=0, fan-out=18)
+
+Suggested refactor priority
+---------------------------
+This is a graph-derived priority, NOT a semantic correctness score.
+
+01. foundation/DomainPrimitives.dfy score=634 fan-in=43 fan-out=0 layer=0
+02. foundation/Capability.dfy score=472 fan-in=39 fan-out=2 layer=2
+03. foundation/Identity.dfy score=360 fan-in=30 fan-out=2 layer=2
+04. authority/AuthorizationState.dfy score=324 fan-in=30 fan-out=11 layer=5
+05. account/Account.dfy score=323 fan-in=28 fan-out=3 layer=6
+06. authority/EffectiveAuthority.dfy score=321 fan-in=27 fan-out=4 layer=5
+07. foundation/ExecutionTarget.dfy score=294 fan-in=13 fan-out=0 layer=0
+08. authority/CredentialAuthority.dfy score=292 fan-in=22 fan-out=1 layer=3
+09. foundation/DomainAction.dfy score=284 fan-in=12 fan-out=0 layer=0
+10. foundation/Chain.dfy score=274 fan-in=11 fan-out=0 layer=0
+11. authority/Credential.dfy score=270 fan-in=21 fan-out=1 layer=1
+12. foundation/Scope.dfy score=268 fan-in=18 fan-out=1 layer=1
+13. foundation/Restriction.dfy score=254 fan-in=17 fan-out=1 layer=1
+14. authority/Session.dfy score=250 fan-in=19 fan-out=4 layer=4
+15. authorization/Authorization.dfy score=242 fan-in=21 fan-out=8 layer=6
+16. execution/ExecutionConstraints.dfy score=222 fan-in=10 fan-out=0 layer=0
+17. authority/Delegation.dfy score=221 fan-in=16 fan-out=4 layer=3
+18. authorization/Replay.dfy score=185 fan-in=14 fan-out=2 layer=7
+19. foundation/Subject.dfy score=180 fan-in=10 fan-out=1 layer=1
+20. policy/PolicyEffect.dfy score=153 fan-in=10 fan-out=4 layer=3
+21. authorization/AuthorizationValidation.dfy score=146 fan-in=16 fan-out=14 layer=8
+22. account/AccountTransitions.dfy score=129 fan-in=14 fan-out=13 layer=8
+23. execution/ExecutionRequest.dfy score=101 fan-in=10 fan-out=4 layer=7
+24. execution/ExecutionContext.dfy score=69 fan-in=9 fan-out=10 layer=9
+25. execution/ExecutionSemantics.dfy score=53 fan-in=8 fan-out=11 layer=10
+26. policy/Policy.dfy score=53 fan-in=5 fan-out=1 layer=4
+27. proofs/isolated/AuthorizationProofs.dfy score=48 fan-in=8 fan-out=13 layer=9
+28. policy/PolicyConsumption.dfy score=37 fan-in=4 fan-out=2 layer=5
+29. proofs/isolated/AuthorityProofs.dfy score=20 fan-in=6 fan-out=14 layer=10
+30. proofs/isolated/AccountProofs.dfy score=15 fan-in=5 fan-out=12 layer=9
+31. laws/AuthorityLaws.dfy score=13 fan-in=2 fan-out=5 layer=6
+32. laws/SessionLaws.dfy score=10 fan-in=2 fan-out=6 layer=6
+33. proofs/isolated/ExecutionProofs.dfy score=3 fan-in=5 fan-out=15 layer=12
+34. proofs/isolated/FoundationProofs.dfy score=3 fan-in=2 fan-out=6 layer=3
+35. laws/DelegationLaws.dfy score=1 fan-in=2 fan-out=8 layer=9
+36. policy/AuthorizationStateTransition.dfy score=-9 fan-in=3 fan-out=12 layer=9
+37. laws/ExecutionLaws.dfy score=-11 fan-in=3 fan-out=14 layer=11
+38. laws/IdentityLaws.dfy score=-12 fan-in=0 fan-out=3 layer=3
+39. laws/AuthorizationLaws.dfy score=-15 fan-in=2 fan-out=10 layer=9
+40. laws/CapabilityLaws.dfy score=-15 fan-in=0 fan-out=3 layer=6
+41. laws/PolicyLaws.dfy score=-25 fan-in=0 fan-out=5 layer=10
+42. authorization/AuthorizationAcceptanceTransition.dfy score=-27 fan-in=1 fan-out=10 layer=9
+43. proofs/isolated/PolicyProofs.dfy score=-43 fan-in=0 fan-out=11 layer=10
+44. proofs/scenarios/PolicyAtomicityProof.dfy score=-49 fan-in=0 fan-out=13 layer=10
+45. proofs/scenarios/FutureAdapterProof.dfy score=-55 fan-in=0 fan-out=14 layer=13
+46. proofs/scenarios/InvalidAccountAcceptanceProof.dfy score=-55 fan-in=0 fan-out=15 layer=10
+47. proofs/scenarios/RecoveryProof.dfy score=-55 fan-in=0 fan-out=15 layer=10
+48. proofs/scenarios/EnterpriseProof.dfy score=-56 fan-in=0 fan-out=15 layer=11
+49. proofs/scenarios/UnprovenAuthorityProof.dfy score=-63 fan-in=0 fan-out=18 layer=9
+50. proofs/scenarios/EIP7702Proof.dfy score=-64 fan-in=0 fan-out=18 layer=10
+51. proofs/scenarios/MultiChainProof.dfy score=-74 fan-in=0 fan-out=21 layer=11
+52. proofs/scenarios/CryptobroProof.dfy score=-76 fan-in=0 fan-out=22 layer=10
+53. proofs/scenarios/IncompleteExecutionContextProof.dfy score=-77 fan-in=0 fan-out=22 layer=11
+54. proofs/scenarios/GrandmotherProof.dfy score=-79 fan-in=0 fan-out=22 layer=13
+55. proofs/scenarios/AgentProof.dfy score=-82 fan-in=0 fan-out=23 layer=13
+56. proofs/scenarios/GameProof.dfy score=-85 fan-in=0 fan-out=24 layer=13
+57. proofs/scenarios/DeFiProof.dfy score=-88 fan-in=0 fan-out=25 layer=13
+
+Cycles
+------
+OK: no cycles detected.
+
+Missing / external includes
+---------------------------
+OK: all project includes resolve.
+
+Missing modules
+---------------
+OK: all referenced modules exist.
+
+import opened visibility
+------------------------
+OK: no invisible import opened dependencies.
+
+Module index
+------------
+- KipioAccountAccount -> account/Account.dfy
+- KipioAccountAccountTransitions -> account/AccountTransitions.dfy
+- KipioAccountAgentProof -> proofs/scenarios/AgentProof.dfy
+- KipioAccountAuthorityLaws -> laws/AuthorityLaws.dfy
+- KipioAccountAuthorityProofs -> proofs/isolated/AuthorityProofs.dfy
+- KipioAccountAuthorization -> authorization/Authorization.dfy
+- KipioAccountAuthorizationAcceptanceTransition -> authorization/AuthorizationAcceptanceTransition.dfy
+- KipioAccountAuthorizationLaws -> laws/AuthorizationLaws.dfy
+- KipioAccountAuthorizationProofs -> proofs/isolated/AuthorizationProofs.dfy
+- KipioAccountAuthorizationState -> authority/AuthorizationState.dfy
+- KipioAccountAuthorizationStateTransition -> policy/AuthorizationStateTransition.dfy
+- KipioAccountAuthorizationValidation -> authorization/AuthorizationValidation.dfy
+- KipioAccountCapability -> foundation/Capability.dfy
+- KipioAccountCapabilityLaws -> laws/CapabilityLaws.dfy
+- KipioAccountChain -> foundation/Chain.dfy
+- KipioAccountCredential -> authority/Credential.dfy
+- KipioAccountCredentialAuthority -> authority/CredentialAuthority.dfy
+- KipioAccountCryptobroProof -> proofs/scenarios/CryptobroProof.dfy
+- KipioAccountDeFiProof -> proofs/scenarios/DeFiProof.dfy
+- KipioAccountDelegation -> authority/Delegation.dfy
+- KipioAccountDelegationLaws -> laws/DelegationLaws.dfy
+- KipioAccountDomainAction -> foundation/DomainAction.dfy
+- KipioAccountDomainPrimitives -> foundation/DomainPrimitives.dfy
+- KipioAccountEIP7702Proof -> proofs/scenarios/EIP7702Proof.dfy
+- KipioAccountEffectiveAuthority -> authority/EffectiveAuthority.dfy
+- KipioAccountEnterpriseProof -> proofs/scenarios/EnterpriseProof.dfy
+- KipioAccountExecutionConstraints -> execution/ExecutionConstraints.dfy
+- KipioAccountExecutionContext -> execution/ExecutionContext.dfy
+- KipioAccountExecutionLaws -> laws/ExecutionLaws.dfy
+- KipioAccountExecutionProofs -> proofs/isolated/ExecutionProofs.dfy
+- KipioAccountExecutionRequest -> execution/ExecutionRequest.dfy
+- KipioAccountExecutionSemantics -> execution/ExecutionSemantics.dfy
+- KipioAccountExecutionTarget -> foundation/ExecutionTarget.dfy
+- KipioAccountFoundationProofs -> proofs/isolated/FoundationProofs.dfy
+- KipioAccountFutureAdapterProof -> proofs/scenarios/FutureAdapterProof.dfy
+- KipioAccountGameProof -> proofs/scenarios/GameProof.dfy
+- KipioAccountGrandmotherProof -> proofs/scenarios/GrandmotherProof.dfy
+- KipioAccountIdentity -> foundation/Identity.dfy
+- KipioAccountIdentityLaws -> laws/IdentityLaws.dfy
+- KipioAccountIncompleteExecutionContextProof -> proofs/scenarios/IncompleteExecutionContextProof.dfy
+- KipioAccountInvalidAccountAcceptanceProof -> proofs/scenarios/InvalidAccountAcceptanceProof.dfy
+- KipioAccountMultiChainProof -> proofs/scenarios/MultiChainProof.dfy
+- KipioAccountPolicy -> policy/Policy.dfy
+- KipioAccountPolicyAtomicityScenario -> proofs/scenarios/PolicyAtomicityProof.dfy
+- KipioAccountPolicyConsumption -> policy/PolicyConsumption.dfy
+- KipioAccountPolicyEffect -> policy/PolicyEffect.dfy
+- KipioAccountPolicyLaws -> laws/PolicyLaws.dfy
+- KipioAccountPolicyProofs -> proofs/isolated/PolicyProofs.dfy
+- KipioAccountProofs -> proofs/isolated/AccountProofs.dfy
+- KipioAccountRecoveryProof -> proofs/scenarios/RecoveryProof.dfy
+- KipioAccountReplay -> authorization/Replay.dfy
+- KipioAccountRestriction -> foundation/Restriction.dfy
+- KipioAccountScope -> foundation/Scope.dfy
+- KipioAccountSession -> authority/Session.dfy
+- KipioAccountSessionLaws -> laws/SessionLaws.dfy
+- KipioAccountSubject -> foundation/Subject.dfy
+- KipioAccountUnprovenAuthorityProof -> proofs/scenarios/UnprovenAuthorityProof.dfy
+
+Summary
+-------
+- files: 57
+- modules: 57
+- no explicit dependencies: 5
+- include edges: 418
+- import opened edges: 515
+- normal import edges: 0
+- combined edges: 518
+- missing includes: 0
+- missing modules: 0
+- invisible import opened: 0
+- cycles: 0
+- errors: 0
