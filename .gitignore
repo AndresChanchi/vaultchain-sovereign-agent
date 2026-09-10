@@ -61,3 +61,11 @@ Thumbs.db
 ANOTACIONES.TXT
 *.notes
 *.todo
+
+# ==========================================
+# 6. PYTHON / DOMAIN GENERATED FILES
+# ==========================================
+# Ignore everything under formal/
+domain/account/formal/extern-lab-report.txt
+domain/account/formal/generated/
+domain/account/formal/tools/__pycache__/
