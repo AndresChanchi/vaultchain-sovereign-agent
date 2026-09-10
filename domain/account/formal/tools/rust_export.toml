@@ -1,0 +1,29 @@
+[project]
+formal_root = "."
+output_root = "../../../contracts/generated/dafny-rust"
+target = "rust"
+
+[runtime]
+include = [
+    "foundation",
+    "authority",
+    "account",
+    "authorization",
+    "execution",
+    "policy",
+]
+
+exclude = [
+    "laws",
+    "proofs",
+]
+
+[verification]
+verify_before_translate = true
+
+[report]
+file = "../../../contracts/generated/dafny-rust/export-report.txt"
+
+[translation]
+emit_uncompilable_code = false
+include_runtime = false
