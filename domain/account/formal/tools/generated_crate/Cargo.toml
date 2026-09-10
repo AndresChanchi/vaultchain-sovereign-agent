@@ -1,0 +1,8 @@
+[package]
+name = "kipio_account_generated"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dafny_runtime = { path = "runtime" }
+#kipio_domain_externs = { path = "externs" }
