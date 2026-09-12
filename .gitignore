@@ -56,3 +56,7 @@ Thumbs.db
 ANOTACIONES.TXT
 *.notes
 *.todo
+
+
+# Upstream Ledger Ethereum app source (regenerable, see README)
+app-ethereum/
