@@ -1,27 +1,26 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@app/*": [
-        "src/app/*"
+        "./src/app/*"
       ],
       "@components/*": [
-        "src/components/*"
+        "./src/components/*"
       ],
       "@config/*": [
-        "src/config/*"
+        "./src/config/*"
       ],
       "@hooks/*": [
-        "src/hooks/*"
+        "./src/hooks/*"
       ],
       "@lib/*": [
-        "src/lib/*"
+        "./src/lib/*"
       ],
       "@interfaces/*": [
-        "src/interfaces/*"
+        "./src/interfaces/*"
       ],
-       "@context/*": [
-        "src/context/*"
+      "@context/*": [
+        "./src/context/*"
       ]
     },
     "lib": [
