@@ -1,5 +1,16 @@
 import { ConnectButton } from "@components/ui/connect-button";
 
+/**
+ * Shared class for footer links.
+ *
+ * A permanent, low-contrast underline signals that the element is
+ * interactive without competing visually with the primary CTA. On
+ * hover, the underline reaches full opacity and the text brightens
+ * slightly to confirm the affordance.
+ */
+const FOOTER_LINK_CLASS =
+  "text-cyan-300/90 underline decoration-cyan-400/30 decoration-1 underline-offset-4 hover:decoration-cyan-300 hover:text-cyan-200 transition-all";
+
 export default function HomePage() {
   return (
     <main className="container-responsive min-h-screen flex flex-col items-center justify-center space-y-8">
@@ -16,8 +27,35 @@ export default function HomePage() {
         <ConnectButton />
       </div>
 
-      <footer className="text-sm opacity-50 absolute bottom-8">
-        Built for Arbitrum Stylus & Irys • 2026
+      <footer className="text-sm opacity-70 absolute bottom-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center px-4">
+        <span>Built with </span>
+        <a
+          href="https://sepolia.arbiscan.io/address/0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={FOOTER_LINK_CLASS}
+        >
+          Arbitrum Stylus
+        </a>
+        <span>-</span>
+        <a
+          href="https://docs.irys.xyz/foundations/introduction"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={FOOTER_LINK_CLASS}
+        >
+          Irys
+        </a>
+        <span>&</span>
+        <a
+          href="https://github.com/AndresChanchi/vaultchain-sovereign-agent"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={FOOTER_LINK_CLASS}
+        >
+          GitHub
+        </a>
+        <span>2026</span>
       </footer>
     </main>
   );
