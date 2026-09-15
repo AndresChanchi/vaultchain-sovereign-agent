@@ -4,6 +4,7 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { DisconnectButton } from "@components/ui/disconnect-button";
+import { SpeculosBanner } from "@components/ui/speculos-banner";
 import { CHAIN_CONFIG } from "@config/contracts";
 import { UploadOrchestrator } from "@components/vault/UploadOrchestrator";
 import { VaultGallery } from "@components/vault/VaultGallery";
@@ -73,7 +74,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 3. MAIN CONTENT GRID */}
+      {/* 3. LEDGER SIMULATOR HINT */}
+      <SpeculosBanner />
+
+      {/* 4. MAIN CONTENT GRID */}
       <div className={`grid grid-cols-1 lg:grid-cols-12 gap-8 ${isWrongNetwork ? 'grayscale opacity-30 pointer-events-none' : ''}`}>
         
         {/* SIDEBAR: Upload Control */}

@@ -1,8 +1,10 @@
-# Frontend
+# Kipio Frontend
 
 A privacy-first, decentralized upload interface designed for permanent data storage.
 
 Built for users who want full control over their files — without subscriptions, without lock-in, and without compromising ownership.
+
+> This folder contains only the Next.js dApp. For the project overview, ETHOnline 2026 submission details, architecture, and roadmap, see the [root README](https://github.com/AndresChanchi/vaultchain-sovereign-agent/blob/main/README.md).
 
 ---
 
@@ -12,7 +14,7 @@ To install dependencies:
 
 ```bash
 bun install
-````
+```
 
 Build styles:
 
@@ -28,25 +30,61 @@ To start the development server:
 bun run dev
 ```
 
+Production build:
+
+```bash
+bun run build
+```
+
 ---
 
-This project was created using `bun init` in bun v1.3.10. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+This project was created using `bun init` in bun v1.4.2. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
 
 ---
 
-## ✅ Current Status (MVP)
+## 🔧 Environment Variables
 
-* Fully functional on **desktop environments**
-* Supports users familiar with crypto wallets
-  (e.g. interacting with Arbitrum Sepolia and managing tokens)
-* Core upload, encryption, and sharing flows are operational on tesnet
+Create a `.env.local` file at the root of `frontend/`. Every variable is prefixed with `NEXT_PUBLIC_` because they are consumed by client components.
 
-⚠️ **Known Issues (Mobile)**
+### Blockchain (Arbitrum)
 
-* Some image uploads may fail in edge cases on mobile devices
-* Likely caused by **price fluctuations during upload execution**
-* This issue does not typically occur on desktop
-* Improvements are planned to handle volatility more reliably
+```bash
+NEXT_PUBLIC_NETWORK=sepolia
+
+NEXT_PUBLIC_RPC_URL_SEPOLIA=https://sepolia-rollup.arbitrum.io/rpc
+NEXT_PUBLIC_CHAIN_ID_SEPOLIA=421614
+NEXT_PUBLIC_CONTRACT_ADDRESS_SEPOLIA=0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452
+NEXT_PUBLIC_EXPLORER_SEPOLIA=https://sepolia.arbiscan.io
+
+NEXT_PUBLIC_RPC_URL_MAINNET=https://arb1.arbitrum.io/rpc
+NEXT_PUBLIC_CHAIN_ID_MAINNET=42161
+NEXT_PUBLIC_CONTRACT_ADDRESS_MAINNET=0x...
+NEXT_PUBLIC_EXPLORER_MAINNET=https://arbiscan.io
+```
+
+### Irys
+
+```bash
+NEXT_PUBLIC_IRYS_GATEWAY=https://gateway.irys.xyz/
+NEXT_PUBLIC_IRYS_NODE_DEVNET=https://devnet.irys.xyz/
+NEXT_PUBLIC_IRYS_NODE_MAINNET=https://node1.irys.xyz/
+```
+
+### Ledger DMK
+
+```bash
+# Ordered list of Speculos endpoints. The connector tries each URL in
+# order and caches the first one that responds.
+#
+# Remote endpoint (Oracle Cloud / VPS). Used on Vercel.
+# Leave empty during local-only development.
+NEXT_PUBLIC_SPECULOS_URL_REMOTE=
+
+# Local endpoint (Docker on the developer machine).
+NEXT_PUBLIC_SPECULOS_URL_LOCAL=http://localhost:5000
+```
+
+On Vercel, set `NEXT_PUBLIC_SPECULOS_URL_REMOTE` to the HTTPS URL of the deployed Speculos instance and leave `NEXT_PUBLIC_SPECULOS_URL_LOCAL` empty.
 
 ---
 
@@ -58,93 +96,55 @@ This frontend is already connected to a production-ready stack:
 * Arbitrum Stylus contracts (Rust) ✅
 * WASM-based optimizations ✅
 * Client-side encryption & decryption ✅
+* Ledger DMK signing (Speculos + WebHID) ✅
 
-> ℹ️ This repository focuses on the frontend layer only.
-> For detailed information about infrastructure and smart contracts, see the corresponding README files in their respective folders.
-
----
-
-## 🔮 Roadmap (Post-MVP)
-
-### 🔐 Security & Session Management
-
-* **Inactivity Timer**
-  Automatically lock sessions after inactivity (Paranoid privacy even down to the hardware...)
-
-* **"Lock Vault" Button**
-  Let users manually close their cryptographic session without closing the tab
+> For the Ledger integration architecture, signing flow, and known limitations, see the [root README](https://github.com/AndresChanchi/vaultchain-sovereign-agent/blob/main/README.md#-ledger-integration-overview).
 
 ---
 
-### ⚠️ Error Handling
+## 🔐 Ledger Connector (Implementation)
 
-* **Global Error Handling (Toasts)**
-  Clear feedback for failed actions (e.g. rejected signatures)
+The signing pipeline is exposed through two Wagmi v3 connectors that share the same DMK-based signer. Only the transport differs.
 
----
+### Files
 
-### 👤 User Experience & Onboarding
+| Path | Responsibility |
+|---|---|
+| `src/lib/ledger/connector.ts` | Custom Wagmi connector. Wraps DMK, exposes a Viem-compatible account, and routes EIP-1193 methods to the Ledger signer. |
+| `src/config/wagmi.ts` | Registers `ledger-physical` (WebHID) and `ledger-speculos` (HTTP). Reads Speculos endpoints from environment variables and tries them in order. |
+| `src/hooks/useVault.ts` | Detects the active Ledger connector via `connector.id` and extends the retry buffer for hardware signing latency. |
 
-* **Account Abstraction (AA)**
-  Make the app usable for non-crypto-native users:
+### Speculos endpoints
 
-  * Social login (Google and alternatives)
-  * Smart accounts instead of traditional wallets
+The `ledger-speculos` connector accepts an ordered list of URLs. It tries each one until a Speculos instance responds, then caches the session for the rest of the tab's lifetime.
 
-* **Paymaster Integration**
-  Enable gasless or sponsored transactions
+* In development: `NEXT_PUBLIC_SPECULOS_URL_LOCAL` (`http://localhost:5000`)
+* On Vercel: `NEXT_PUBLIC_SPECULOS_URL_REMOTE` (HTTPS URL of the deployed Speculos)
 
-* **Privacy-Respecting Options**
-  Reduce reliance on centralized providers and prioritize user privacy
+### Local Speculos (development)
 
----
+The emulator backend lives in `../emulator-ledger-backend/`. It ships a precompiled Ethereum app ELF and a Docker command. See that folder's README for setup.
 
-### 🔗 Sharing & Privacy
+### Testing the Ledger flow
 
-* **Private Sharing (Invite Links)**
-  Share securely with selected users and restrict unwanted access
-
-* **Public Sharing Option**
-  Share files publicly without encryption when desired
-
-* **ZK-based Hybrid Model (Exploration)**
-  Combine privacy and usability for flexible sharing modes
+1. Start Speculos locally (or verify the deployed one responds).
+2. Open the dApp and click **Connect with Ledger Simulator**.
+3. When a signature is requested, open the Speculos web UI in another tab and approve on the emulated screen.
+4. The dApp receives the signature through the connector and continues.
 
 ---
 
-### 🖼️ Media & Upload Improvements
+## ✅ Current Status (Frontend)
 
-* Improve handling of:
+* Fully functional on **desktop environments**
+* Core upload, encryption, and sharing flows operational on Arbitrum Sepolia
+* Two Ledger connectors exposed in the login screen
+* Signing routed through DMK for both physical and emulated devices
 
-  * Small images
-  * Edge-case upload failures
-  * Market volatility during upload execution
+⚠️ **Known Issues (Mobile)**
 
----
+* Some image uploads may fail in edge cases on mobile devices
+* Likely caused by **price fluctuations during upload execution**
+* This issue does not typically occur on desktop
+* Improvements are planned to handle volatility more reliably
 
-### 🧩 Content Expansion (Beyond Photos)
-
-Current MVP is focused on **images**, inspired by a real need:
-
-* Backing up large personal photo collections (e.g. 10GB–20GB+)
-* Avoiding subscription-based storage models
-
-Future direction expands beyond that:
-
-* **Private “Google Photos”-like experience (but decentralized)**
-* Support for:
-
-  * Documents
-  * Development files
-  * Arbitrary data uploads
-
-Goal:
-
-> A general-purpose, permanent, user-owned storage layer — not just a photo app.
-
----
-
-### 🔬 Research
-
-* **Asymmetric Encryption**
-  Continued improvements in secure key management and data sharing

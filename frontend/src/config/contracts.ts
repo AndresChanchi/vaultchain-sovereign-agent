@@ -25,5 +25,7 @@ export const VAULT_CONTRACT = {
 
 export const IRYS_CONFIG = {
   gateway: process.env.NEXT_PUBLIC_IRYS_GATEWAY,
-  node: process.env.NEXT_PUBLIC_IRYS_NODE,
+  node: IS_SEPOLIA
+    ? process.env.NEXT_PUBLIC_IRYS_NODE_DEVNET
+    : process.env.NEXT_PUBLIC_IRYS_NODE_MAINNET,
 };

@@ -13,9 +13,13 @@ import type { Hex, Client } from "viem";
 /**
  * Hook to interact with the Arbitrum Stylus Vault contract.
  * Includes gas estimation for transparent cost reporting on mobile.
+ *
+ * The active connector is inspected to detect Ledger, so the UI can present
+ * the correct signing feedback and extend the retry buffer for the extra
+ * latency introduced by physical device approval.
  */
 export function useVault() {
-  const { address } = useAccount();
+  const { address, connector } = useAccount();
   const queryClient = useQueryClient();
   const publicClient = usePublicClient({ chainId: CHAIN_CONFIG.id });
   
@@ -30,6 +34,13 @@ export function useVault() {
     hash: txHash,
     chainId: CHAIN_CONFIG.id 
   });
+
+  /**
+   * True when the active connector is one of the Ledger DMK connectors.
+   * Ledger devices sign slower than injected wallets because the user
+   * must physically approve on the device.
+   */
+  const isLedger = connector?.id === "ledger-speculos" || connector?.id === "ledger-physical";
 
   const estimateRegistrationCost = useCallback(async (contentHash: Hex, encryptedTxId: string): Promise<bigint> => {
     if (!address || !publicClient) return 0n;
@@ -83,24 +94,19 @@ export function useVault() {
 
   /**
    * Registers upload on Arbitrum Stylus.
-   * BUGFIX: Uses viem's native fee estimators instead of hardcoded priority fees
+   *
+   * Uses viem's native fee estimators instead of hardcoded priority fees
    * to strictly prevent RLP non-canonical integer (-32000) errors on Arbitrum.
    */
   const registerUpload = useCallback(async (contentHash: Hex, encryptedTxId: string) => {
     if (!address || !publicClient) throw new Error("WALLET_NOT_CONNECTED");
 
     const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const maxRetries = isMobile ? 3 : 1;
+    const maxRetries = (isMobile || isLedger) ? 3 : 1;
     let attempt = 0;
 
     while (attempt < maxRetries) {
       try {
-        /**
-         * RLP Canonical Safety & Mobile Latency:
-         * Arbitrum L2 rejects manual arbitrary priority fees if they create leading zero bytes.
-         * We use viem's native fee estimator and scale it by 30% to buffer 
-         * against mobile wallet latency, ensuring valid EIP-1559 RLP encoding.
-         */
         const feeData = await publicClient.estimateFeesPerGas();
         const maxFeePerGas = feeData.maxFeePerGas ? (feeData.maxFeePerGas * 130n) / 100n : undefined;
         const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ? (feeData.maxPriorityFeePerGas * 130n) / 100n : undefined;
@@ -121,7 +127,7 @@ export function useVault() {
         await new Promise(res => setTimeout(res, 1800));
       }
     }
-  }, [address, writeContractAsync, publicClient]);
+  }, [address, writeContractAsync, publicClient, isLedger]);
 
   const invalidateVaultCache = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['readContract'] });
@@ -134,7 +140,10 @@ export function useVault() {
     estimateRegistrationCost,
     registerUpload,
     invalidateVaultCache,
+    isLedger,
     isProcessing: isWriting || isConfirming,
+    isSigning: isWriting,
+    isConfirming,
     isSuccess,
     writeError,
     txHash

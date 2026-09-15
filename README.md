@@ -1,8 +1,90 @@
-# VaultChain: Autonomous Sovereign Digital Property
+# Kipio: Autonomous Sovereign Digital Property
 
-VaultChain is an agent-native digital sovereignty architecture that integrates **Arbitrum Stylus (WASM)** and **Irys L1 Datachain**. It evolves the "Cloud Storage" model into a "Digital Property" paradigm, eliminating recurring subscription fees and centralized censorship.
+Kipio is an agent-native digital sovereignty architecture(in the future) that integrates **Arbitrum Stylus (WASM)** and **Irys L1 Datachain**. It evolves the "Cloud Storage" model into a "Digital Property" paradigm, eliminating recurring subscription fees and centralized censorship.
 
-Built for the March 2026 ecosystem, VaultChain leverages Rust-powered smart contracts to manage permanent data pointers with near-native execution speed.
+Built for the 2026 ecosystem, Kipio leverages Rust-powered smart contracts to manage permanent data pointers with near-native execution speed.
+
+---
+
+## 🏆 ETHOnline 2026
+
+This project is submitted to [ETHOnline 2026](https://ethglobal.com/events/ethonline2026), the annual online hackathon organized by ETHGlobal.
+
+The submission targets the **Ledger — Continuity** track, which rewards integrations that extend an existing, functional product with a new capability. Kipio already runs end-to-end on Arbitrum Sepolia (upload, encryption, Irys storage, Stylus registry) with browser wallets. The hackathon work adds hardware-backed signing via the Ledger Device Management Kit (DMK) without touching the smart contracts.
+
+The integration supports two signing paths that share the same DMK signer:
+
+- **Physical Ledger devices** connected over WebHID.
+- **Speculos emulator** deployed on Oracle Cloud, exposed over HTTPS through a Cloudflare Tunnel, so reviewers can experience the full signing flow without owning hardware.
+
+> **Note on the deeper engineering**: The [develop](https://github.com/AndresChanchi/vaultchain-sovereign-agent/blob/develop/contracts/README.md#-research--references) branch contains a substantially more advanced version of the protocol, including formal methods work (Dafny → Rust transpilation), a modular multi-crate Stylus workspace, and TACo-aligned threshold cryptography. It is under active development and diverges significantly from `main`. Anyone interested in the research direction should read it directly.
+
+`With the caveat that only the documentation is outdated as of May 2026 😅. I have the rest stored in my local Git repo, which is about to burst with all the up-to-date information... `
+
+### 🔐 Ledger Integration Overview
+
+The dApp exposes two Ledger connectors through Wagmi v3. Both share the same signing pipeline based on the Ledger Device Management Kit; only the transport differs.
+
+| Connector | Transport | Use case |
+|---|---|---|
+| `ledger-physical` | WebHID | Users with a physical Ledger device connected over USB |
+| `ledger-speculos` | HTTP (HTTPS via Cloudflare Tunnel) | Reviewers and demos, backed by an emulated Ledger Nano S Plus |
+
+#### Architecture
+
+```
+             ┌───────────────────────┐
+             │     Wagmi connector   │
+             │   (custom, DMK-based) │
+             └───────────┬───────────┘
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+       ┌──────▼──────┐      ┌───────▼────────┐
+       │   WebHID    │      │    Speculos    │
+       │  transport  │      │    transport   │
+       └──────┬──────┘      └───────┬────────┘
+              │                     │
+       ┌──────▼──────┐      ┌───────▼────────┐
+       │  Physical   │      │  Speculos VM   │
+       │  Ledger     │      │  (Docker +     │
+       │             │      │   Oracle Cloud)│
+       └──────┬──────┘      └───────┬────────┘
+              └──────────┬──────────┘
+                         │
+                ┌────────▼────────┐
+                │  SignerEth      │
+                │  (DMK)          │
+                └────────┬────────┘
+                         │
+                ┌────────▼────────┐
+                │   viem / dApp   │
+                └─────────────────┘
+```
+
+#### Signing flow
+
+The connector routes EIP-1193 signing methods to the DMK signer:
+
+- `personal_sign` → EIP-191 message signature
+- `eth_signTypedData_v4` → EIP-712 typed-data signature
+- `eth_sendTransaction` → prepares, signs, and broadcasts a transaction
+- `eth_signTransaction` → prepares and signs without broadcasting
+
+Read-only RPC methods are proxied to a public client built on the chain's HTTP transport.
+
+#### Speculos emulator
+
+Speculos runs the official Ledger Ethereum app in a Docker container and serves its screen through a web UI. Reviewers open the emulator in a browser, approve operations with on-screen buttons, and the dApp receives the signature through the connector.
+
+The emulator is deployed on Oracle Cloud Always Free and exposed over HTTPS through a Cloudflare Tunnel. The `emulator-ledger-backend/` folder contains the Docker command, the precompiled ELF, and the deployment notes.
+
+#### Known limitations
+
+- **Blind signing**: without a Ledger `originToken` issued by the partner program, the device only displays the transaction hash instead of the decoded call details. The integration ships with a placeholder token. Clear Signing requires an official token and is out of scope for the hackathon.
+- **Arbitrum Sepolia on physical devices**: testnet networks require Developer Mode enabled in Ledger Wallet. Users connecting a physical device should enable it before testing.
+
+---
 
 ## 🌀 System Architecture
 
@@ -16,10 +98,75 @@ Built for the March 2026 ecosystem, VaultChain leverages Rust-powered smart cont
 * **Agentic Commerce (x402):** Autonomous treasury management for self-funding data availability without monthly fees.
 * **Native Passkey Support:** Secure signing using hardware-bound `secp256r1` keys (FaceID/TouchID).
 * **Irys L1 Integration:** Direct settlement of permanent storage pointers on the Irys Datachain.
+* **Ledger Hardware Signing:** WebHID transport for physical devices and Speculos transport for emulated ones, both routed through the Ledger Device Management Kit.
 
 ## 🛠 Tech Stack
 
 * **Smart Contracts:** Rust (Stylus SDK), Solidity (Foundry).
 * **Storage:** Irys L1 Datachain.
 * **Compute:** Fleek Network (Off-chain Agent execution).
-* **Runtime:** Bun v1.3.x.
+* **Runtime:** Bun v1.4.x.
+
+## 📦 Repository Layout
+
+```
+.
+├── contracts/                    # Stylus + Foundry contracts and formal methods work
+├── emulator-ledger-backend/      # Speculos Docker setup + compiled Ethereum app ELF
+└── frontend/                     # Next.js dApp (upload, encryption, Ledger signing)
+```
+
+Each folder contains its own README with setup and architecture details for that layer.
+
+## ✅ Current Status (MVP)
+
+* Fully functional on **desktop environments**
+* Supports users familiar with crypto wallets (Arbitrum Sepolia, Irys devnet)
+* Core upload, encryption, and sharing flows operational on testnet
+* Hardware-backed signing available via Ledger (physical or emulated through Speculos)
+
+⚠️ **Known Issues (Mobile)**
+
+* Some image uploads may fail in edge cases on mobile devices
+* Likely caused by **price fluctuations during upload execution**
+* This issue does not typically occur on desktop
+* Improvements are planned to handle volatility more reliably
+
+## 🔮 Roadmap (Post-MVP)
+
+### 🔐 Security & Session Management
+
+* **Inactivity Timer** — Automatically lock sessions after inactivity
+* **"Lock Vault" Button** — Manually close the cryptographic session without closing the tab
+
+### ⚠️ Error Handling
+
+* **Global Error Handling (Toasts)** — Clear feedback for failed actions (e.g. rejected signatures)
+
+### 👤 User Experience & Onboarding
+
+* **Account Abstraction (AA)** — Social login, smart accounts instead of traditional wallets
+* **Paymaster Integration** — Gasless or sponsored transactions
+* **Privacy-Respecting Options** — Reduce reliance on centralized providers
+
+### 🔗 Sharing & Privacy
+
+* **Private Sharing (Invite Links)** — Share securely with selected users
+* **Public Sharing Option** — Share files publicly without encryption when desired
+* **ZK-based Hybrid Model (Exploration)** — Flexible sharing modes combining privacy and usability
+
+### 🖼️ Media & Upload Improvements
+
+* Improve handling of small images, edge-case upload failures, and volatility during upload
+
+### 🧩 Content Expansion (Beyond Photos)
+
+* Private "Google Photos"-like experience, but decentralized
+* Support for documents, development files, and arbitrary data uploads
+
+> Goal: a general-purpose, permanent, user-owned storage layer — not just a photo app.
+
+### 🔬 Research
+
+* **Asymmetric Encryption** — Continued improvements in secure key management and data sharing
+
