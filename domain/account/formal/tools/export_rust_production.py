@@ -16,9 +16,13 @@ Modes
     --extern-lab    reduced extern lab (control + 3 winners)
     (default)       production export:
                         - copy .dfy to generated/dfy-annotated/
+                        - inject composition .dfy from tools/dafny_inject/
                         - annotate the 5 abstract types with {:extern}
                         - obtain dafny_runtime once
-                        - translate ALL runtime sources in one pass
+                        - synthesize a single aggregator .dfy that
+                          includes every runtime source plus every
+                          injected composition
+                        - translate ONLY the aggregator in one pass
                         - inject the 5 extern Rust types into their
                           modules
                         - generate src/lib.rs
@@ -71,16 +75,13 @@ LAYER_PRIORITY = {
 
 EXPECTED_DAFNY_VERSION = "4.11.0"
 
+TRANSLATION_ENTRYPOINT_NAME = "__translate_entrypoint.dfy"
+
 
 # ============================================================================
 # Extern metadata
 # ============================================================================
-#
-# The five abstract types identified by --diagnose on the full runtime
-# surface of the domain. Each entry is:
-#
-#     (relative .dfy path, type name, extern attribute)
-#
+
 EXTERN_ANNOTATIONS = (
     (Path("foundation/Chain.dfy"), "Chain", "{:extern}"),
     (Path("foundation/DomainAction.dfy"), "DomainAction", "{:extern}"),
@@ -97,10 +98,6 @@ EXTERN_ANNOTATIONS = (
     ),
 )
 
-# Maps each Dafny extern module to the Rust type it must contain.
-# After the single-pass translation, we inject these declarations
-# into the corresponding `pub mod <Module> { ... }` blocks so the
-# module is self-contained and does not need a crate-root re-export.
 EXTERN_MODULE_TYPE_MAP = (
     ("KipioAccountChain", "Chain"),
     ("KipioAccountDomainAction", "DomainAction"),
@@ -361,6 +358,24 @@ def discover_all_sources(formal_root: Path) -> list[Path]:
     return sources
 
 
+def discover_inject_sources(tools_root: Path) -> list[Path]:
+    """
+    Return all .dfy files under tools/dafny_inject/, sorted for
+    reproducibility.
+    """
+    inject_root = tools_root / "dafny_inject"
+    if not inject_root.is_dir():
+        return []
+    return sorted(
+        (
+            path
+            for path in inject_root.rglob("*.dfy")
+            if path.is_file()
+        ),
+        key=lambda path: path.relative_to(inject_root).as_posix(),
+    )
+
+
 # ============================================================================
 # Layer classification
 # ============================================================================
@@ -398,10 +413,6 @@ def classify_sources(
 # ============================================================================
 
 def _extract_source_path(f) -> Path | None:
-    """
-    Extract the filesystem path from whatever dependency_graph returns
-    from scan_project().
-    """
     if isinstance(f, (str, Path)):
         return Path(f)
 
@@ -441,11 +452,6 @@ _DEBUG_PATH_EXTRACTION_LOGGED = False
 
 
 def _is_domain_source(f, formal_root: Path) -> bool:
-    """
-    True if the given dependency_graph file object is a domain .dfy
-    source. Everything outside the known layers (generated/, tools/,
-    etc.) is excluded.
-    """
     global _DEBUG_PATH_EXTRACTION_LOGGED
 
     p = _extract_source_path(f)
@@ -540,7 +546,6 @@ def dependency_first_runtime_order(
         duplicate_module_errors,
     ) = analyze_dependencies(formal_root)
 
-    # Defensive: drop any node whose first component is not a known layer.
     nodes = [
         node
         for node in nodes
@@ -777,41 +782,12 @@ def find_single_type_declaration(
 # ============================================================================
 
 def clean_generated_rust(text: str) -> str:
-    """
-    Prepare a file emitted by `dafny translate rs` for inclusion in
-    the assembled crate.
-
-    Steps:
-      1. Remove inner attributes (#![...]) — the crate's lib.rs already
-         declares them at the crate root, and they are illegal inside
-         an include!().
-      2. Collapse runs of blank lines.
-
-    Extern modules (`pub mod KipioAccountChain { }`) are intentionally
-    kept as they are; the production pipeline injects their Rust type
-    into the module body afterwards.
-    """
     text = re.sub(r"^#!\[.*\]\s*\n", "", text, flags=re.MULTILINE)
     text = re.sub(r"\n\n\n+", "\n\n", text)
     return text
 
 
 def fix_dafny_fn_return_types(text: str) -> tuple[str, int]:
-    """
-    Dafny 4.11's Rust backend emits trait-object casts of the form
-
-        Rc::new(move || -> TYPE {
-            ...
-        }) as Rc<dyn ::std::ops::Fn() -> _>
-
-    where the `_` in the trait object's return type is left for Rust
-    to infer. rustc rejects `_` inside `dyn Fn() -> _`:
-
-        error[E0282]: type annotations needed
-
-    We replace `_` with the closure's actual return type `TYPE`.
-    Returns (new_text, number_of_replacements).
-    """
     pattern = re.compile(
         r'Rc::new\s*\(\s*move\s*\|\|\s*->\s*'
         r'(?P<rtype>[\w:<>,\s\[\]\(\)]+?)\s*'
@@ -842,10 +818,6 @@ def copy_runtime_dfy_tree(
     formal_root: Path,
     annotated_root: Path,
 ) -> None:
-    """
-    Copy every runtime .dfy into the annotated tree, preserving the
-    layer-relative layout.
-    """
     for layer in RUNTIME_LAYERS:
         layer_root = formal_root / layer
         if not layer_root.is_dir():
@@ -855,6 +827,31 @@ def copy_runtime_dfy_tree(
             dst = annotated_root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src_file, dst)
+
+
+def inject_dafny_files(
+    *,
+    tools_root: Path,
+    annotated_root: Path,
+) -> None:
+    """
+    Copy every .dfy under tools/dafny_inject/ into the annotated tree,
+    preserving the layer-relative layout.
+
+    These files express Phase 2 compositions (functions that combine
+    existing runtime predicates into end-to-end decisions). They are
+    not part of the formal source tree; they are derived pipeline
+    artifacts that only the annotated tree sees.
+    """
+    inject_root = tools_root / "dafny_inject"
+    if not inject_root.is_dir():
+        return
+    for src_file in discover_inject_sources(tools_root):
+        rel = src_file.relative_to(inject_root)
+        dst = annotated_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src_file, dst)
+        print(f"Injected: {rel.as_posix()}")
 
 
 def annotate_externs_in_tree(annotated_root: Path) -> list[str]:
@@ -887,10 +884,6 @@ def obtain_dafny_runtime(
     anchor_source: Path,
     scratch: Path,
 ) -> Path:
-    """
-    Run one translation with --include-runtime to obtain the
-    dafny_runtime crate emitted by the backend.
-    """
     anchor_output = scratch / f"{anchor_source.stem}.rs"
 
     result = run_captured(
@@ -923,6 +916,44 @@ def obtain_dafny_runtime(
     return runtime_root
 
 
+def write_translation_entrypoint(
+    *,
+    annotated_root: Path,
+    runtime_relative_paths: list[Path],
+    injected_relative_paths: list[Path],
+) -> Path:
+    """
+    Synthesize a single .dfy entrypoint that includes every runtime
+    source and every injected composition.
+
+    Why: Dafny rejects a file that is both passed on the command
+    line and pulled in transitively via `include`. Inject files DO
+    include runtime files, so passing both sets explicitly triggers
+    that rejection. A single aggregator sidesteps the problem: only
+    one file is top-level; everything else is included exactly once
+    (Dafny dedups includes by canonical path).
+    """
+    entrypoint_relative = Path(TRANSLATION_ENTRYPOINT_NAME)
+    entrypoint_path = annotated_root / entrypoint_relative
+
+    lines: list[str] = [
+        "// Auto-generated translation entrypoint.",
+        "//",
+        "// Includes every runtime source plus every injected",
+        "// composition. This is the only top-level .dfy passed to",
+        "// `dafny translate`.",
+        "",
+    ]
+    for rel in runtime_relative_paths:
+        lines.append(f'include "{rel.as_posix()}"')
+    for rel in injected_relative_paths:
+        lines.append(f'include "{rel.as_posix()}"')
+    lines.append("")
+
+    entrypoint_path.write_text("\n".join(lines), encoding="utf-8")
+    return entrypoint_relative
+
+
 def translate_all_sources_from_annotated_tree(
     *,
     source_relative_paths: list[Path],
@@ -930,13 +961,16 @@ def translate_all_sources_from_annotated_tree(
     staging_dir: Path,
 ) -> Path | None:
     """
-    Translate ALL runtime sources at once.
+    Translate the synthesized aggregator in one Dafny invocation.
 
     Dafny treats the inputs as a single program and emits one
     coherent .rs file, with each Dafny module declared exactly
-    once. Translating per-file duplicates every reachable module
-    in every output file, and the duplicates then collide at the
-    crate root when they are all included via `include!`.
+    once.
+
+    --enforce-determinism is retained: Dafny's Rust backend requires
+    it, and the inject files no longer contain `:|` without a
+    provably-unique witness (the iteration order is defined by the
+    canonical minimum over the entity Ids).
     """
     staging_dir.mkdir(parents=True, exist_ok=True)
     output_stem = "kipio_account_all"
@@ -956,8 +990,14 @@ def translate_all_sources_from_annotated_tree(
 
     if result.returncode != 0:
         print("  FAILED", file=sys.stderr)
-        for line in result.stderr.strip().splitlines():
-            print(f"    {line}", file=sys.stderr)
+        if result.stdout.strip():
+            print("  --- stdout ---", file=sys.stderr)
+            for line in result.stdout.strip().splitlines():
+                print(f"    {line}", file=sys.stderr)
+        if result.stderr.strip():
+            print("  --- stderr ---", file=sys.stderr)
+            for line in result.stderr.strip().splitlines():
+                print(f"    {line}", file=sys.stderr)
         return None
 
     preferred = (
@@ -982,11 +1022,6 @@ def inject_extern_type_into_module(
     module_name: str,
     type_name: str,
 ) -> tuple[str, bool]:
-    """
-    If the generated text declares `pub mod <module_name> { ... }`,
-    inject the extern Rust type declaration for <type_name> at the
-    top of the module body. Return (new_text, injected).
-    """
     pattern = re.compile(
         rf"pub\s+mod\s+{re.escape(module_name)}\s*\{{"
     )
@@ -1020,10 +1055,6 @@ def append_extern_module(
     module_name: str,
     type_name: str,
 ) -> str:
-    """
-    Append `pub mod <module_name> { <type> }` at the end of the file.
-    Used when Dafny did not emit the module at all.
-    """
     return text + (
         "\n"
         f"pub mod {module_name} {{\n"
@@ -1043,14 +1074,6 @@ def append_extern_module(
 
 
 def generate_crate_lib_rs(*, crate_root: Path) -> Path:
-    """
-    Generate src/lib.rs.
-
-    Since the single-pass translation emits one self-contained .rs
-    (with all modules declared exactly once, and with the extern
-    types injected into their own modules), lib.rs simply includes
-    that file. No crate-root re-exports are needed.
-    """
     lines: list[str] = [
         "//! kipio_account_generated",
         "//!",
@@ -1162,6 +1185,11 @@ def run_production_export(
         annotated_root=annotated_root,
     )
 
+    inject_dafny_files(
+        tools_root=tools_root,
+        annotated_root=annotated_root,
+    )
+
     annotate_errors = annotate_externs_in_tree(annotated_root)
     if annotate_errors:
         for err in annotate_errors:
@@ -1201,19 +1229,47 @@ def run_production_export(
         print(f"Runtime copied to {runtime_target}")
 
     # ------------------------------------------------------------------
-    # 4. Translate ALL annotated sources at once, in a single Dafny
-    #    invocation. Multi-file translation is the whole-program
-    #    mode of the Dafny Rust backend: each Dafny module is
-    #    emitted exactly once, with no duplicate definitions.
+    # 4. Synthesize the single translation entrypoint and translate
+    #    it in one Dafny invocation.
+    #
+    #    The entrypoint includes every runtime source plus every
+    #    injected composition. It is the ONLY top-level .dfy passed
+    #    to Dafny. This avoids the "file is both top-level and
+    #    included transitively" rejection: inject files DO include
+    #    runtime files, so listing both sets as inputs would fail.
     # ------------------------------------------------------------------
     print()
     print("== Translating annotated runtime sources (single pass) ==")
     print()
 
-    rel_sources = [
+    runtime_relative_paths = [
         source.relative_to(formal_root)
         for source in ordered_sources
     ]
+
+    inject_root = tools_root / "dafny_inject"
+    injected_relative_paths: list[Path] = []
+    if inject_root.is_dir():
+        injected_relative_paths = [
+            src_file.relative_to(inject_root)
+            for src_file in discover_inject_sources(tools_root)
+        ]
+
+    entrypoint_relative = write_translation_entrypoint(
+        annotated_root=annotated_root,
+        runtime_relative_paths=runtime_relative_paths,
+        injected_relative_paths=injected_relative_paths,
+    )
+
+    print(
+        f"  Translation entrypoint: {entrypoint_relative.as_posix()}"
+    )
+    print(f"    runtime includes: {len(runtime_relative_paths)}")
+    print(
+        f"    injected includes: {len(injected_relative_paths)}"
+    )
+    for rel in injected_relative_paths:
+        print(f"      + {rel.as_posix()}")
 
     with tempfile.TemporaryDirectory(
         prefix="kipio-stage-"
@@ -1221,7 +1277,7 @@ def run_production_export(
         tmp_stage_path = Path(tmp_stage)
 
         rs_file = translate_all_sources_from_annotated_tree(
-            source_relative_paths=rel_sources,
+            source_relative_paths=[entrypoint_relative],
             annotated_root=annotated_root,
             staging_dir=tmp_stage_path,
         )
@@ -1245,9 +1301,6 @@ def run_production_export(
                 f"(Dafny 4.11 leaves them as `_`)"
             )
 
-        # Inject each extern type into its module body so the
-        # generated module is self-contained. No crate-root
-        # re-export is needed.
         for module_name, type_name in EXTERN_MODULE_TYPE_MAP:
             cleaned, injected = inject_extern_type_into_module(
                 cleaned,
