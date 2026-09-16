@@ -69,3 +69,4 @@ ANOTACIONES.TXT
 domain/account/formal/extern-lab-report.txt
 domain/account/formal/generated/
 domain/account/formal/tools/__pycache__/
+contracts/generated/
