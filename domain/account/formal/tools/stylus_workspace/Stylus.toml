@@ -1,0 +1,6 @@
+[workspace]
+members = ["harness"]
+
+[workspace.networks]
+sepolia = { endpoint = "https://sepolia-rollup.arbitrum.io/rpc", chain_id = 421614 }
+mainnet = { endpoint = "https://arb1.arbitrum.io/rpc", chain_id = 42161 }
