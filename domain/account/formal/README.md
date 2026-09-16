@@ -787,9 +787,114 @@ The workspace pins Rust 1.94.0 and the `wasm32-unknown-unknown` target.
 Stylus SDK 0.10.9 requires `--enforce-determinism` on the Dafny side,
 which the production exporter already enables.
 
+`cargo stylus --version` should report `stylus 0.10.9`, matching the
+SDK version pinned in the harness `Cargo.toml`.
+
 The `export-abi` binary target follows the same pattern as the production
 Kipio contracts: `src/main.rs` calls `print_from_args()`, which the SDK's
 `#[entrypoint]` macro generates when the `export-abi` feature is enabled.
+
+## End-to-end reproduction
+
+The pipeline runs in four stages: verify the canonical formal model,
+export the Rust crate, verify the annotated runtime tree, run the Stylus
+harness.
+
+Every command runs from the `formal/` directory unless the step itself
+changes directory.
+
+### 1. Verify the canonical formal tree
+
+```bash
+cd formal
+dafny verify $(find . -type f -name '*.dfy' | sort)
+```
+
+Expected: `Dafny program verifier finished with 1461 verified, 0 errors`.
+
+### 2. Export the Rust crate
+
+```bash
+python3 tools/export_rust_production.py --no-verify
+```
+
+The `--no-verify` flag skips the repository-wide verification that
+stage 1 already covered. Drop the flag to have the exporter verify the
+original tree as part of the same run.
+
+The exporter:
+
+- copies the runtime `.dfy` tree into `generated/dfy-annotated/`,
+- injects the compositions from `tools/dafny_inject/`,
+- annotates the five abstract types with `{:extern}`,
+- obtains `dafny_runtime`,
+- translates the synthesized aggregator in a single invocation,
+- fixes the Dafny-4.11 trait-object casts,
+- injects the extern types into their modules,
+- runs `cargo check --offline` on the assembled crate.
+
+Expected tail:
+
+```text
+== cargo check --offline ==
+
+status        : COMPILED
+detail        : cargo check succeeded
+
+Production export completed successfully.
+```
+
+### 3. Verify the annotated runtime tree
+
+```bash
+cd generated/dfy-annotated
+dafny verify $(find . -type f -name '*.dfy' | sort)
+cd ../..
+```
+
+Expected: `Dafny program verifier finished with 686 verified, 0 errors`.
+
+Obligatory whenever the DDD or the injects are modified, since it covers
+the executable subset that feeds the Rust translation.
+
+### 4. Run the Stylus harness
+
+```bash
+cd tools/stylus_workspace/harness
+cargo test --test bridge_integration
+cargo stylus check
+cargo stylus export-abi
+```
+
+Expected:
+
+- `cargo test` runs 104 tests, all passing.
+- `cargo stylus check` reports `62.9 KB (3 fragments)`. The trailing
+  `error sending request for url (http://localhost:8547/)` is
+  environmental: the CLI tries to estimate the activation fee against a
+  local node and there is none. It is not a build failure.
+- `cargo stylus export-abi` prints the Solidity interface for the 21
+  entrypoints.
+
+### Full pipeline as one line
+
+For scripting or CI, the four stages compose as:
+
+```bash
+cd formal && \
+  dafny verify $(find . -type f -name '*.dfy' | sort) && \
+  python3 tools/export_rust_production.py --no-verify && \
+  (cd generated/dfy-annotated && dafny verify $(find . -type f -name '*.dfy' | sort)) && \
+  cd tools/stylus_workspace/harness && \
+  cargo test --test bridge_integration && \
+  cargo stylus check && \
+  cargo stylus export-abi
+```
+
+The `cargo stylus check` step will exit non-zero if no node is listening
+at `localhost:8547`. In CI, either run a node or replace the step with
+`cargo build --target wasm32-unknown-unknown --release`, which performs
+the compilation without the activation-fee probe.
 
 ## Current status
 
