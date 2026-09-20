@@ -1,0 +1,4 @@
+[contract]
+name = "kipio_account"
+
+[wasm-opt]
