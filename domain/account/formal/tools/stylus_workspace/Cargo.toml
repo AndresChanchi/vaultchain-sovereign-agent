@@ -1,6 +1,20 @@
+# All optimization flags for the release profile are standard (no unstable
+# features needed). The `panic_immediate_abort` optimization is applied via
+# the nightly toolchain and is handled by cargo-stylus.
+
 [workspace]
-members = ["harness"]
+members = [
+  "bridge",
+  "kipio_account",
+  "kipio_runtime",
+  "tests",
+]
 resolver = "3"
+
+[workspace.dependencies]
+stylus-sdk = { version = "0.10.9", features = ["mini-alloc", "hostio"] }
+alloy-primitives = { version = "1.7.2", default-features = false }
+alloy-sol-types = { version = "1.7.2", default-features = false }
 
 [profile.release]
 codegen-units = 1

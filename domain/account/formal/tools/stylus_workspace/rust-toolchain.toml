@@ -1,3 +1,25 @@
+# Pinned nightly toolchain for Stylus WASM compilation.
+#
+# Why nightly:
+#   - `panic = "immediate-abort"` (via the legacy `-Zbuild-std-features=panic_immediate_abort`
+#     flag that cargo-stylus injects) requires nightly.
+#   - `-Z build-std` requires the rust-src component.
+#   - Arbitrum verification requires a specific channel (not "nightly").
+#
+# Why pinned to 2025-09-23:
+#   - Starting with nightly 2025-09-24, the `panic_immediate_abort` feature flag
+#     was migrated to a real panic strategy (`-Cpanic=immediate-abort`).
+#   - cargo-stylus 0.10.9 still injects the legacy flag, so the build fails on
+#     newer nightlies. Pinning to 2025-09-23 keeps the flow compatible.
+#   - Nightly archives are permanent at https://static.rust-lang.org/dist/2025-09-23/
+#
+# References:
+#   - Rust issue #146974 (flag migration):
+#     https://github.com/rust-lang/rust/issues/146974
+#   - OpenZeppelin Stylus setup:
+#     https://github.com/OpenZeppelin/rust-contracts-stylus
+
 [toolchain]
-channel = "1.94.0"
+channel = "nightly-2025-09-23"
+components = ["rust-src"]
 targets = ["wasm32-unknown-unknown"]

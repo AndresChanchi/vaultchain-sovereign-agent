@@ -1,6 +1,37 @@
+# Workspace-level Stylus configuration.
+#
+# The `[wasm-opt]` table pins a Binaryen version and flags. These are applied
+# identically during `cargo stylus check`, `deploy`, and `verify`, and are
+# folded into the project hash for reproducible builds.
+#
+# `--closed-world` and `--converge` are safe for self-contained contracts.
+# `--strip-*` flags remove debug sections not needed on-chain.
+#
+# References:
+#   - Stylus.toml reference:
+#     https://docs.arbitrum.io/stylus/reference/stylus-toml-reference
+
+
 [workspace]
-members = ["harness"]
+members = [
+  "kipio_account",
+  "kipio_runtime",
+]
 
 [workspace.networks]
 sepolia = { endpoint = "https://sepolia-rollup.arbitrum.io/rpc", chain_id = 421614 }
 mainnet = { endpoint = "https://arb1.arbitrum.io/rpc", chain_id = 42161 }
+
+[wasm-opt]
+version = "132"
+flags = [
+  "-Oz",
+  "--converge",
+  "--closed-world",
+  "--enable-bulk-memory",
+  "--enable-nontrapping-float-to-int",
+  "--strip-debug",
+  "--strip-dwarf",
+  "--strip-producers",
+  "--strip-target-features",
+]
