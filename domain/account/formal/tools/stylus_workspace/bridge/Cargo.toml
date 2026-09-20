@@ -1,0 +1,13 @@
+[package]
+name = "kipio_account_bridge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kipio_account_generated = { path = "../../../generated/rust" }
+dafny_runtime = { path = "../../../generated/rust/runtime", features = ["small-int"] }
+stylus-sdk = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+[lib]
+crate-type = ["lib"]
