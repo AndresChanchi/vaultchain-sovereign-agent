@@ -2,10 +2,16 @@
 name = "kipio_account_bridge"
 version = "0.1.0"
 edition = "2024"
+description = "ABI ↔ Dafny translation layer for Kipio Account on Arbitrum Stylus"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/andreschanchi/vaultchain-sovereign-agent"
+documentation = "https://docs.rs/kipio_account_bridge"
+keywords = ["stylus", "arbitrum", "dafny", "abi", "kipio"]
+categories = ["wasm", "cryptography::cryptocurrencies"]
 
 [dependencies]
-kipio_account_generated = { path = "../../../generated/rust" }
-dafny_runtime = { path = "../../../generated/rust/runtime", features = ["small-int"] }
+kipio_account_generated = { version = "0.1.0", path = "../../../generated/rust" }
+dafny_runtime = { package = "kipio_dafny_runtime", version = "0.1.0", path = "../../../generated/rust/runtime", features = ["small-int"] }
 stylus-sdk = { workspace = true }
 alloy-sol-types = { workspace = true }
 

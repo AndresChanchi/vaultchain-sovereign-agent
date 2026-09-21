@@ -19,6 +19,9 @@ Modes
                         - inject composition .dfy from tools/dafny_inject/
                         - annotate the 5 abstract types with {:extern}
                         - obtain dafny_runtime once
+                        - rename the runtime package to a
+                          project-specific name and rewrite its
+                          manifest for publication
                         - synthesize a single aggregator .dfy that
                           includes every runtime source plus every
                           injected composition
@@ -76,6 +79,28 @@ LAYER_PRIORITY = {
 EXPECTED_DAFNY_VERSION = "4.11.0"
 
 TRANSLATION_ENTRYPOINT_NAME = "__translate_entrypoint.dfy"
+
+
+# ============================================================================
+# Runtime publication metadata
+# ============================================================================
+#
+# The Dafny compiler emits a crate named `dafny_runtime`. That name is
+# already taken on crates.io, so the production export renames the
+# package and adds the metadata required for publication. Consuming
+# crates alias the renamed package back to `dafny_runtime` via
+# `package = "..."` in their `Cargo.toml`, so the emitted `.rs` files
+# never need to be post-processed.
+
+DAFNY_RUNTIME_PACKAGE_NAME = "kipio_dafny_runtime"
+DAFNY_RUNTIME_EDITION = "2024"
+DAFNY_RUNTIME_DESCRIPTION = (
+    "Runtime support for Kipio's Dafny-generated Rust code"
+)
+DAFNY_RUNTIME_LICENSE = "MIT OR Apache-2.0"
+DAFNY_RUNTIME_REPOSITORY = (
+    "https://github.com/AndresChanchi/sovereign-account"
+)
 
 
 # ============================================================================
@@ -916,6 +941,86 @@ def obtain_dafny_runtime(
     return runtime_root
 
 
+def rewrite_dafny_runtime_manifest(
+    runtime_root: Path,
+    *,
+    package_name: str,
+    edition: str,
+) -> None:
+    """Rewrite the Dafny-emitted runtime Cargo.toml for publication.
+
+    The Dafny compiler emits a crate named `dafny_runtime`. That name
+    is already taken on crates.io, so the production pipeline renames
+    the package and adds the metadata required for publication.
+
+    The manifest is rewritten field-by-field rather than re-serialized
+    so that any field the Dafny backend may emit in the future (custom
+    features, extra metadata, workspace hints) is preserved verbatim
+    except for the fields explicitly replaced here.
+
+    Consuming crates alias the renamed package back to `dafny_runtime`
+    via `package = "..."` in their Cargo.toml, so the emitted `.rs`
+    files never need to be post-processed and their `use
+    dafny_runtime::...` paths keep resolving.
+    """
+    manifest = runtime_root / "Cargo.toml"
+    if not manifest.is_file():
+        raise RuntimeError(
+            f"runtime manifest not found at {manifest}"
+        )
+
+    text = manifest.read_text(encoding="utf-8")
+
+    # 1. Rename the package.
+    renamed, substitutions = re.subn(
+        r'(?m)^name\s*=\s*"dafny_runtime"\s*$',
+        f'name = "{package_name}"',
+        text,
+        count=1,
+    )
+    if substitutions != 1:
+        raise RuntimeError(
+            "runtime manifest does not declare "
+            f'`name = "dafny_runtime"`: {manifest}'
+        )
+    text = renamed
+
+    # 2. Bump the edition when requested.
+    if edition:
+        edition_rewritten, edition_substitutions = re.subn(
+            r'(?m)^edition\s*=\s*"[^"]*"\s*$',
+            f'edition = "{edition}"',
+            text,
+            count=1,
+        )
+        if edition_substitutions == 1:
+            text = edition_rewritten
+
+    # 3. Ensure the publication metadata is present.
+    metadata_lines = (
+        f'description = "{DAFNY_RUNTIME_DESCRIPTION}"',
+        f'license = "{DAFNY_RUNTIME_LICENSE}"',
+        f'repository = "{DAFNY_RUNTIME_REPOSITORY}"',
+    )
+
+    missing_metadata = [
+        line for line in metadata_lines
+        if line.split("=", 1)[0].strip() not in text
+    ]
+
+    if missing_metadata:
+        marker = "\n[dependencies]"
+        block = "\n".join(missing_metadata) + "\n"
+        if marker in text:
+            text = text.replace(marker, f"\n{block}{marker}", 1)
+        else:
+            if not text.endswith("\n"):
+                text += "\n"
+            text += block
+
+    manifest.write_text(text, encoding="utf-8")
+
+
 def write_translation_entrypoint(
     *,
     annotated_root: Path,
@@ -1211,7 +1316,8 @@ def run_production_export(
     generated_src.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # 3. Obtain dafny_runtime once.
+    # 3. Obtain dafny_runtime once, then rewrite its manifest for
+    #    publication (rename + metadata).
     # ------------------------------------------------------------------
     anchor = Path("foundation/DomainPrimitives.dfy")
 
@@ -1227,6 +1333,17 @@ def run_production_export(
         runtime_target = output_root / "runtime"
         shutil.copytree(runtime_source, runtime_target)
         print(f"Runtime copied to {runtime_target}")
+
+        rewrite_dafny_runtime_manifest(
+            runtime_target,
+            package_name=DAFNY_RUNTIME_PACKAGE_NAME,
+            edition=DAFNY_RUNTIME_EDITION,
+        )
+        print(
+            "Runtime manifest rewritten: "
+            f"name = {DAFNY_RUNTIME_PACKAGE_NAME}, "
+            f"edition = {DAFNY_RUNTIME_EDITION}"
+        )
 
     # ------------------------------------------------------------------
     # 4. Synthesize the single translation entrypoint and translate
