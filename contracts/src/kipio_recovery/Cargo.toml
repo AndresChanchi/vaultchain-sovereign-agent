@@ -9,8 +9,7 @@ alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 
 [dev-dependencies]
-motsu = { workspace = true }
-arbitrary = { workspace = true }
+stylus-test = "0.10.9"
 
 [features]
 default = ["std"]

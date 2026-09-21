@@ -1,2 +1,4 @@
 [contract]
 name = "kipio_recovery"
+
+[wasm-opt]
