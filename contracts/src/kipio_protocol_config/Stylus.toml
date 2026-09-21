@@ -1,0 +1,4 @@
+[contract]
+name = "kipio_protocol_config"
+
+[wasm-opt]
