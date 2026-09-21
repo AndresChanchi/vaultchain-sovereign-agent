@@ -2,12 +2,29 @@
 members = [
   "src/kipio_core",
   "src/kipio_auth",
-  "src/kipio_auth_verifier_p256",
   "src/kipio_access",
-  "src/kipio_registry",
-  "src/kipio_recovery"
+  "src/kipio_account",
+  "src/kipio_economics",
+  "src/kipio_registry_content",
+  "src/kipio_execution_gateway",
+  "src/kipio_recovery",
+  "src/kipio_protocol_config"
 ]
 
 [workspace.networks]
 sepolia = { endpoint = "https://sepolia-rollup.arbitrum.io/rpc", chain_id = 421614 }
 mainnet = { endpoint = "https://arb1.arbitrum.io/rpc", chain_id = 42161 }
+
+[wasm-opt]
+version = "132"
+flags = [
+  "-Oz",
+  "--converge",
+  "--closed-world",
+  "--enable-bulk-memory",
+  "--enable-nontrapping-float-to-int",
+  "--strip-debug",
+  "--strip-dwarf",
+  "--strip-producers",
+  "--strip-target-features",
+]
