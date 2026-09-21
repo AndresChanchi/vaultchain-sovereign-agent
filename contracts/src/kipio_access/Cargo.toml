@@ -8,18 +8,16 @@ stylus-sdk = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 
-[dev-dependencies]
-motsu = { workspace = true }
-arbitrary = { workspace = true }
-
 [features]
 default = ["std"]
 std = [
     "alloy-primitives/std",
     "alloy-sol-types/std",
 ]
-
 export-abi = ["stylus-sdk/export-abi"]
+
+[dev-dependencies]
+stylus-test = "0.10.9"
 
 [lib]
 crate-type = ["lib","cdylib"]

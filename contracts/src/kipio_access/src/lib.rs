@@ -21,26 +21,29 @@ sol! {
     event AccessRevoked(address indexed owner, address indexed grantee, bytes32 indexed contentHash);
 }
 
-/// @dev Access control storage per user.
-/// CHANGE: Removed manual TPRE-related pointer storage.
-/// REASON: Threshold reencryption is handled externally now, so this contract
-///         only tracks permissions and enumeration data.
-/// DOES NOT BREAK RULES:
-/// - No cryptographic material is stored on-chain
-/// - Only permission flags and address indexes are tracked
+/// @title Access Control Internal Storage Structure
+/// @notice Manages multi-tenant authorization vectors and permissions bookkeeping.
+/// @dev Removed manual TPRE-related pointer storage. Threshold re-encryption is handled externally,
+/// meaning this contract exclusively tracks active permission states and index enumeration vectors.
 #[storage]
 pub struct AccessControl {
-    pub shared: StorageMap<B256, StorageMap<Address, StorageBool>>,
+    /// @notice Maps content identifiers to a sub-map of grantee addresses and their authorization flags.
+    /// @dev Renamed from 'shared' to 'permissions' to explicitly reflect its architectural purpose.
+    pub permissions: StorageMap<B256, StorageMap<Address, StorageBool>>,
+    /// @notice Maps content identifiers to an iterable list of historical or active addresses for pagination.
     pub index: StorageMap<B256, StorageVec<StorageAddress>>,
 }
 
-/// @dev Per-user vault for access module.
+/// @title Per-User Access Vault Wrapper
+/// @dev Encapsulates underlying access maps inside an isolated storage namespace per multi-tenant vault.
 #[storage]
 pub struct AccessVault {
     pub access: AccessControl,
 }
 
-/// ## Main Access Contract
+/// @title Kipio Sovereign Access Control Module
+/// @notice Pure authorization ledger managing content permissions without external system dependencies.
+/// @dev Operates fully decoupled from KipioCore, KipioRegistry, or identity verification layers.
 #[storage]
 #[entrypoint]
 pub struct KipioAccess {
@@ -49,28 +52,38 @@ pub struct KipioAccess {
 
 #[public]
 impl KipioAccess {
-    /// @dev Grant access.
-    /// @notice Stores only permission state and enumeration data.
+    /// @notice Grants data package access rights to a specific receiver target address.
+    /// @dev Avoids redundant storage mutations and blocks zero-address allocations.
+    /// Uses strategic local variable binding to prevent E0716 temporary reference dropping.
+    /// @param content_id Stable unique storage payload tracking key hash.
+    /// @param grantee The target address authorized to receive re-encryption capabilities.
     pub fn grant_access(
         &mut self,
         content_id: B256,
         grantee: Address,
     ) -> Result<(), Vec<u8>> {
+        // VALIDATION: Reject illegal zero-address allocations explicitly
+        if grantee == Address::ZERO {
+            return Err(b"ZeroAddressTarget".to_vec());
+        }
+
         let sender = self.vm().msg_sender();
         let mut vault = self.vaults.setter(sender);
 
-        vault
-            .access
-            .shared
-            .setter(content_id)
-            .setter(grantee)
-            .set(true);
+        // FIX (E0716): Deconstruct setter chaining via sequential let-binding to extend life scopes
+        let mut content_map = vault.access.permissions.setter(content_id);
+        let mut permission_slot = content_map.setter(grantee);
 
-        // CHANGE: Maintain index for enumeration.
-        // REASON: Enables frontend pagination without exposing sensitive data.
-        // DOES NOT BREAK RULES:
-        // - Only addresses are stored
-        // - No cryptographic material is exposed
+        // OPTIMIZATION: Early return if permission state is already active
+        // REASON: Avoids duplicate operational gas overhead and prevents emitting redundant logs
+        if permission_slot.get() {
+            return Ok(());
+        }
+
+        // Mutation of the permission flag state to active
+        permission_slot.set(true);
+
+        // Maintain structural index for linear off-chain frontend pagination
         let mut index = vault.access.index.setter(content_id);
         let mut exists = false;
 
@@ -96,21 +109,34 @@ impl KipioAccess {
         Ok(())
     }
 
-    /// @dev Revoke access.
+    /// @notice Explicitly revokes data access rights from a specific grantee target.
+    /// @dev Clears active authorization status flags while ensuring idempotent execution.
+    /// @param content_id Stable unique payload asset tracking index hash.
+    /// @param grantee Target destination address whose reading access is scheduled for removal.
     pub fn revoke_access(
         &mut self,
         content_id: B256,
         grantee: Address,
     ) -> Result<(), Vec<u8>> {
+        // VALIDATION: Reject illegal zero-address checks early
+        if grantee == Address::ZERO {
+            return Err(b"ZeroAddressTarget".to_vec());
+        }
+
         let sender = self.vm().msg_sender();
         let mut vault = self.vaults.setter(sender);
 
-        vault
-            .access
-            .shared
-            .setter(content_id)
-            .setter(grantee)
-            .set(false);
+        // FIX (E0716): Isolate storage lifetime parameters using sequential let-binding rules
+        let mut content_map = vault.access.permissions.setter(content_id);
+        let mut permission_slot = content_map.setter(grantee);
+
+        // OPTIMIZATION: Early return if permission state is already disabled
+        if !permission_slot.get() {
+            return Ok(());
+        }
+
+        // Reset the boolean storage permission vector flag
+        permission_slot.set(false);
 
         self.vm().log(AccessRevoked {
             owner: sender,
@@ -121,7 +147,10 @@ impl KipioAccess {
         Ok(())
     }
 
-    /// @dev Check if access exists.
+    /// @notice External read viewer checking structural authorization states.
+    /// @param owner Deployed root namespace address containing the queried storage maps.
+    /// @param content_id Stable identifier key hash tracking the payload matrix.
+    /// @param grantee The target reader entity being audited for access capability.
     pub fn has_access(
         &self,
         owner: Address,
@@ -131,13 +160,18 @@ impl KipioAccess {
         self.vaults
             .getter(owner)
             .access
-            .shared
+            .permissions
             .getter(content_id)
             .getter(grantee)
             .get()
     }
 
-    /// @dev Paginated list of shared users.
+    /// @notice Returns chronologically ordered paginated slices of authorized addresses.
+    /// @dev Filters out inactive nodes or revoked identities dynamically based on state flags.
+    /// @param owner Storage lookup point reference identifying the primary vault location.
+    /// @param content_id Target asset container mapping key.
+    /// @param offset The array lookup position start index parameter.
+    /// @param limit Total maximum item size allocated for array retrieval blocks.
     pub fn get_shared_paginated(
         &self,
         owner: Address,
@@ -158,7 +192,7 @@ impl KipioAccess {
             if let Some(addr) = index.get(i as usize) {
                 if vault
                     .access
-                    .shared
+                    .permissions
                     .getter(content_id)
                     .getter(addr)
                     .get()
