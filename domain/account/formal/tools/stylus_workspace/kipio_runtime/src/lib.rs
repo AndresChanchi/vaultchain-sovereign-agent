@@ -11,7 +11,6 @@ use kipio_account_bridge::{
 use stylus_sdk::abi::Bytes;
 use stylus_sdk::alloy_primitives::{Address, U256};
 use stylus_sdk::prelude::*;
-use stylus_sdk::storage::StorageAddress;
 
 sol_interface! {
     /// @title Kipio Account — external interface consumed by Runtime.
@@ -46,12 +45,15 @@ sol_interface! {
 ///   3. Canonical derivation of EffectiveAuthority;
 ///   4. Application of PolicyConsumption;
 ///   5. Validation of a complete ExecutionContext.
+///
+/// The storage struct is intentionally empty: Runtime is a stateless
+/// coordinator per DDD §46 ("Operational / Infrastructure Concepts" have
+/// no Entity identity). Any future persistent state (module discovery,
+/// protocol config, etc.) will be added explicitly when its consuming
+/// entrypoint is implemented.
 #[storage]
 #[entrypoint]
-pub struct KipioRuntime {
-    /// Optional: protocol config address for future module discovery.
-    protocol_config: StorageAddress,
-}
+pub struct KipioRuntime {}
 
 #[public]
 impl KipioRuntime {
