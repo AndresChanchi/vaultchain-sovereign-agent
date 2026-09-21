@@ -1,0 +1,4 @@
+[contract]
+name = "kipio_execution_gateway"
+
+[wasm-opt]
