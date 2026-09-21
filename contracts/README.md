@@ -144,7 +144,12 @@ Manages structural tracking metadata and encrypted Irys pointer locations (`Cont
 
 ### 4. Access Control Layer (`kipio_access`)
 
-Coordinates decentralized file sharing policies by logging encrypted off-chain cryptographic pointer fragments (**kfrags** or threshold capsules) and index structures for secure consumer application parsing.
+Maintains decentralized authorization policies for content access.
+
+Stores permission states and recipient indexes only, without holding cryptographic material, threshold capsules, reencryption fragments, plaintext metadata, or external protocol dependencies.
+
+Acts as a protocol-agnostic authorization ledger consumable by TACo, Arbitrum Orbit deployments, enterprise integrations, autonomous agents, or future cryptographic infrastructures.
+
 
 ### 5. Recovery Infrastructure (`kipio_recovery`)
 
@@ -259,7 +264,3 @@ This infrastructure is built upon comprehensive cryptographic auditing, low-leve
   * [Threshold Network Technical Repository Workspace](https://github.com/threshold-network)
   * [NuCypher Network Node Architecture Registry](https://github.com/nucypher)
   * [Lit Protocol: Decentralized Key Management and MPC Engineering](https://github.com/LIT-Protocol)
-
----
-
-**Kipio Sovereign Infrastructure** - May 29 2026
