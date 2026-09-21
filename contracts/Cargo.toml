@@ -1,31 +1,32 @@
 [workspace]
 members = [
-  "src/kipio_core",
-  "src/kipio_auth",
-  "src/kipio_auth_verifier_p256",
+  "src/kipio_core",              # Protocol
+  "src/kipio_auth",              # Business Logic -> cold
 # "src/kipio_auth_verifier_k256",
-  "src/kipio_access",
-  "src/kipio_registry",
-  "src/kipio_recovery"
-]
+  "src/kipio_access",            # Business Logic  -> hot
+  "src/kipio_account",           # Sovereign Account -> hot
+  "src/kipio_economics",         # Business Logic    -> hot
+  "src/kipio_registry_content",  # Business Logic    -> hot
+  "src/kipio_runtime",           # Sovereign Account -> hot
+  "src/kipio_execution_gateway", # Business Logic    -> hot
+  "src/kipio_recovery",          # Business Logic    -> cold
+  "src/kipio_protocol_config",   # Protocol maintainers 
+  ]
 
 resolver = "3"
 
 [workspace.dependencies]
 # Enable mini-alloc to efficiently handle Vec/String in WASM
 # https://github.com/OffchainLabs/stylus-sdk-rs/releases
-stylus-sdk = { version = "0.10.7", features = ["mini-alloc", "hostio"] }
+# https://docs.rs/stylus-sdk/latest/stylus_sdk/
+stylus-sdk = { version = "0.10.9", features = ["mini-alloc", "hostio"] }
 # https://crates.io/crates/alloy-primitives 
-alloy-primitives = { version = "1.6.0", default-features = false }
+alloy-primitives = { version = "1.7.2", default-features = false }
 # https://crates.io/crates/alloy-sol-types 
-alloy-sol-types = { version = "1.6.0", default-features = false }
+alloy-sol-types = { version = "1.7.2", default-features = false }
 
-# 
 # k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 
-# Motsu 0.10.0 is the testing standard for ArbOS 52
-motsu = "0.10.0"
-arbitrary = { version = "1.4", features = ["derive"] }
 
 [profile.release]
 codegen-units = 1
