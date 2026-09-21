@@ -7,7 +7,21 @@
 pragma solidity ^0.8.23;
 
 interface IKipioRecovery {
-    function updateAuthModule(address new_module) external;
+    function initialize(address initial_owner) external;
 
-    function setCore(address core_address) external;
+    function setAuthorizedConsumer(address consumer, bool authorized) external;
+
+    function setGuardians(uint256[] memory guardian_types, bytes32[] memory guardian_identifiers, uint256 threshold) external;
+
+    function updateGuardians(uint256[] memory guardian_types, bytes32[] memory guardian_identifiers, uint256 threshold, uint256 reason) external;
+
+    function startRecovery(bytes32 target_hash, uint256 target_curve, uint256 deadline) external returns (bytes32);
+
+    function approveRecovery(bytes32 request_id, bytes32 guardian_identifier) external;
+
+    function cancelRecovery(bytes32 request_id) external;
+
+    function getPolicyRecord(bytes32 request_id) external view returns (uint256, bytes32, address, bytes32, uint256, uint256);
+
+    function consumePolicy(bytes32 request_id) external;
 }

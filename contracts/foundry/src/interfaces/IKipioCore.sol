@@ -7,6 +7,26 @@
 pragma solidity ^0.8.23;
 
 interface IKipioCore {
+    function requireOwner() external view;
+
+    function requireOwnerOrUpgrader() external view;
+
+    function initialize(address owner, address upgrader_module, address auth_module, address registry_module, address access_module, address treasury, uint256 min_fee) external;
+
+    function transferOwnership(address new_owner) external;
+
+    function setUpgraderModule(address upgrader_module) external;
+
+    function setAuthModule(address auth_module) external;
+
+    function setRegistryModule(address registry_module) external;
+
+    function setAccessModule(address access_module) external;
+
+    function setTreasury(address treasury) external;
+
+    function setMinFee(uint256 min_fee) external;
+
     function registerUpload(bytes32 content_id, string calldata tx_id, bool is_public) external;
 
     function rotateContent(bytes32 content_id, string calldata new_tx) external;

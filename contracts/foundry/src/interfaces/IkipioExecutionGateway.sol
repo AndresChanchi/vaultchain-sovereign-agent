@@ -6,6 +6,6 @@
 // SPDX-License-Identifier: MIT-OR-APACHE-2.0
 pragma solidity ^0.8.23;
 
-interface IKipioAuthVerifierP256 {
-    function verify(address _user, bytes32 digest, uint8[] memory signature, uint8[] memory pubkey, uint256 _curve) external view returns (bool);
+interface IKipioExecutionGateway {
+    function execute(bytes calldata payload) external payable returns (uint8[] memory);
 }

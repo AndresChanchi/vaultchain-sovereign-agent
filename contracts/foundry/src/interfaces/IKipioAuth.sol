@@ -7,21 +7,15 @@
 pragma solidity ^0.8.23;
 
 interface IKipioAuth {
-    function setVerifier(address verifier) external;
-
-    function getVerifier() external view returns (address);
-
-    function getDomainSeparator() external returns (bytes32);
+    function initialize(address protocol_config) external;
 
     function register(uint8[] memory pubkey, uint256 curve) external;
 
-    function buildVerifyDigest(address user, bytes32 msg_hash, uint256 nonce, uint256 deadline, uint64 curve_id) external returns (bytes32);
-
-    function buildRotateDigest(address user, bytes32 new_pubkey_hash, uint256 new_curve, uint256 nonce, uint256 deadline) external returns (bytes32);
-
-    function callVerifier(address user, bytes32 digest, uint8[] memory signature, uint8[] memory pubkey, uint64 curve_id) external;
-
-    function verify(address user, bytes32 msg_hash, uint8[] memory signature, uint8[] memory pubkey, uint256 nonce, uint256 deadline) external returns (bool);
+    function verifyIdentityAuthorization(address user, bytes32 msg_hash, uint8[] memory signature, uint8[] memory pubkey, uint256 nonce, uint256 deadline) external returns (bool);
 
     function rotateKey(uint8[] memory old_pubkey, uint8[] memory new_pubkey, uint256 new_curve, uint8[] memory signature_from_old, uint256 nonce, uint256 deadline) external;
+
+    function rotateKeyFromPolicy(address policy_ledger, bytes32 request_id, uint8[] memory new_pubkey) external;
+
+    function verify(address _user, bytes32 digest, uint8[] memory signature, uint8[] memory pubkey, uint256 _curve) external view returns (bool);
 }

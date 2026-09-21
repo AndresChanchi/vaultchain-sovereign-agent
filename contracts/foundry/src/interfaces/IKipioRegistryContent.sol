@@ -11,11 +11,17 @@ interface IKipioRegistry {
 
     function rotateContent(bytes32 content_id, string calldata new_tx) external;
 
+    function setVisibility(bytes32 content_id, bool is_public) external;
+
     function getActiveTx(address owner, bytes32 content_id) external view returns (string memory);
 
     function getVersion(address owner, bytes32 content_id) external view returns (uint64);
 
     function getIsPublic(address owner, bytes32 content_id) external view returns (bool);
+
+    function getCreatedAt(address owner, bytes32 content_id) external view returns (uint64);
+
+    function getUpdatedAt(address owner, bytes32 content_id) external view returns (uint64);
 
     function getContentList(address owner, uint32 offset, uint32 limit) external view returns (bytes32[] memory);
 }
