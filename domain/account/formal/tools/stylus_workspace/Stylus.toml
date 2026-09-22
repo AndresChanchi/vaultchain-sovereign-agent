@@ -28,7 +28,6 @@ flags = [
   "-Oz",
   "--converge",
   "--closed-world",
-  "--enable-bulk-memory",
   "--enable-nontrapping-float-to-int",
   "--strip-debug",
   "--strip-dwarf",
