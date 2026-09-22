@@ -11,6 +11,8 @@ members = [
   "src/kipio_execution_gateway", # Business Logic    -> hot
   "src/kipio_recovery",          # Business Logic    -> cold
   "src/kipio_protocol_config",   # Protocol maintainers 
+  "src/bridge",                  # Local too, soon a public crate
+  "tests",
   ]
 
 resolver = "3"
@@ -21,9 +23,9 @@ resolver = "3"
 # https://docs.rs/stylus-sdk/latest/stylus_sdk/
 stylus-sdk = { version = "0.10.9", features = ["mini-alloc", "hostio"] }
 # https://crates.io/crates/alloy-primitives 
-alloy-primitives = { version = "1.7.2", default-features = false }
+alloy-primitives = { version = "1.7.3", default-features = false }
 # https://crates.io/crates/alloy-sol-types 
-alloy-sol-types = { version = "1.7.2", default-features = false }
+alloy-sol-types = { version = "1.7.3", default-features = false }
 
 # k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 
