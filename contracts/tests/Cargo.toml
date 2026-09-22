@@ -1,0 +1,28 @@
+[package]
+name = "kipio_tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[test]]
+name = "unit"
+path = "unit.rs"
+
+[[test]]
+name = "e2e"
+path = "e2e.rs"
+
+[[test]]
+name = "fork"
+path = "fork.rs"
+
+[dependencies]
+kipio_account_bridge = { path = "../src/bridge" }
+kipio_account = { path = "../src/kipio_account" }
+kipio_runtime = { path = "../src/kipio_runtime" }
+
+[dev-dependencies]
+stylus-sdk = { workspace = true, features = ["stylus-test"] }
+stylus-test = "0.10.9"
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
