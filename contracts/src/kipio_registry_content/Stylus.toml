@@ -1,4 +1,0 @@
-[contract]
-name = "kipio_registry_content"
-
-[wasm-opt]
