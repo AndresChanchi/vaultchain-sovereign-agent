@@ -2347,16 +2347,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57d8d8ce877200136358e0bbff3a77965875db3af755a11e1fa6b1b3e2df13ea"
 
 [[package]]
-name = "kipio_access"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "stylus-sdk",
- "stylus-test",
-]
-
-[[package]]
 name = "kipio_account"
 version = "0.1.0"
 dependencies = [
@@ -2388,6 +2378,16 @@ dependencies = [
 
 [[package]]
 name = "kipio_auth"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
+ "stylus-sdk",
+ "stylus-test",
+]
+
+[[package]]
+name = "kipio_content_access"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -2449,16 +2449,6 @@ dependencies = [
 
 [[package]]
 name = "kipio_recovery"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "stylus-sdk",
- "stylus-test",
-]
-
-[[package]]
-name = "kipio_registry_content"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",

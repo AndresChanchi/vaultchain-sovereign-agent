@@ -15,11 +15,10 @@ CHECK_REPORTS = .check-reports
 CONTRACTS = \
 	kipio_protocol_config \
 	kipio_core \
-	kipio_registry_content \
+	kipio_content_access \
 	kipio_auth \
 	kipio_account \
 	kipio_runtime \
-	kipio_access \
 	kipio_economics \
 	kipio_execution_gateway \
 	kipio_recovery

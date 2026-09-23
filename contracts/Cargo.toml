@@ -3,10 +3,9 @@ members = [
   "src/kipio_core",              # Protocol
   "src/kipio_auth",              # Business Logic -> cold
 # "src/kipio_auth_verifier_k256",
-  "src/kipio_access",            # Business Logic  -> hot
   "src/kipio_account",           # Sovereign Account -> hot
   "src/kipio_economics",         # Business Logic    -> hot
-  "src/kipio_registry_content",  # Business Logic    -> hot
+  "src/kipio_content_access",  # Business Logic    -> hot
   "src/kipio_runtime",           # Sovereign Account -> hot
   "src/kipio_execution_gateway", # Business Logic    -> hot
   "src/kipio_recovery",          # Business Logic    -> cold
@@ -14,6 +13,13 @@ members = [
   "src/bridge",                  # Local too, soon a public crate
   "tests",
   ]
+
+
+
+# kipio_registry_content + kipio_access
+# kipio_execution_gateway + kipio_runtime
+# kipio_account + kipio_recovery
+# kipio_auth crypto agile, es posible combinarlo con el primero o el ultra honk, no se.. jmm
 
 resolver = "3"
 

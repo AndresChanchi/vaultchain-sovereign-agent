@@ -2,10 +2,9 @@
 members = [
   "src/kipio_core",
   "src/kipio_auth",
-  "src/kipio_access",
   "src/kipio_account",
   "src/kipio_economics",
-  "src/kipio_registry_content",
+  "src/kipio_content_access",
   "src/kipio_execution_gateway",
   "src/kipio_recovery",
   "src/kipio_protocol_config"
