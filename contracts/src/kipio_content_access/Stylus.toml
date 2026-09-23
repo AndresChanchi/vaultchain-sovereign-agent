@@ -1,0 +1,4 @@
+[contract]
+name = "kipio_content_access"
+
+[wasm-opt]
