@@ -18,11 +18,31 @@ DEPLOYMENTS_DIR = deployments
 SCRIPTS_DIR = scripts
 PROJECT_NAME = kipio-protocol
 
+# ============================================================
+# SOLIDITY PRAGMA
+# ============================================================
+#
+# Stylus SDK 0.10.9 hardcodes DEFAULT_PRAGMA = "^0.8.23" in
+# stylus-sdk/src/abi/export/mod.rs. That value predates the current
+# Solidity release line and is used only by the ABI export path; it
+# does not affect the Stylus WASM, the ArbOS VM, or on-chain contract
+# compatibility in any way.
+#
+# `print_from_args` accepts `--pragma <string>` to override the
+# default. The value must include the full pragma directive (including
+# the `pragma solidity` prefix and the trailing semicolon) because the
+# SDK emits it verbatim into the interface header.
+#
+# Bump this variable when a newer ^0.8.x line becomes the standard for
+# the off-chain Solidity consumers of these interfaces.
+# ------------------------------------------------------------
+# https://docs.soliditylang.org/en/latest/
+SOLIDITY_PRAGMA = pragma solidity ^0.8.37;
+
 CONTRACTS = \
 	kipio_protocol_config \
 	kipio_core \
-	kipio_content_access \
-	kipio_auth \
+	kipio_identity_content \
 	kipio_account \
 	kipio_runtime \
 	kipio_economics \
@@ -132,22 +152,81 @@ endif
 # Bug history: earlier versions used `s/_\([a-z]\)/\U\1/g` which only
 # capitalized after underscores, not at the start, producing names like
 # `IKipiocontentAccess` for newly-generated files.
+#
+# WHY `cargo run --features export-abi` AND NOT `cargo stylus export-abi`:
+#
+# Stylus SDK 0.10.9's `cargo stylus export-abi` uses a hardcoded
+# DEFAULT_PRAGMA of `^0.8.23`. That is an artefact of the SDK's example
+# templates and has no relationship to Stylus, ArbOS, or on-chain
+# compatibility. To emit a newer pragma without forking the SDK, we
+# invoke the `export-abi` binary directly through `cargo run` and pass
+# `--pragma "$(SOLIDITY_PRAGMA)"`. The binary writes the same Solidity
+# interface to stdout; we redirect to the target file.
+#
+# The `--quiet` flag suppresses cargo's own build chatter so the
+# stdout stream is pure interface text. Program output is unaffected.
+# ------------------------------------------------------------
+
 abi:
 	$(guard_perms)
 	@mkdir -p $(FOUNDRY_INTERFACES)
+	@mkdir -p $(CHECK_REPORTS)
 ifdef contract
 	@name="IKipio$$(echo $(contract) | sed -E 's/^kipio_//; s/(^|_)([a-z])/\U\2/g')"; \
+	OUT="$(FOUNDRY_INTERFACES)/$$name.sol"; \
+	echo ""; \
+	echo "============================================================"; \
 	echo "Exporting ABI: $$name"; \
-	(cd src/$(contract) && cargo stylus export-abi --output "../../$(FOUNDRY_INTERFACES)/$$name.sol")
+	echo "============================================================"; \
+	echo "  pragma: $(SOLIDITY_PRAGMA)"; \
+	echo "------------------------------------------------------------"; \
+	(cd src/$(contract) && cargo run --features export-abi --quiet -- abi --pragma "$(SOLIDITY_PRAGMA)" > "../../$$OUT"); \
+	RC=$$?; \
+	if [ $$RC -ne 0 ] || [ ! -s "$$OUT" ]; then \
+		echo ""; \
+		echo "  EXPORT FAILED (exit $$RC)"; \
+		exit 1; \
+	fi; \
+	bytes=$$(stat -c %s "$$OUT"); \
+	echo "  $$name.sol ($$bytes B)"; \
+	echo "============================================================"
 else
-	@set -e; \
+	@set +e; \
+	FAILED=""; \
+	REPORT="$(CHECK_REPORTS)/abis.tsv"; \
+	printf "contract\tinterface\tbytes\tstatus\n" > "$$REPORT"; \
 	for c in $(CONTRACTS); do \
 		name="IKipio$$(echo $$c | sed -E 's/^kipio_//; s/(^|_)([a-z])/\U\2/g')"; \
+		OUT="$(FOUNDRY_INTERFACES)/$$name.sol"; \
+		echo ""; \
+		echo "============================================================"; \
 		echo "Exporting ABI: $$name"; \
-		(cd src/$$c && cargo stylus export-abi --output "../../$(FOUNDRY_INTERFACES)/$$name.sol"); \
+		echo "============================================================"; \
+		echo "  pragma: $(SOLIDITY_PRAGMA)"; \
+		echo "------------------------------------------------------------"; \
+		(cd src/$$c && cargo run --features export-abi --quiet -- abi --pragma "$(SOLIDITY_PRAGMA)" > "../../$$OUT"); \
+		RC=$$?; \
+		if [ $$RC -ne 0 ] || [ ! -s "$$OUT" ]; then \
+			echo "  FAILED (exit $$RC)"; \
+			FAILED="$$FAILED $$c"; \
+			printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "0" "FAILED" >> "$$REPORT"; \
+			continue; \
+		fi; \
+		bytes=$$(stat -c %s "$$OUT"); \
+		echo "  $$name.sol ($$bytes B)"; \
+		printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "$$bytes" "OK" >> "$$REPORT"; \
 	done; \
 	echo ""; \
-	echo "All ABIs generated in $(FOUNDRY_INTERFACES)/"; \
+	echo "============================================================"; \
+	echo "ABI SUMMARY"; \
+	echo "============================================================"; \
+	printf "%-30s %-40s %12s %8s\n" "CONTRACT" "INTERFACE" "SIZE" "STATUS"; \
+	printf "%-30s %-40s %12s %8s\n" "------------------------------" "----------------------------------------" "------------" "--------"; \
+	while IFS=$$'\t' read -r c i b s; do \
+		[ "$$c" = "contract" ] && continue; \
+		printf "%-30s %-40s %10s B %8s\n" "$$c" "$$i" "$$b" "$$s"; \
+	done < "$$REPORT"; \
+	echo ""; \
 	expected=""; \
 	for c in $(CONTRACTS); do \
 		n="IKipio$$(echo $$c | sed -E 's/^kipio_//; s/(^|_)([a-z])/\U\2/g').sol"; \
@@ -163,12 +242,21 @@ else
 		esac; \
 	done; \
 	if [ -n "$$orphans" ]; then \
-		echo ""; \
 		echo "  WARNING: orphaned interface files detected:"; \
 		for o in $$orphans; do echo "    - $$o"; done; \
 		echo "  These do not correspond to any entry in CONTRACTS."; \
 		echo "  Run 'make clean-abi' to remove them."; \
-	fi
+		echo ""; \
+	fi; \
+	if [ -n "$$FAILED" ]; then \
+		echo "FAILED CONTRACTS:"; \
+		for c in $$FAILED; do echo "  - $$c"; done; \
+		echo ""; \
+		echo "Report: $$REPORT"; \
+		exit 1; \
+	fi; \
+	echo "All ABIs generated in $(FOUNDRY_INTERFACES)/"; \
+	echo "Report: $$REPORT"
 endif
 
 lock:

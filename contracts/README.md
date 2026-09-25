@@ -56,7 +56,7 @@ Before starting, ensure you have the following installed:
 
   `cargo stylus` downloads the exact Binaryen version automatically during the build. No manual install is required, but the version must match the one in `Stylus.toml` for reproducible verifications.
 
-* **Foundry**: required for the on-chain tooling (`cast`, `forge`) and for holding the exported Solidity interfaces.
+* **Foundry** (`forge` ≥ 1.5): required for the on-chain tooling (`cast`, `forge`) and for validating the exported Solidity interfaces. `svm install 0.8.37` installs the solc version required by the generated pragma.
 
 * **`jq`**: used by the `deploy-full` and `deploy-resume` targets to accumulate addresses and manifests. Install with your package manager (`apt install jq`, `brew install jq`).
 
@@ -73,21 +73,21 @@ contracts/
 │   └── config.toml         target-cpu=mvp for wasm32-unknown-unknown
 ├── Makefile                build / test / check / deploy orchestration
 ├── src/
-│   ├── bridge/             ABI ↔ Dafny translation layer (local crate)
+│   ├── bridge/                 ABI ↔ Dafny translation layer (local crate)
 │   ├── kipio_core/
-│   ├── kipio_auth/
-│   ├── kipio_access/
+│   ├── kipio_identity_content/
 │   ├── kipio_account/
 │   ├── kipio_runtime/
 │   ├── kipio_economics/
-│   ├── kipio_registry_content/
 │   ├── kipio_execution_gateway/
 │   ├── kipio_recovery/
 │   └── kipio_protocol_config/
 └── tests/                  integration suite (unit / e2e / fork)
 ```
 
-Only the 10 Stylus contracts listed in the `CONTRACTS` variable of the `Makefile` are treated as deployable. `src/bridge` is a workspace member but **not** a contract (no `#[entrypoint]`), and `tests/` is a workspace member dedicated to integration tests.
+`src/kipio_identity_content` is the result of fusing the former `kipio_auth` (Identity Anchor) and `kipio_access` / `kipio_registry_content` (Content vault) crates into a single bounded context. The fusion removes a cross-call per signature check, unifies the cryptographic-identity and content-vault domains under one storage layout, and keeps the runtime architecture flat.
+
+`src/bridge` is a workspace member but **not** a contract (no `#[entrypoint]`). `tests/` is a workspace member dedicated to integration tests.
 
 ### Why the WASM is compiled with `target-cpu=mvp`
 
@@ -123,8 +123,8 @@ Rebuilds `Cargo.lock` after manual deletions or deep cleans. Does not touch the 
 ### 2. Compile contracts
 
 ```bash
-make build                      # all 10 contracts
-make build contract=kipio_core  # single contract
+make build                                # all contracts
+make build contract=kipio_identity_content
 ```
 
 Each contract is compiled to `wasm32-unknown-unknown`, optimised with `wasm-opt 132`, and then hashed to produce its `project metadata hash`.
@@ -132,17 +132,19 @@ Each contract is compiled to `wasm32-unknown-unknown`, optimised with `wasm-opt 
 ### 3. Export Solidity ABIs
 
 ```bash
-make abi                        # all contracts
-make abi contract=kipio_auth    # single contract
+make abi                                  # all contracts
+make abi contract=kipio_identity_content  # single contract
 ```
 
 Interfaces land in `foundry/src/interfaces/IKipio<CamelCase>.sol`. The naming convention is derived automatically from the crate name.
+
+The ABI export is done through `cargo run --features export-abi --quiet -- abi --pragma "$(SOLIDITY_PRAGMA)"`, where `SOLIDITY_PRAGMA` is defined at the top of the `Makefile`. This is deliberate: Stylus SDK 0.10.9 hardcodes `DEFAULT_PRAGMA = "^0.8.23"`, which predates the current Solidity release line. The `--pragma` flag overrides it, and the pragma has no relationship to Stylus, ArbOS, or on-chain compatibility — it is a purely off-chain tooling concern.
 
 ### 4. Run the test suite
 
 ```bash
 make test          # unit + e2e (no network)
-make test-bridge   # 104 semantic tests for the ABI ↔ Dafny bridge
+make test-bridge   # semantic tests for the ABI ↔ Dafny bridge
 make test-fork     # fork tests against Sepolia (network required)
 make test-all      # all three layers
 ```
@@ -152,8 +154,8 @@ See the **Testing** section below for the full breakdown.
 ### 5. Dry-run activation against Sepolia
 
 ```bash
-make check                      # all contracts, prints a size table
-make check contract=kipio_core  # single contract
+make check
+make check contract=kipio_identity_content
 ```
 
 `make check` runs each contract with `--verbose` against the Sepolia RPC. The full trace (deployment hash inputs, project metadata hash, wasm-opt version and flags, compressed and uncompressed size, fragment count) is printed to the terminal and saved verbatim to `.check-reports/<contract>.log`. A summary table is printed at the end and persisted to `.check-reports/sizes.tsv`.
@@ -164,7 +166,7 @@ Failures do not abort the loop. All failing contracts are collected and reported
 
 ```bash
 make deploy                              # all contracts, in order
-make deploy contract=kipio_auth          # single contract
+make deploy contract=kipio_core          # single contract
 make deploy-full                         # deploy + persist addresses + manifest
 make deploy-resume                       # resume the last deploy-full
 ```
@@ -203,6 +205,77 @@ Removes the `target/` directory and the `.check-reports/` directory.
 
 ---
 
+## Foundry Interface Validation (mandatory after `make abi`)
+
+The exported Solidity interfaces must **always** be validated against a real `solc` before being used by any consumer. `make abi` produces syntactically valid Solidity, but the exporter has known limitations that only surface when a proper compiler reads the file:
+
+```bash
+cd foundry
+forge build
+```
+
+**Known exporter limitations (as of Stylus SDK 0.10.9):**
+
+1. **Missing struct declarations.** When an external function references a struct type that is only used as an input (never as a return, never in a storage-backed field), the exporter may omit the struct declaration while still referring to it in the function signature. Example: `IKipioAccount.sol` refers to `IdentityAbi[]` in `registerTransitiveDelegation` but does not emit `struct IdentityAbi`. `solc` rejects this with `Error (7920): Identifier not found or not unique`.
+
+2. **Declaration order.** The exporter emits functions before structs. Solidity requires forward declarations, so any function signature that references a struct emits a warning or error depending on the compiler.
+
+Because these are tooling-side issues in the SDK and not defects in the contract ABI, they are worked around at the Foundry layer (patched interfaces) rather than at the contract layer. The on-chain surface is unaffected: the selectors and calldata layout in the WASM are identical regardless of what the exported `.sol` says.
+
+**Rule:** never ship a `.sol` interface to a downstream consumer without `forge build` passing on it first.
+
+---
+
+## Opcode Limits and Indirect Dispatch
+
+The Stylus build pipeline runs `wasm-opt -Oz --converge --closed-world` over the LLVM output. Binaryen has its own inliner that is independent of LLVM and does **not** honour Rust's `#[inline(never)]`: the attribute is a hint to LLVM IR that is lost in the translation to WASM. Because the entrypoint is the only exported function of the module, Binaryen sees every internal handler as having a single call site and inlines all of them into `user_entrypoint`, rebuilding the monolithic body the fallback split was designed to avoid.
+
+This is the failure mode behind `too many wasm opcodes in func body: N > 65536` during activation. It is a **per-function** limit, not a module-size limit — a 40 KB contract can fail where a 54 KB contract passes, depending on how much code ends up inlined into the entrypoint.
+
+The fix, applied in `kipio_identity_content`, is to route dispatch through a table of function pointers:
+
+```rust
+static DISPATCH_TABLE: &[(u32, DispatchHandler)] = &[
+    (SEL_REGISTER_CONTENT, KipioIdentityContent::dispatch_register_content),
+    // ...
+];
+
+#[fallback]
+fn fallback(&mut self, calldata: &[u8]) -> ArbResult {
+    let table = black_box(DISPATCH_TABLE);
+    let handler = table.iter()
+        .find(|(s, _)| *s == selector)
+        .map(|(_, h)| *h);
+    match handler {
+        Some(h) => h(self, args),
+        None => Err(Vec::new()),
+    }
+}
+```
+
+The lookup produces a `call_indirect` in WASM whose target is a runtime value loaded from a table. Binaryen cannot inline through it because it cannot resolve the concrete function statically. `core::hint::black_box` on the table reference prevents LLVM from constant-folding the lookup back into a static decision tree during codegen.
+
+**Measured impact** (`wasm-objdump -d` over the post-`wasm-opt` binary):
+
+| Approach | `user_entrypoint` ops | ArbOS verdict |
+|---|---|---|
+| `#[public]` macro | 84646 | activation failed |
+| `#[fallback]` with direct match | 92940 | worse |
+| `#[fallback]` + decode helpers + direct match | 94164 | worse |
+| `#[fallback]` + `call_indirect` table | passes | ✓ |
+
+The rule of thumb for future contracts: if the post-`wasm-opt` `user_entrypoint` exceeds ~30,000 ops (`wasm-objdump -d` count), it is at risk of crossing the ArbOS limit. Re-measure after every significant endpoint addition.
+
+### ABI export under `#[fallback]`
+
+`#[public]` auto-generates a `GenerateAbi` impl used by `cargo stylus export-abi`. With `#[fallback]`, the macro still emits an empty impl and the export prints `interface IKipioIdentityContent {}`. To restore the interface, `kipio_identity_content` defines a shadow type `KipioIdentityContentAbi` in `src/abi/export.rs` that carries a manual `GenerateAbi` implementation, and `bin/export_abi.rs` points `print_from_args` at it.
+
+The shadow type is never instantiated, has no storage fields, and is compiled only under the `export-abi` feature. The production WASM is unaffected.
+
+**Maintenance:** every function declared in `endpoints/mod.rs`'s `sol!` block must also appear in `abi/export.rs`. Adding a new method means updating three places: the `sol!` block, the `DISPATCH_TABLE`, and the manual `GenerateAbi`.
+
+---
+
 ## Testing
 
 Three layers, one crate. All tests live in `tests/` and share `tests/common/mod.rs` for fixtures.
@@ -210,7 +283,7 @@ Three layers, one crate. All tests live in `tests/` and share `tests/common/mod.
 | Target | File | Requires network | Purpose |
 |---|---|---|---|
 | `make test` | `tests/unit.rs`, `tests/e2e.rs` | No | Contract entrypoints via `TestVM`; cross-contract integration between `kipio_account` and `kipio_runtime` |
-| `make test-bridge` | `src/bridge/tests/bridge_integration.rs` | No | 104 semantic tests that validate the ABI ↔ Dafny translation independently of the contracts |
+| `make test-bridge` | `src/bridge/tests/bridge_integration.rs` | No | Semantic tests that validate the ABI ↔ Dafny translation independently of the contracts |
 | `make test-fork` | `tests/fork.rs` | Yes (Sepolia RPC) | Reads real on-chain storage via `TestVMBuilder::rpc_url`; marked `#[ignore]` so they do not run by default |
 
 Fork tests are run explicitly:
@@ -243,12 +316,13 @@ The repository separates cryptography, state persistence, and authorization into
                ┌──────────────────────┼──────────────────────┐
                │ Queries Verification │                      │ Delegates State
                ▼                      ▼                      ▼
-    ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐
-    │     KipioAuth      │ │ KipioRegistryContent│ │    KipioAccess     │
-    │  (Curve Registry)  │ │ (Encrypted Metadata │ │ (Permission Maps & │
-    └──────────┬─────────┘ │    & Irys Pointers) │ │  Off-chain kfrags) │
-               │           └────────────────────┘ └────────────────────┘
-               ▼ Calls External Verifier
+    ┌─────────────────────────┐ ┌──────────────────────┐ ┌────────────────────┐
+    │ KipioIdentityContent    │ │ KipioAccount         │ │ KipioRecovery      │
+    │ (Anchor + Encrypted     │ │ (Sovereign Aggregate │ │ (Module Evolution) │
+    │  Metadata & Irys ptrs)  │ │  Dafny-verified)     │ │                    │
+    └──────────┬──────────────┘ └──────────────────────┘ └────────────────────┘
+               │ Calls External Verifier
+               ▼
     ┌────────────────────┐
     │  P-256 precompile  │
     │  (0x100, native)   │
@@ -259,24 +333,27 @@ The repository separates cryptography, state persistence, and authorization into
 
 The immutable, minimal state router. It stores no cryptographic logic, zero plaintext, and no secrets. It maintains references to the current operational modules and maps a cryptographic user anchor (`StorageB256`). This guarantees the system survives future algorithmic migrations without structural data updates.
 
-### 2. Identity & authentication layer (`kipio_auth`)
+### 2. Identity & content layer (`kipio_identity_content`)
 
-* Handles user public key identity mapping via anonymized public key hashes (`keccak256(pubkey)`), shielding the system from chain analysis exposure.
+The fused bounded context that handles both the cryptographic identity anchor and the user content vault.
+
+* Anchors a logical actor to a `keccak256(pubkey)` fingerprint. Raw public keys never appear on-chain.
 * Implements anti-replay mechanisms through custom EIP-712 structured typed digests.
 * Delegates curve-specific execution to **native EVM precompiles**. For P-256, this is the `0x100` precompile defined by RIP-7212 / EIP-7951. No curve arithmetic is executed in WASM; the contract builds the raw 160-byte input and performs a single `staticcall`.
-* The K-256 verifier design pattern remains documented as a self-hosted alternative prior to integrating decentralized **TACo (Threshold Access Control)** networks.
+* Manages structural tracking metadata and encrypted Irys pointer locations using immutable tracking indices.
+* Tracks access grants through a swap-and-pop grantee index, keeping pagination costs bounded.
 
-### 3. Content registry layer (`kipio_registry_content`)
+The fusion is deliberate: identity and content share the same sovereign address, and unifying them eliminates one cross-contract call per authorization check.
 
-Manages structural tracking metadata and encrypted Irys pointer locations (`ContentRecord`) using immutable tracking indices. Implements strict borrow semantics on native Stylus collections (`StorageVec`) to adhere to Rust's unique memory ownership model.
+### 3. Account (`kipio_account`)
 
-### 4. Access control layer (`kipio_access`)
+The sovereign aggregate. Deployed once per identity via CREATE2. Holds the `AuthorizationState`: credentials, credential authorities, sessions, delegations, restrictions, policy effects, and consumed replay keys. Storage is split into a cold path (an ABI-encoded blob) and a hot path (`StorageMap`s for credential statuses and consumed replay keys), so frequent operations touch one slot instead of re-serialising the full state.
 
-Maintains decentralized authorization policies for content access.
+The `AuthorizationState` shape and its transition rules are verified in Dafny. The `src/bridge` crate translates between the Solidity ABI and the generated Dafny types.
 
-Stores permission states and recipient indexes only, without holding cryptographic material, threshold capsules, re-encryption fragments, plaintext metadata, or external protocol dependencies.
+### 4. Runtime (`kipio_runtime`)
 
-Acts as a protocol-agnostic authorization ledger consumable by TACo, Arbitrum Orbit deployments, enterprise integrations, autonomous agents, or future cryptographic infrastructures.
+The orchestrator. It does not own state; it reads Account via `IKipioAccount` cross-contract calls, runs the Dafny-derived acceptance and effective-authority logic in memory, and validates execution contexts. Every entrypoint that needs Account state receives the Account address, not the state blob.
 
 ### 5. Economics (`kipio_economics`)
 
@@ -286,21 +363,13 @@ The single authority on bootstrap sponsorship. The Gateway queries it before fun
 
 The entry point for EIP-7702 and CREATE2-based account bootstrap. It resolves the identity of the caller, predicts the deterministic account address, deploys and activates the Account contract if needed, and forwards the original payload to the Runtime. Bootstrap funding is sourced from `kipio_economics` when available, and falls back to the caller's `msg.value` otherwise.
 
-### 7. Account (`kipio_account`)
+### 7. Recovery (`kipio_recovery`)
 
-The sovereign aggregate. Deployed once per identity via CREATE2. Holds the `AuthorizationState`: credentials, credential authorities, sessions, delegations, restrictions, policy effects, and consumed replay keys. Storage is split into a cold path (an ABI-encoded blob) and a hot path (`StorageMap`s for credential statuses and consumed replay keys), so frequent operations touch one slot instead of re-serialising the full state.
+Secures module evolution and identity recovery. Interacts with the Core router via cross-contract calls to perform hot-swaps under valid multi-signature setups or emergency access thresholds. Also exposes the policy-ledger interface consumed by `kipio_identity_content`'s `rotate_key_from_policy` path.
 
-### 8. Runtime (`kipio_runtime`)
+### 8. Protocol configuration (`kipio_protocol_config`)
 
-The orchestrator. It does not own state; it reads Account via `IKipioAccount` cross-contract calls, runs the Dafny-derived acceptance and effective-authority logic in memory, and validates execution contexts. Every entrypoint that needs Account state receives the Account address, not the state blob.
-
-### 9. Recovery (`kipio_recovery`)
-
-Secures module evolution. Interacts with the Core router via cross-contract calls to perform module hot-swaps under valid multi-signature setups or emergency access thresholds.
-
-### 10. Protocol configuration (`kipio_protocol_config`)
-
-The discovery hub. Holds the currently authorized addresses of every operational module. Contracts that need to reach a peer module query this contract instead of hard-coding addresses.
+The discovery hub. Holds the currently authorized addresses of every operational module, the per-curve verifier mapping, and the whitelist of authorized policy ledgers. Contracts that need to reach a peer module query this contract instead of hard-coding addresses.
 
 ---
 
@@ -312,6 +381,8 @@ The codebase enforces operational constraints that support low-power mobile clie
 * **Zero debug leaks.** Tracking and debug logs are omitted or reduced to anonymised `B256` hashes.
 * **Indexed events for mobile bridges.** Event signatures use NatSpec index patterns (`address indexed user`, `bytes32 indexed contentHash`) so mobile bridges can query state deltas without stalling WebViews.
 * **Swap-and-pop deletion.** Storage arrays avoid the "ghost entry" pattern: removing entries triggers structural index cleanups, bounding long-term RPC pagination costs.
+* **CEI ordering.** Every mutating handler mutates state before any cross-contract call. If the external call reverts, the whole transaction — including the local mutation — rolls back atomically.
+* **Defence in depth.** `code_size` checks reject EOAs and precompiles before they can be stored as config addresses. `Address::ZERO` is validated in every path that receives a target even when the upstream source is trusted.
 
 ---
 
@@ -353,6 +424,7 @@ pub fn get_vault_paginated_full(
 
 * Contracts are deployed on **Arbitrum Sepolia**.
 * The frontend repository expects ABI sync with the latest Stylus compilation (`make abi`).
+* The exported Solidity interfaces must pass `forge build` inside `foundry/` before being consumed by any downstream project. See the **Foundry Interface Validation** section.
 * Makefile targets must be followed in order (`lock → build → check → test → deploy`) for consistent results.
 
 ---
