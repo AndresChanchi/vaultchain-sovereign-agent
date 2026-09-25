@@ -7,3 +7,6 @@
 pub mod errors;
 pub mod events;
 pub mod interfaces;
+
+#[cfg(feature = "export-abi")]
+pub mod export;
