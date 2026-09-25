@@ -1,5 +1,5 @@
 [package]
-name = "kipio_content_access"
+name = "kipio_identity_content"
 version = "0.1.0"
 edition = "2024"
 

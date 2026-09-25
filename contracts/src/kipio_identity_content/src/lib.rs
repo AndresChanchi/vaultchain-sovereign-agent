@@ -11,6 +11,9 @@
 //   QueryProvider   → SXT via CRE today; alternative indexers tomorrow.
 //   AccessProvider  → Lit Protocol today; TACo (WEDF) tomorrow.
 //   ZKVerifier      → UltraHonk/Groth16/halo2 (optional, future).
+//   AuthVerifier    → EIP-7951 P256 in-process; external curves tomorrow.
+//   ProtocolConfig  → Administrative hub; source of truth for module pointers.
+//   PolicyLedger    → External policy engine (Recovery, Enterprise, Agents).
 //
 // Each provider is replaceable without modifying protocol logic.
 // The contract stores provider addresses and resolves them dynamically.
@@ -155,6 +158,28 @@
 //   The contract RECORDS the user's declared visibility intent. It does
 //   NOT enforce downstream copies. Data-egress control belongs to the
 //   user's disclosure decision and to the frontend.
+//
+// ============================================================================
+// IDENTITY ANCHOR (fused from kipio_auth)
+// ============================================================================
+//
+// This contract also acts as the canonical Identity Anchor: a persistent
+// binding between a logical actor (user address) and their active
+// cryptographic key fingerprint. It exposes:
+//
+//   - register()                    : anchor the first key
+//   - verify_identity_authorization : prove intent authorization
+//   - rotate_key()                  : migrate to a new key + curve
+//   - rotate_key_from_policy()      : migrate under an external policy
+//   - verify()                      : EIP-7951 P256 in-process verifier
+//
+// The fusion with content access is intentional: identities and their
+// content share the same sovereign address, and the fused contract
+// eliminates one cross-contract call per authorization check.
+//
+// Auth is NOT a cryptographic engine. It is a registry. All curve
+// parsing (ASN.1, DER, COSE, SEC1) is delegated to the frontend or to
+// external verifier modules registered in kipio_protocol_config.
 // ----------------------------------------------------------------------------
 
 extern crate alloc;
@@ -166,4 +191,4 @@ pub mod endpoints;
 pub mod internal;
 pub mod storage;
 
-pub use storage::entrypoint::KipioContentAccess;
+pub use storage::entrypoint::KipioIdentityContent;
