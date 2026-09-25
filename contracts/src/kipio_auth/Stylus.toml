@@ -1,4 +1,0 @@
-[contract]
-name = "kipio_auth"
-
-[wasm-opt]
