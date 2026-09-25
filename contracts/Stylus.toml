@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "src/kipio_core",
-  "src/kipio_auth",
   "src/kipio_account",
   "src/kipio_economics",
   "src/kipio_content_access",
