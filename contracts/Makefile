@@ -41,13 +41,11 @@ SOLIDITY_PRAGMA = pragma solidity ^0.8.37;
 
 CONTRACTS = \
 	kipio_protocol_config \
-	kipio_core \
 	kipio_identity_content \
 	kipio_account \
 	kipio_runtime \
 	kipio_economics \
 	kipio_execution_gateway \
-	kipio_recovery
 
 ifdef contract
 	CONTRACT_DIR = src/$(contract)

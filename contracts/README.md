@@ -72,20 +72,22 @@ contracts/
 ├── .cargo/
 │   └── config.toml         target-cpu=mvp for wasm32-unknown-unknown
 ├── Makefile                build / test / check / deploy orchestration
+├── scripts/
+│   └── stylus-deploy-manifest.sh   parses deploy logs into structured JSON
 ├── src/
-│   ├── bridge/                 ABI ↔ Dafny translation layer (local crate)
-│   ├── kipio_core/
+│   ├── bridge/                     ABI ↔ Dafny translation layer (local crate)
+│   ├── kipio_protocol_config/
 │   ├── kipio_identity_content/
 │   ├── kipio_account/
 │   ├── kipio_runtime/
 │   ├── kipio_economics/
-│   ├── kipio_execution_gateway/
-│   ├── kipio_recovery/
-│   └── kipio_protocol_config/
+│   └── kipio_execution_gateway/
 └── tests/                  integration suite (unit / e2e / fork)
 ```
 
 `src/kipio_identity_content` is the result of fusing the former `kipio_auth` (Identity Anchor) and `kipio_access` / `kipio_registry_content` (Content vault) crates into a single bounded context. The fusion removes a cross-call per signature check, unifies the cryptographic-identity and content-vault domains under one storage layout, and keeps the runtime architecture flat.
+
+`src/kipio_account` absorbed the former `kipio_recovery` crate. Recovery guardian versioning, policy ledger, and challenge-period execution now live inside the sovereign aggregate. The fusion collapses the "recovery of an Account" domain into the Account itself and removes an entire contract from the deployment graph.
 
 `src/bridge` is a workspace member but **not** a contract (no `#[entrypoint]`). `tests/` is a workspace member dedicated to integration tests.
 
@@ -166,21 +168,21 @@ Failures do not abort the loop. All failing contracts are collected and reported
 
 ```bash
 make deploy                              # all contracts, in order
-make deploy contract=kipio_core          # single contract
+make deploy contract=kipio_account       # single contract
 make deploy-full                         # deploy + persist addresses + manifest
 make deploy-resume                       # resume the last deploy-full
 ```
 
-`deploy` iterates the `CONTRACTS` list in dependency order. Each contract is deployed with `--max-fee-per-gas-gwei=1` to avoid the Sepolia base-fee race.
+`deploy` iterates the `CONTRACTS` list in dependency order. Each contract is deployed with `--max-fee-per-gas-gwei=1` to avoid the Sepolia base-fee race. Constructor arguments, when present, are resolved from `CONSTRUCTOR_ARGS_<name>` (space-separated values) and expanded as separate `argv` entries.
 
-`deploy-full` captures the resulting address, deployment transaction hash, activation transaction hash, fragment count, and project metadata hash into `deployments/<timestamp>/addresses.json` and `deployments/<timestamp>/manifest.json`. Per-contract logs are written to the same directory.
+`deploy-full` captures the resulting address, deployment transaction hash, activation transaction hash, fragment count, and project metadata hash into `deployments/<timestamp>/addresses.json` and `deployments/<timestamp>/manifest.json`. Per-contract logs are written to the same directory. The manifest is produced by `scripts/stylus-deploy-manifest.sh`, which strips ANSI escapes from the log, anchors each field to its exact log prefix, and emits structured JSON (`project_info`, `deployment_fingerprint`, `contract_details`, `activation_details`).
 
 `deploy-resume` reads the latest deployment directory, skips any contract already present in `addresses.json`, and continues with the remaining ones. Useful when the RPC drops mid-run.
 
 ### 7. Verify a deployed contract
 
 ```bash
-make verify contract=kipio_core tx=0x<deployment-tx-hash>
+make verify contract=kipio_account tx=0x<deployment-tx-hash>
 ```
 
 Recompiles from source and confirms the on-chain bytecode matches. The toolchain, `wasm-opt` version, and all flags are pinned, so the check is deterministic.
@@ -195,13 +197,28 @@ make cache-status  addr=0x...              # read cached status
 
 ArbOS maintains a contract cache (CacheManager at `0x0000...0070`). Cached contracts save roughly **8,500 gas per call**. Entry is won by bidding on an auction; bids decay over time and must be renewed. Use `cache suggest-bid` as the floor for `cache-bid`.
 
-### 9. Clean
+### 9. Maintenance
 
 ```bash
-make clean
+make clean               # remove target/ and .check-reports/
+make clean-deployments   # remove all deployment records
+make clean-abi           # remove generated Solidity interfaces
 ```
 
-Removes the `target/` directory and the `.check-reports/` directory.
+### 10. Recovery from Docker root-ownership
+
+`cargo stylus deploy` runs the compile step inside a Docker container as `root`. Because the container bind-mounts `contracts/target/`, files written during the build end up owned by `root:root` on the host. Subsequent local commands (`make build`, `make abi`, `make test`) then fail with `Permission denied (os error 13)` when they try to touch the same files.
+
+Two targets recover from this:
+
+```bash
+make fix-perms   # reclaims ownership of target/ (sudo chown)
+make nuke        # hard reset: removes target/, stops and removes stylus Docker containers, deletes cargo-stylus-base images
+```
+
+`make check` is unaffected because it uses the release profile, which writes to a subtree the deploy container never touched.
+
+Every `deploy` and `deploy-full` invocation prints a closing note reminding you to run `make fix-perms` before the next local build.
 
 ---
 
@@ -306,20 +323,20 @@ The repository separates cryptography, state persistence, and authorization into
                   │   (AES/ChaCha Ciphers & WebAuthn)      │
                   └───────────────────┬────────────────────┘
                                       │
-                         Invokes Core │ (Signs EIP-712 / Passes Hashes)
+                         Invokes via  │  (Signs EIP-712 / Passes Hashes)
                                       ▼
                         ┌───────────────────────────┐
-                        │   KipioCore (Kernel)      │
-                        │   (Immutable Anchor)      │
+                        │   KipioRuntime            │
+                        │   (Orchestrator)          │
                         └─────────────┬─────────────┘
                                       │
                ┌──────────────────────┼──────────────────────┐
-               │ Queries Verification │                      │ Delegates State
+               │ Reads Account state  │                      │ Routes via config
                ▼                      ▼                      ▼
     ┌─────────────────────────┐ ┌──────────────────────┐ ┌────────────────────┐
-    │ KipioIdentityContent    │ │ KipioAccount         │ │ KipioRecovery      │
-    │ (Anchor + Encrypted     │ │ (Sovereign Aggregate │ │ (Module Evolution) │
-    │  Metadata & Irys ptrs)  │ │  Dafny-verified)     │ │                    │
+    │ KipioAccount            │ │ KipioIdentityContent │ │ KipioEconomics     │
+    │ (Sovereign Aggregate    │ │ (Anchor + Encrypted  │ │ (Bootstrap +       │
+    │  Dafny-verified)        │ │  Metadata & Irys)    │ │  Settlement)       │
     └──────────┬──────────────┘ └──────────────────────┘ └────────────────────┘
                │ Calls External Verifier
                ▼
@@ -327,13 +344,33 @@ The repository separates cryptography, state persistence, and authorization into
     │  P-256 precompile  │
     │  (0x100, native)   │
     └────────────────────┘
+
+    ┌────────────────────────────────────────────────────────────────────────┐
+    │ KipioProtocolConfig                                                    │
+    │ (Discovery hub: module addresses, verifier registry, ledger whitelist) │
+    └────────────────────────────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────────────────────┐
+    │ KipioExecutionGateway                                                  │
+    │ (EIP-7702 + CREATE2 bootstrap; entry point for non-crypto users)       │
+    └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. Kernel layer (`kipio_core`)
+### 1. Runtime (`kipio_runtime`)
 
-The immutable, minimal state router. It stores no cryptographic logic, zero plaintext, and no secrets. It maintains references to the current operational modules and maps a cryptographic user anchor (`StorageB256`). This guarantees the system survives future algorithmic migrations without structural data updates.
+The orchestrator. It does not own state; it reads Account via `IKipioAccount` cross-contract calls, runs the Dafny-derived acceptance and effective-authority logic in memory, and validates execution contexts. Every entrypoint that needs Account state receives the Account address, not the state blob.
 
-### 2. Identity & content layer (`kipio_identity_content`)
+Runtime is the single transactional orchestrator of the protocol. Any mutating flow that spans multiple modules passes through it.
+
+### 2. Account (`kipio_account`)
+
+The sovereign aggregate. Deployed once per identity via CREATE2. Holds the `AuthorizationState`: credentials, credential authorities, sessions, delegations, restrictions, policy effects, and consumed replay keys. Storage is split into a cold path (an ABI-encoded blob) and a hot path (`StorageMap`s for credential statuses and consumed replay keys), so frequent operations touch one slot instead of re-serialising the full state.
+
+Account also owns the **recovery engine**: Versioned guardian sets, policy requests with threshold approvals, challenge-period execution, and P-256 / secp256k1 signature verification via native precompiles. Recovery transitions are gated by the same `runtime_address` model that gates every other Account mutation.
+
+The `AuthorizationState` shape and its transition rules are verified in Dafny. The `src/bridge` crate translates between the Solidity ABI and the generated Dafny types.
+
+### 3. Identity & content layer (`kipio_identity_content`)
 
 The fused bounded context that handles both the cryptographic identity anchor and the user content vault.
 
@@ -345,31 +382,31 @@ The fused bounded context that handles both the cryptographic identity anchor an
 
 The fusion is deliberate: identity and content share the same sovereign address, and unifying them eliminates one cross-contract call per authorization check.
 
-### 3. Account (`kipio_account`)
-
-The sovereign aggregate. Deployed once per identity via CREATE2. Holds the `AuthorizationState`: credentials, credential authorities, sessions, delegations, restrictions, policy effects, and consumed replay keys. Storage is split into a cold path (an ABI-encoded blob) and a hot path (`StorageMap`s for credential statuses and consumed replay keys), so frequent operations touch one slot instead of re-serialising the full state.
-
-The `AuthorizationState` shape and its transition rules are verified in Dafny. The `src/bridge` crate translates between the Solidity ABI and the generated Dafny types.
-
-### 4. Runtime (`kipio_runtime`)
-
-The orchestrator. It does not own state; it reads Account via `IKipioAccount` cross-contract calls, runs the Dafny-derived acceptance and effective-authority logic in memory, and validates execution contexts. Every entrypoint that needs Account state receives the Account address, not the state blob.
-
-### 5. Economics (`kipio_economics`)
+### 4. Economics (`kipio_economics`)
 
 The single authority on bootstrap sponsorship. The Gateway queries it before funding a new Account's activation; the decision to sponsor, and the amount allocated, are entirely local to this contract. See `IKipioBootstrapFunding` in the Gateway for the interface.
 
-### 6. Execution Gateway (`kipio_execution_gateway`)
+### 5. Execution Gateway (`kipio_execution_gateway`)
 
 The entry point for EIP-7702 and CREATE2-based account bootstrap. It resolves the identity of the caller, predicts the deterministic account address, deploys and activates the Account contract if needed, and forwards the original payload to the Runtime. Bootstrap funding is sourced from `kipio_economics` when available, and falls back to the caller's `msg.value` otherwise.
 
-### 7. Recovery (`kipio_recovery`)
-
-Secures module evolution and identity recovery. Interacts with the Core router via cross-contract calls to perform hot-swaps under valid multi-signature setups or emergency access thresholds. Also exposes the policy-ledger interface consumed by `kipio_identity_content`'s `rotate_key_from_policy` path.
-
-### 8. Protocol configuration (`kipio_protocol_config`)
+### 6. Protocol configuration (`kipio_protocol_config`)
 
 The discovery hub. Holds the currently authorized addresses of every operational module, the per-curve verifier mapping, and the whitelist of authorized policy ledgers. Contracts that need to reach a peer module query this contract instead of hard-coding addresses.
+
+---
+
+## Architectural Evolution
+
+Earlier iterations of this workspace shipped a global kernel (`kipio_core`) plus standalone `kipio_access` and `kipio_registry_content` crates. Three changes collapsed that topology:
+
+1. **`kipio_auth` + `kipio_access` + `kipio_registry_content` → `kipio_identity_content`.** Identity and content share the same sovereign address. Unifying them removes a cross-call per signature check and eliminates a duplicated routing layer.
+
+2. **`kipio_recovery` → `kipio_account`.** Recovery is a transition of the Account's `AuthorizationState`, not a peer module. Guardian sets, policy requests, and challenge-period execution are aggregate-local state. Fusion collapses a contract from the deployment graph.
+
+3. **`kipio_core` removed.** The global kernel pattern (one kernel pointing to per-domain modules, with one vault entry per user) is superseded by two layers: `kipio_account` per user (each Account is its own kernel) and `kipio_protocol_config` as a protocol-wide directory. No functionality was lost; the global router's stubs delegated to modules that now own their own domain directly.
+
+The kernel pattern did not disappear — it decentralized to the user level. Every Account is its own immutable kernel: its identity is fixed at CREATE2 time, its `runtime_address` proxy is immutable, and it survives upgrades of the orchestration layer without needing to migrate.
 
 ---
 
@@ -383,6 +420,8 @@ The codebase enforces operational constraints that support low-power mobile clie
 * **Swap-and-pop deletion.** Storage arrays avoid the "ghost entry" pattern: removing entries triggers structural index cleanups, bounding long-term RPC pagination costs.
 * **CEI ordering.** Every mutating handler mutates state before any cross-contract call. If the external call reverts, the whole transaction — including the local mutation — rolls back atomically.
 * **Defence in depth.** `code_size` checks reject EOAs and precompiles before they can be stored as config addresses. `Address::ZERO` is validated in every path that receives a target even when the upstream source is trusted.
+* **Model B caller gate.** `kipio_account` mutating functions accept calls only from the immutable `runtime_address` set in the constructor. The Account is a pure executor; authorization is orchestrated upstream by Runtime. Direct calls — including from the identity itself — are rejected with `UnauthorizedCaller`.
+* **Recovery digests bound to chain and nonce.** Guardian approval digests include the `chain_id`, the Account address, the request ID, and the target hash. Cancel digests include the same plus the Account's current nonce, making them single-use.
 
 ---
 
@@ -426,6 +465,7 @@ pub fn get_vault_paginated_full(
 * The frontend repository expects ABI sync with the latest Stylus compilation (`make abi`).
 * The exported Solidity interfaces must pass `forge build` inside `foundry/` before being consumed by any downstream project. See the **Foundry Interface Validation** section.
 * Makefile targets must be followed in order (`lock → build → check → test → deploy`) for consistent results.
+* After any `make deploy` or `make deploy-full`, run `make fix-perms` before the next local build, ABI export, or test run. See the **Recovery from Docker root-ownership** section.
 
 ---
 

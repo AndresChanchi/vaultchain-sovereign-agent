@@ -1,20 +1,15 @@
 [workspace]
 members = [
-  "src/kipio_core",              # Protocol
 # "src/kipio_auth_verifier_k256",
   "src/kipio_account",           # Sovereign Account -> hot         1
   "src/kipio_economics",         # Business Logic    -> hot         2
-  "src/kipio_identity_content",  # Business Logic    -> hot           3
+  "src/kipio_identity_content",  # Business Logic    -> hot         3
   "src/kipio_runtime",           # Sovereign Account -> hot         4
   "src/kipio_execution_gateway", # Business Logic    -> hot
-  "src/kipio_recovery",          # Business Logic    -> cold
   "src/kipio_protocol_config",   # Protocol maintainers 
   "src/bridge",                  # Local too, soon a public crate
   "tests",
   ]
-
-# kipio_execution_gateway + kipio_runtime
-# kipio_account + kipio_recovery
 
 resolver = "3"
 
@@ -28,7 +23,7 @@ alloy-primitives = { version = "1.7.3", default-features = false }
 # https://crates.io/crates/alloy-sol-types 
 alloy-sol-types = { version = "1.7.3", default-features = false }
 
-# k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] } Solo si quiero hacer de manera manual tpre con infraestructura propia
+# k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] } own infrastructure with TPRE...
 
 
 [profile.release]
