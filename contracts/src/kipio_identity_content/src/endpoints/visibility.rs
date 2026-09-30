@@ -1,7 +1,9 @@
 //! Visibility toggles and delete dispatch handlers.
 //!
 //! Visibility is user-sovereign: no role, no operator, no approval
-//! flow. The owner toggles it freely.
+//! flow. The owner toggles it freely. Under Model B + EIP-2771, the
+//! effective user is resolved from the calldata suffix appended by the
+//! trusted runtime; the handler uses that address as the vault owner.
 //!
 //! IRREVERSIBILITY WARNING (documented, not enforced):
 //!   Once public, third parties may have copied the content. Toggling
@@ -22,12 +24,16 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_visibility(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_visibility(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = setVisibilityCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
         let now = self.vm().block_timestamp();
 
         {
@@ -56,10 +62,16 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_visibility_batch(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_visibility_batch(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_set_visibility_batch(args)?;
 
         self.require_not_paused()?;
+
+        let sender = self.require_forwarded(user)?;
 
         let content_ids = &call.content_ids;
         let is_publics = &call.is_publics;
@@ -75,7 +87,6 @@ impl KipioIdentityContent {
             return Err(LengthMismatch {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
         let now = self.vm().block_timestamp();
         let mut events: Vec<(B256, bool)> = Vec::with_capacity(len);
 
@@ -116,12 +127,16 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_delete_content(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_delete_content(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = deleteContentCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         {
             let vault = self.vaults.getter(sender);
@@ -147,7 +162,10 @@ impl KipioIdentityContent {
                         .set(U256::from(idx as u64 + 1));
                 }
                 vault.content_list.pop();
-                vault.content_positions.setter(call.content_id).set(U256::ZERO);
+                vault
+                    .content_positions
+                    .setter(call.content_id)
+                    .set(U256::ZERO);
             }
 
             let mut record = vault.contents.setter(call.content_id);
@@ -181,7 +199,7 @@ impl KipioIdentityContent {
                     .set(U256::ZERO);
             }
 
-            // SAFETY: StorageAddress tolerates zero-slots; set_len(0) is safe.
+            // SAFETY: StorageVec tolerates truncation; set_len(0) is safe.
             let mut index = vault.access.grantee_index.setter(call.content_id);
             unsafe {
                 index.set_len(0);

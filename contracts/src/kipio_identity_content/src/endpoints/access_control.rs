@@ -3,13 +3,19 @@
 //! Grants and revocations are tracked with a swap-and-pop index for
 //! O(1) enumeration and O(1) removal. Grant is idempotent (granting
 //! twice is a silent no-op); revoke on a non-grantee is also a silent
-//! no-op.
+//! no-op. Under Model B + EIP-2771, the effective user is resolved from
+//! the calldata suffix appended by the trusted runtime; the handler
+//! uses that address as the vault owner.
 
 use super::*;
 
 impl KipioIdentityContent {
     #[inline(never)]
-    pub(crate) fn dispatch_grant_access(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_grant_access(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = grantAccessCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -17,12 +23,18 @@ impl KipioIdentityContent {
             return Err(ZeroGrantee {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         {
             let mut vault = self.vaults.setter(sender);
 
-            if vault.contents.getter(call.content_id).tx_commitment.get() == B256::ZERO {
+            if vault
+                .contents
+                .getter(call.content_id)
+                .tx_commitment
+                .get()
+                == B256::ZERO
+            {
                 return Err(NotFound {}.abi_encode());
             }
 
@@ -63,7 +75,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_revoke_access(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_revoke_access(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = revokeAccessCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -71,7 +87,7 @@ impl KipioIdentityContent {
             return Err(ZeroGrantee {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         {
             let mut vault = self.vaults.setter(sender);

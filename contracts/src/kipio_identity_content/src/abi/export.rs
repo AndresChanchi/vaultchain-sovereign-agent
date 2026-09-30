@@ -26,9 +26,13 @@
 //! constant matches the interface name. `fmt_constructor_signature`
 //! emits the constructor declaration.
 //!
-//! This is a deliberate trade-off: the indirect dispatch solves the
-//! ArbOS opcode limit, and this file pays the price in exchange for
-//! keeping `cargo stylus export-abi` functional.
+//! EIP-2771 NOTE:
+//!
+//! User-facing mutators are wrapped by the runtime forwarder. The
+//! effective user is appended as a 20-byte suffix to the calldata, so
+//! the exposed Solidity signatures do NOT include an `address user`
+//! parameter for those functions. The consumer (the runtime) is
+//! responsible for appending the suffix.
 
 #![cfg(feature = "export-abi")]
 
@@ -37,10 +41,6 @@ use stylus_sdk::abi::export::GenerateAbi;
 
 /// Shadow type whose only purpose is to carry a manual `GenerateAbi`
 /// implementation. It is never instantiated at runtime.
-///
-/// The name matches the interface emitted by `cargo stylus export-abi`;
-/// `print_from_args::<KipioIdentityContentAbi>()` uses it to produce
-/// the Solidity file.
 pub struct KipioIdentityContentAbi;
 
 impl GenerateAbi for KipioIdentityContentAbi {
@@ -110,9 +110,9 @@ impl GenerateAbi for KipioIdentityContentAbi {
         // --- Identity anchor ---
         writeln!(f, "    function initialize(address protocol_config) external;")?;
         writeln!(f, "    function register(bytes calldata pubkey, uint256 curve) external;")?;
-        writeln!(f, "    function verifyIdentityAuthorization(address user, bytes32 msg_hash, bytes calldata signature, bytes calldata pubkey, uint256 nonce, uint256 deadline) external returns (bool);")?;
+        writeln!(f, "    function verifyIdentityAuthorization(bytes32 msg_hash, bytes calldata signature, bytes calldata pubkey, uint256 nonce, uint256 deadline) external returns (bool);")?;
         writeln!(f, "    function rotateKey(bytes calldata old_pubkey, bytes calldata new_pubkey, uint256 new_curve, bytes calldata signature_from_old, uint256 nonce, uint256 deadline) external;")?;
-        writeln!(f, "    function rotateKeyFromPolicy(address policy_ledger, bytes32 request_id, bytes calldata new_pubkey) external;")?;
+        writeln!(f, "    function applyAuthorizedRotation(bytes calldata new_pubkey, uint256 new_curve) external;")?;
         writeln!(f, "    function verify(address _user, bytes32 digest, bytes calldata signature, bytes calldata pubkey, uint256 _curve) external view returns (bool);")?;
         writeln!(f, "    function getProtocolConfig() external view returns (address);")?;
         writeln!(f, "    function getPubkey(address user) external view returns (bytes32);")?;

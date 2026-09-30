@@ -14,12 +14,20 @@
 //!      Comparison is on deltas, not term IDs, because CUSTOM can
 //!      represent any duration (e.g., a CUSTOM 10-day term is shorter
 //!      than a 30_DAYS term despite a higher numeric ID).
+//!
+//! Under Model B + EIP-2771, the effective user is resolved from the
+//! calldata suffix appended by the trusted runtime; the handler uses
+//! that address as the vault owner.
 
 use super::*;
 
 impl KipioIdentityContent {
     #[inline(never)]
-    pub(crate) fn dispatch_extend_storage_term(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_extend_storage_term(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = extendStorageTermCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -28,7 +36,7 @@ impl KipioIdentityContent {
         let resolved_delta =
             resolve_expiry_delta(call.new_storage_term, call.custom_expiry_delta)?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
         let now = self.vm().block_timestamp();
 
         let old_term: u8;
@@ -78,10 +86,16 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_extend_storage_term_batch(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_extend_storage_term_batch(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_extend_storage_term_batch(args)?;
 
         self.require_not_paused()?;
+
+        let sender = self.require_forwarded(user)?;
 
         let content_ids = &call.content_ids;
         let new_storage_terms = &call.new_storage_terms;
@@ -98,7 +112,6 @@ impl KipioIdentityContent {
             return Err(LengthMismatch {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
         let now = self.vm().block_timestamp();
 
         let mut events: Vec<(B256, u8, u8, u32)> = Vec::with_capacity(len);

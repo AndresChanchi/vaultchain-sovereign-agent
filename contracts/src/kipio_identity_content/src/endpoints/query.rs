@@ -6,6 +6,17 @@
 //! a zero-knowledge proof inline before registration. The stale
 //! cancellation path (`cancel_stale_query`) refunds the active-query
 //! slot after the timeout elapses.
+//!
+//! Under Model B + EIP-2771:
+//!
+//!   - `request_query` and `request_query_zk` require forwarding: the
+//!     effective user is the requester of the query.
+//!   - `cancel_stale_query` accepts either a forwarded call from the
+//!     original requester or a direct call from the protocol owner.
+//!     Both are allowed because the owner acts as an emergency
+//!     reclaimer for queries whose requester is no longer active.
+//!   - `on_report` is a CRE callback. It is never forwarded: the
+//!     caller must be the configured `query_provider`.
 
 use super::*;
 
@@ -15,12 +26,16 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_request_query(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_request_query(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = requestQueryCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         {
             let vault = self.vaults.getter(sender);
@@ -48,7 +63,9 @@ impl KipioIdentityContent {
         self.pending_queries.setter(call.query_id).set(true);
         self.query_timestamps.setter(call.query_id).set(now);
         self.query_requesters.setter(call.query_id).set(sender);
-        self.query_content_hashes.setter(call.query_id).set(call.content_hash);
+        self.query_content_hashes
+            .setter(call.query_id)
+            .set(call.content_hash);
         self.active_query_counts
             .setter(sender)
             .set(active_count + U256::from(1));
@@ -67,7 +84,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_cancel_stale_query(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_cancel_stale_query(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = cancelStaleQueryCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         let ts = self.query_timestamps.getter(call.query_id).get();
@@ -76,8 +97,14 @@ impl KipioIdentityContent {
         }
 
         let requester = self.query_requesters.getter(call.query_id).get();
-        let sender = self.vm().msg_sender();
-        if sender != requester && sender != self.owner.get() {
+
+        // Two authorized callers:
+        //   1. The original requester, via a forwarded runtime call.
+        //   2. The protocol owner, via a direct call.
+        let caller_is_requester = matches!(user, Some(u) if u == requester);
+        let caller_is_owner = self.vm().msg_sender() == self.owner.get();
+
+        if !caller_is_requester && !caller_is_owner {
             return Err(Unauthorized {}.abi_encode());
         }
 
@@ -89,7 +116,9 @@ impl KipioIdentityContent {
 
         self.pending_queries.setter(call.query_id).set(false);
         self.query_timestamps.setter(call.query_id).set(U256::ZERO);
-        self.query_requesters.setter(call.query_id).set(Address::ZERO);
+        self.query_requesters
+            .setter(call.query_id)
+            .set(Address::ZERO);
         self.query_content_hashes.setter(call.query_id).set(B256::ZERO);
 
         if requester != Address::ZERO {
@@ -98,7 +127,10 @@ impl KipioIdentityContent {
             self.active_query_counts.setter(requester).set(new_count);
         }
 
-        self.vm().log(QueryCancelled { queryId: call.query_id, requester });
+        self.vm().log(QueryCancelled {
+            queryId: call.query_id,
+            requester,
+        });
 
         Ok(Vec::new())
     }
@@ -108,12 +140,16 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_request_query_zk(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_request_query_zk(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_request_query_zk(args)?;
 
         self.require_not_paused()?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         if call.proof.is_empty() {
             return Err(EmptyProof {}.abi_encode());
@@ -160,7 +196,9 @@ impl KipioIdentityContent {
         self.pending_queries.setter(call.query_id).set(true);
         self.query_timestamps.setter(call.query_id).set(now);
         self.query_requesters.setter(call.query_id).set(sender);
-        self.query_content_hashes.setter(call.query_id).set(call.content_hash);
+        self.query_content_hashes
+            .setter(call.query_id)
+            .set(call.content_hash);
         self.active_query_counts
             .setter(sender)
             .set(active_count + U256::from(1));
@@ -183,7 +221,11 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_on_report(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_on_report(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_on_report(args)?;
 
         let caller = self.vm().msg_sender();

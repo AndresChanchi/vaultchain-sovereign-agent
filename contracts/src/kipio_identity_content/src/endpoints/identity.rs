@@ -1,14 +1,25 @@
 //! Identity anchor dispatch handlers.
 //!
 //! Covers protocol config binding, initial key registration, intent
-//! authorization with EIP-712 signatures, key rotation via signature
-//! or via external policy ledger, the in-process EIP-7951 P256
-//! verifier, and the identity state readers.
+//! authorization with EIP-712 signatures, key rotation via signature,
+//! the runtime-driven rotation path for externally approved policies,
+//! the in-process EIP-7951 P256 verifier, and the identity state
+//! readers.
+//!
+//! Under Model B + EIP-2771:
+//!
+//!   - `initialize` is owner-only. Linking this contract to the
+//!     protocol config is a one-time governance action.
+//!   - `register`, `verify_identity_authorization`, `rotate_key`, and
+//!     `apply_authorized_rotation` are user-facing mutators. They
+//!     require forwarding by the trusted runtime and use the effective
+//!     user from the calldata suffix.
+//!   - `verify` and the `get*` readers are views, callable directly.
 //!
 //! All mutating handlers observe strict CEI ordering: state is mutated
-//! before the cross-contract verifier or policy ledger call. If the
-//! external call reverts, the entire transaction (including the local
-//! mutation) is rolled back atomically.
+//! before any cross-contract call. If the external call reverts, the
+//! entire transaction (including the local mutation) is rolled back
+//! atomically.
 
 use super::*;
 
@@ -19,20 +30,26 @@ impl KipioIdentityContent {
 
     /// @notice Links this identity ledger to the universal protocol
     ///         configuration provider.
-    /// @dev May only be executed once during deployment setup.
-    ///      IDEMPOTENT: repeated calls with the same config are silent
-    ///      no-ops. Different config after initialization reverts.
+    /// @dev Owner-only and idempotent: repeated calls with the same
+    ///      config are silent no-ops. Different config after
+    ///      initialization reverts with `AlreadyInitialized`.
     ///
     /// DEFENSE IN DEPTH:
-    ///      Rejects EOAs and precompile addresses by checking `code_size`.
-    ///      Without this, an owner could accidentally point the identity
-    ///      ledger at a non-contract address, bricking every subsequent
-    ///      call that requires config lookups.
+    ///      Rejects EOAs and precompile addresses by checking
+    ///      `code_size`. Without this, the owner could accidentally
+    ///      point the identity ledger at a non-contract address,
+    ///      bricking every subsequent call that requires config lookups.
     ///
     /// @param protocol_config Deployed address of the KipioProtocolConfig
     ///        contract.
     #[inline(never)]
-    pub(crate) fn dispatch_initialize(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_initialize(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
+        self.require_owner()?;
+
         let call = initializeCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         if call.protocol_config == Address::ZERO {
@@ -66,9 +83,9 @@ impl KipioIdentityContent {
 
     /// @notice Registers an initial permanent sovereign relationship
     ///         binding an actor to a public key hash.
-    /// @dev IDEMPOTENT: repeated calls with the same pubkey+curve are
+    /// @dev Idempotent: repeated calls with the same pubkey+curve are
     ///      silent no-ops. Different pubkey or curve after registration
-    ///      reverts.
+    ///      reverts with `AlreadyRegistered`.
     ///
     /// CEI NOTE:
     ///      The config reads happen BEFORE the storage mutations because
@@ -80,12 +97,16 @@ impl KipioIdentityContent {
     ///        coordinates.
     /// @param curve Selected mathematical curve identifier framework.
     #[inline(never)]
-    pub(crate) fn dispatch_register(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_register(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_register(args)?;
 
         self.require_not_paused()?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         if call.pubkey.is_empty() {
             return Err(EmptyKey {}.abi_encode());
@@ -156,7 +177,8 @@ impl KipioIdentityContent {
     ///   structured intent payload".
     ///
     /// SECURITY MODEL:
-    /// - Caller is unrestricted (`user` is a parameter, not `msg_sender`).
+    /// - The effective user is resolved from the EIP-2771 suffix and
+    ///   MUST have been forwarded by the trusted runtime.
     /// - Signature is bound to `user`, `msg_hash`, `nonce`, `deadline`,
     ///   `curve`.
     /// - Front-running is not exploitable: replaying the signature would
@@ -170,8 +192,6 @@ impl KipioIdentityContent {
     ///   timestamp is strictly greater than zero, so the check always
     ///   reverts with `Expired`.
     ///
-    /// @param user Target logical entity address whose identity registry
-    ///        maps are queried.
     /// @param msg_hash Bound structural action target hash scheduled for
     ///        verification approval.
     /// @param signature Normalized, big-endian signature block passed
@@ -183,16 +203,22 @@ impl KipioIdentityContent {
     /// @param deadline Absolute block timestamp expiration threshold
     ///        capping transaction execution windows.
     #[inline(never)]
-    pub(crate) fn dispatch_verify_identity_authorization(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_verify_identity_authorization(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_verify_identity_authorization(args)?;
 
         self.require_not_paused()?;
+
+        let effective_user = self.require_forwarded(user)?;
 
         // ------------------------------------------------------------------
         // CHECKS
         // ------------------------------------------------------------------
 
-        if call.user == Address::ZERO {
+        if effective_user == Address::ZERO {
             return Err(ZeroUser {}.abi_encode());
         }
 
@@ -209,17 +235,17 @@ impl KipioIdentityContent {
             return Err(Expired {}.abi_encode());
         }
 
-        let stored_nonce = self.nonces.getter(call.user).get();
+        let stored_nonce = self.nonces.getter(effective_user).get();
         if call.nonce != stored_nonce {
             return Err(BadNonce {}.abi_encode());
         }
 
-        let stored_hash = self.pubkeys.getter(call.user).get();
+        let stored_hash = self.pubkeys.getter(effective_user).get();
         if keccak(&call.pubkey.0) != stored_hash {
             return Err(InvalidPubkey {}.abi_encode());
         }
 
-        let curve = self.curves.getter(call.user).get();
+        let curve = self.curves.getter(effective_user).get();
 
         let config_addr = self.protocol_config.get();
         if config_addr == Address::ZERO {
@@ -240,8 +266,13 @@ impl KipioIdentityContent {
         // BUILD DIGEST (uses the OLD nonce value)
         // ------------------------------------------------------------------
 
-        let digest =
-            self.build_verify_digest(call.user, call.msg_hash, call.nonce, call.deadline, curve);
+        let digest = self.build_verify_digest(
+            effective_user,
+            call.msg_hash,
+            call.nonce,
+            call.deadline,
+            curve,
+        );
 
         // ------------------------------------------------------------------
         // EFFECTS (mutate state BEFORE the cross-contract call)
@@ -253,19 +284,14 @@ impl KipioIdentityContent {
         // protection changed.
 
         let new_nonce = stored_nonce + U256::from(1);
-        self.nonces.setter(call.user).set(new_nonce);
+        self.nonces.setter(effective_user).set(new_nonce);
 
         // ------------------------------------------------------------------
         // INTERACTIONS (cross-contract verifier call LAST)
         // ------------------------------------------------------------------
-        //
-        // `call_verifier` takes `Vec<u8>` for signature and pubkey. The
-        // decoded `Bytes` values are converted with `.to_vec()` because
-        // `Bytes` is a newtype over `alloy_primitives::Bytes`, not over
-        // `Vec<u8>`.
 
         self.call_verifier(
-            call.user,
+            effective_user,
             digest,
             call.signature.0.to_vec(),
             call.pubkey.0.to_vec(),
@@ -277,7 +303,7 @@ impl KipioIdentityContent {
         // ------------------------------------------------------------------
 
         self.vm().log(IdentityAuthorizationVerified {
-            user: call.user,
+            user: effective_user,
             msgHash: call.msg_hash,
             newNonce: new_nonce,
         });
@@ -286,27 +312,32 @@ impl KipioIdentityContent {
     }
 
     // --------------------------------------------------------------------
-    // IDENTITY ANCHOR — KEY ROTATION
+    // IDENTITY ANCHOR — KEY ROTATION (SIGNATURE PATH)
     // --------------------------------------------------------------------
 
     /// @notice Migrates a user's identity coordinates to a new public key
     ///         set (Identity Evolution).
-    /// @dev Users remain fully sovereign over their identity records;
-    ///      they can rotate keys to adapt to device upgrades.
+    /// @dev The user remains fully sovereign over their identity record;
+    ///      they rotate keys to adapt to device upgrades.
     ///
     /// SECURITY MODEL:
-    /// - Caller MUST be `user`. Rotation is not delegated.
+    /// - The effective user is resolved from the EIP-2771 suffix and
+    ///   MUST have been forwarded by the trusted runtime.
     /// - Old key signature authorizes the transition (chain of custody
     ///   preserved).
     /// - CEI ordering: all state mutations happen BEFORE the
     ///   cross-contract call.
     #[inline(never)]
-    pub(crate) fn dispatch_rotate_key(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_rotate_key(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_rotate_key(args)?;
 
         self.require_not_paused()?;
 
-        let user = self.vm().msg_sender();
+        let effective_user = self.require_forwarded(user)?;
 
         // ------------------------------------------------------------------
         // CHECKS
@@ -316,7 +347,7 @@ impl KipioIdentityContent {
             return Err(EmptyKey {}.abi_encode());
         }
 
-        let stored_hash = self.pubkeys.getter(user).get();
+        let stored_hash = self.pubkeys.getter(effective_user).get();
         if stored_hash == B256::ZERO {
             return Err(NotRegistered {}.abi_encode());
         }
@@ -325,7 +356,7 @@ impl KipioIdentityContent {
             return Err(InvalidOldKey {}.abi_encode());
         }
 
-        let stored_nonce = self.nonces.getter(user).get();
+        let stored_nonce = self.nonces.getter(effective_user).get();
         if call.nonce != stored_nonce {
             return Err(BadNonce {}.abi_encode());
         }
@@ -335,7 +366,7 @@ impl KipioIdentityContent {
             return Err(Expired {}.abi_encode());
         }
 
-        let old_curve = self.curves.getter(user).get();
+        let old_curve = self.curves.getter(effective_user).get();
 
         let config_addr = self.protocol_config.get();
         if config_addr == Address::ZERO {
@@ -367,24 +398,29 @@ impl KipioIdentityContent {
         // BUILD DIGEST (uses the OLD nonce value)
         // ------------------------------------------------------------------
 
-        let digest =
-            self.build_rotate_digest(user, new_pubkey_hash, call.new_curve, call.nonce, call.deadline);
+        let digest = self.build_rotate_digest(
+            effective_user,
+            new_pubkey_hash,
+            call.new_curve,
+            call.nonce,
+            call.deadline,
+        );
 
         // ------------------------------------------------------------------
         // EFFECTS (mutate state BEFORE the cross-contract call)
         // ------------------------------------------------------------------
 
         let new_nonce = stored_nonce + U256::from(1);
-        self.pubkeys.setter(user).set(new_pubkey_hash);
-        self.curves.setter(user).set(call.new_curve);
-        self.nonces.setter(user).set(new_nonce);
+        self.pubkeys.setter(effective_user).set(new_pubkey_hash);
+        self.curves.setter(effective_user).set(call.new_curve);
+        self.nonces.setter(effective_user).set(new_nonce);
 
         // ------------------------------------------------------------------
         // INTERACTIONS (cross-contract verifier call LAST)
         // ------------------------------------------------------------------
 
         self.call_verifier(
-            user,
+            effective_user,
             digest,
             call.signature_from_old.0.to_vec(),
             call.old_pubkey.0.to_vec(),
@@ -396,7 +432,7 @@ impl KipioIdentityContent {
         // ------------------------------------------------------------------
 
         self.vm().log(KeyRotated {
-            user,
+            user: effective_user,
             oldPubkeyHash: stored_hash,
             newPubkeyHash: new_pubkey_hash,
             newCurve: call.new_curve,
@@ -406,46 +442,59 @@ impl KipioIdentityContent {
         Ok(Vec::new())
     }
 
-    /// @notice Consumes a pre-approved authorization policy from an
-    ///         external ledger to orchestrate an identity migration.
+    // --------------------------------------------------------------------
+    // IDENTITY ANCHOR — KEY ROTATION (RUNTIME-DRIVEN PATH)
+    // --------------------------------------------------------------------
+
+    /// @notice Applies a rotation that was authorized by an external
+    ///         policy ledger.
     ///
-    /// @dev This function is intentionally asymmetric with rotate_key().
+    /// @dev This handler is intentionally asymmetric with `rotate_key`:
     ///
-    /// rotate_key()
-    /// proves authorization through a cryptographic signature.
+    ///   - `rotate_key` proves authorization through a signature from
+    ///     the current credential.
+    ///   - `apply_authorized_rotation` proves authorization through a
+    ///     policy that the runtime orchestrator has already validated
+    ///     against an external ledger (e.g. `kipio_recovery`).
     ///
-    /// rotate_key_from_policy()
-    /// proves authorization through an externally approved policy.
-    ///
-    /// Both execution paths mutate exactly the same identity state,
-    /// preserving this contract as the single source of truth.
+    /// The runtime orchestrator is the only caller authorized to route
+    /// this handler. It reads the policy state from the ledger,
+    /// validates the approval, and then forwards a call to this
+    /// contract with the effective user appended as the EIP-2771
+    /// suffix. This contract never talks to the policy ledger directly:
+    /// its only job is to execute the state mutation atomically, in the
+    /// same transaction that consumed the policy.
     ///
     /// SECURITY MODEL:
-    /// - `user` is read from the policy record, NOT from `msg_sender`.
-    ///   Anyone may trigger a rotation on behalf of a user whose policy
-    ///   is APPROVED. This is intentional: the policy IS the
-    ///   authorization.
-    /// - CEI ordering: local state is mutated BEFORE `consume_policy` is
-    ///   called. If consume_policy reverts, the entire transaction
-    ///   reverts, including the local mutation.
-    /// - DEFENSE IN DEPTH: `user` is validated against Address::ZERO
-    ///   even though the whitelisted ledger should never return it.
-    ///
-    /// @param policy_ledger The target address of the Policy Ledger
-    ///        contract (e.g., KipioRecovery).
-    /// @param request_id Universal 32-byte identifier mapping to the
-    ///        targeted policy record.
-    /// @param new_pubkey The full uncompressed public key parameters
-    ///        scheduled for registration.
+    /// - The effective user is resolved from the EIP-2771 suffix and
+    ///   MUST have been forwarded by the trusted runtime.
+    /// - The target curve must be active per the protocol config.
+    /// - The local nonce is advanced in place, invalidating any
+    ///   outstanding signature tied to the previous nonce.
+    /// - No cross-contract call is issued from this handler: the
+    ///   policy consumption happens on the ledger before this dispatch
+    ///   is reached, and the runtime orchestrates both in one
+    ///   transaction.
     #[inline(never)]
-    pub(crate) fn dispatch_rotate_key_from_policy(&mut self, args: &[u8]) -> ArbResult {
-        let call = decode_rotate_key_from_policy(args)?;
+    pub(crate) fn dispatch_apply_authorized_rotation(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
+        let effective_user = self.require_forwarded(user)?;
 
         self.require_not_paused()?;
 
-        // ------------------------------------------------------------------
-        // CHECKS
-        // ------------------------------------------------------------------
+        let call = decode_apply_authorized_rotation(args)?;
+
+        if call.new_pubkey.is_empty() {
+            return Err(EmptyKey {}.abi_encode());
+        }
+
+        let stored_hash = self.pubkeys.getter(effective_user).get();
+        if stored_hash == B256::ZERO {
+            return Err(NotRegistered {}.abi_encode());
+        }
 
         let config_addr = self.protocol_config.get();
         if config_addr == Address::ZERO {
@@ -453,67 +502,8 @@ impl KipioIdentityContent {
         }
 
         let config = IKipioProtocolConfig::new(config_addr);
-        let host_view = self.vm();
-
-        // 1. Verify ledger architectural authorization (Dynamic check via config)
-        let is_auth = config
-            .is_authorized_ledger(host_view, Call::new(), call.policy_ledger)
-            .map_err(|_| ConfigQueryFailed {}.abi_encode())?;
-
-        if !is_auth {
-            return Err(UnauthorizedLedger {}.abi_encode());
-        }
-
-        // 2. Extract operational view from the Policy Engine
-        let ledger_client = IKipioPolicyLedger::new(call.policy_ledger);
-        let record = ledger_client
-            .get_policy_record(self.vm(), Call::new(), call.request_id)
-            .map_err(|_| LedgerQueryFailed {}.abi_encode())?;
-
-        let (status, policy_type, user, target_hash, curve, deadline) = record;
-
-        // 3. Strict Semantic Validations
-        if status != U256::from(POLICY_STATUS_APPROVED) {
-            return Err(PolicyNotApproved {}.abi_encode());
-        }
-
-        // Defense in depth: the whitelisted ledger should never return
-        // Address::ZERO as the target user. But if it does, we refuse to
-        // mutate state at address(0), which would silently create a
-        // phantom identity anchor.
-        if user == Address::ZERO {
-            return Err(ZeroUser {}.abi_encode());
-        }
-
-        // policy_type identifies the semantic meaning of the approved
-        // policy. This contract only executes policy types that it
-        // explicitly supports. Unknown policy types are rejected,
-        // allowing new policy engines to evolve independently without
-        // modifying the identity ledger.
-        let expected_policy_type = keccak(b"ROTATE_KEY");
-        if policy_type != expected_policy_type {
-            return Err(InvalidPolicyType {}.abi_encode());
-        }
-
-        let now = U256::from(self.vm().block_timestamp());
-        if now > deadline {
-            return Err(PolicyExpired {}.abi_encode());
-        }
-
-        // 4. Validate injected credentials against the cryptographically
-        //    approved hash
-        if call.new_pubkey.is_empty() {
-            return Err(EmptyKey {}.abi_encode());
-        }
-        let new_pubkey_hash = keccak(&call.new_pubkey.0);
-
-        if new_pubkey_hash != target_hash {
-            return Err(HashMismatch {}.abi_encode());
-        }
-
-        // 5. Target Destination Curve Lifecycle Validations
         let new_status_val = config
-            .get_curve_status(self.vm(), Call::new(), curve)
+            .get_curve_status(self.vm(), Call::new(), call.new_curve)
             .map_err(|_| ConfigQueryFailed {}.abi_encode())?;
 
         match new_status_val.as_limbs()[0] {
@@ -521,39 +511,27 @@ impl KipioIdentityContent {
             _ => return Err(TargetCurveNotActive {}.abi_encode()),
         }
 
+        let new_pubkey_hash = keccak(&call.new_pubkey.0);
+
         // ------------------------------------------------------------------
-        // EFFECTS (local state first, per CEI)
+        // EFFECTS
         // ------------------------------------------------------------------
 
-        let stored_nonce = self.nonces.getter(user).get();
+        let stored_nonce = self.nonces.getter(effective_user).get();
         let new_nonce = stored_nonce + U256::from(1);
-        self.pubkeys.setter(user).set(new_pubkey_hash);
-        self.curves.setter(user).set(curve);
-        self.nonces.setter(user).set(new_nonce);
-
-        // ------------------------------------------------------------------
-        // INTERACTIONS (external consume LAST)
-        // ------------------------------------------------------------------
-
-        // Finalize Policy Consumption
-        // (State transition APPROVED -> EXECUTED inside the ledger)
-        let ctx = Call::new_mutating(self);
-        let host_mut = self.vm();
-
-        ledger_client
-            .consume_policy(host_mut, ctx, call.request_id)
-            .map_err(|_| ConsumePolicyFailed {}.abi_encode())?;
+        self.pubkeys.setter(effective_user).set(new_pubkey_hash);
+        self.curves.setter(effective_user).set(call.new_curve);
+        self.nonces.setter(effective_user).set(new_nonce);
 
         // ------------------------------------------------------------------
         // OBSERVABILITY
         // ------------------------------------------------------------------
 
         self.vm().log(KeyRotatedFromPolicy {
-            user,
-            ledger: call.policy_ledger,
-            requestId: call.request_id,
+            user: effective_user,
             newPubkeyHash: new_pubkey_hash,
-            newCurve: curve,
+            newCurve: call.new_curve,
+            newNonce: new_nonce,
         });
 
         Ok(Vec::new())
@@ -570,13 +548,17 @@ impl KipioIdentityContent {
     // verification is delegated to the ArbOS native secp256r1
     // precompile, which implements EIP-7951 since ArbOS 50 Dia.
     //
-    // The full precompile documentation (EIP-7951, frontend normalization
-    // rules, calldata layout, return semantics, security fixes inherited
-    // from RIP-7212) is attached to the `P256_VERIFY_PRECOMPILE`
-    // constant in config/constants.rs.
+    // The full precompile documentation (EIP-7951, frontend
+    // normalization rules, calldata layout, return semantics, security
+    // fixes inherited from RIP-7212) is attached to the
+    // `P256_VERIFY_PRECOMPILE` constant in `config/constants.rs`.
 
     #[inline(never)]
-    pub(crate) fn dispatch_verify(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_verify(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_verify(args)?;
 
         // ----------------------------------------------------------------
@@ -601,9 +583,10 @@ impl KipioIdentityContent {
         //
         //   digest || r || s || qx || qy
         //
-        // `Bytes` implements `Index<Range<usize>>` via `Deref<Target=[u8]>`,
-        // so the byte ranges below are direct views into the decoded
-        // buffers without any intermediate allocation.
+        // `Bytes` implements `Index<Range<usize>>` via
+        // `Deref<Target=[u8]>`, so the byte ranges below are direct
+        // views into the decoded buffers without any intermediate
+        // allocation.
         let mut input = Vec::with_capacity(160);
         input.extend_from_slice(call.digest.as_slice());
         input.extend_from_slice(&call.signature[0..32]);
@@ -650,7 +633,11 @@ impl KipioIdentityContent {
     /// @notice Returns the currently configured KipioProtocolConfig
     ///         address.
     #[inline(never)]
-    pub(crate) fn dispatch_get_protocol_config(&mut self, _args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_get_protocol_config(
+        &mut self,
+        _args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         Ok((self.protocol_config.get(),).abi_encode_params())
     }
 
@@ -658,7 +645,11 @@ impl KipioIdentityContent {
     ///         pubkey.
     /// @dev Returns B256::ZERO for unregistered users.
     #[inline(never)]
-    pub(crate) fn dispatch_get_pubkey(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_get_pubkey(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = getPubkeyCall::abi_decode(args).map_err(|_| Vec::new())?;
         Ok((self.pubkeys.getter(call.user).get(),).abi_encode_params())
     }
@@ -666,17 +657,25 @@ impl KipioIdentityContent {
     /// @notice Returns the user's active curve identifier.
     /// @dev Returns U256::ZERO for unregistered users.
     #[inline(never)]
-    pub(crate) fn dispatch_get_curve(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_get_curve(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = getCurveCall::abi_decode(args).map_err(|_| Vec::new())?;
         Ok((self.curves.getter(call.user).get(),).abi_encode_params())
     }
 
     /// @notice Returns the user's active replay-protection nonce.
-    /// @dev Returns U256::ZERO for unregistered users; increments on every
-    ///      successful verify_identity_authorization, rotate_key, and
-    ///      rotate_key_from_policy.
+    /// @dev Returns U256::ZERO for unregistered users; increments on
+    ///      every successful verify_identity_authorization, rotate_key,
+    ///      and apply_authorized_rotation.
     #[inline(never)]
-    pub(crate) fn dispatch_get_nonce(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_get_nonce(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = getNonceCall::abi_decode(args).map_err(|_| Vec::new())?;
         Ok((self.nonces.getter(call.user).get(),).abi_encode_params())
     }

@@ -4,6 +4,11 @@
 //! configuration, and the pause/unpause circuit breaker. All handlers
 //! are gated by `require_owner()` except the state mutators, which are
 //! idempotent no-ops on repeated calls.
+//!
+//! Under Model B + EIP-2771, governance handlers ignore the resolved
+//! effective user: they always authorize against `msg_sender()`
+//! directly, because governance is not a user-facing operation and is
+//! never forwarded by the runtime orchestrator.
 
 use super::*;
 
@@ -13,7 +18,11 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_transfer_ownership(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_transfer_ownership(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = transferOwnershipCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -30,7 +39,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_accept_ownership(&mut self, _args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_accept_ownership(
+        &mut self,
+        _args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let sender = self.vm().msg_sender();
         let pending = self.pending_owner.get();
         if pending == Address::ZERO {
@@ -42,12 +55,19 @@ impl KipioIdentityContent {
         let old = self.owner.get();
         self.owner.set(pending);
         self.pending_owner.set(Address::ZERO);
-        self.vm().log(OwnerUpdated { oldOwner: old, newOwner: pending });
+        self.vm().log(OwnerUpdated {
+            oldOwner: old,
+            newOwner: pending,
+        });
         Ok(Vec::new())
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_storage_provider(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_storage_provider(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = setStorageProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -65,7 +85,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_query_provider(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_query_provider(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = setQueryProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -83,7 +107,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_access_provider(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_access_provider(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = setAccessProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -101,7 +129,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_zk_verifier(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_zk_verifier(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = setZkVerifierCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -115,7 +147,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_set_expected_workflow_id(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_set_expected_workflow_id(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = setExpectedWorkflowIdCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -133,7 +169,11 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_pause(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_pause(
+        &mut self,
+        args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         let call = pauseCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
@@ -142,19 +182,28 @@ impl KipioIdentityContent {
         }
         self.paused.set(true);
         self.pause_reason_hash.set(call.reason_hash);
-        self.vm().log(Paused { by: self.vm().msg_sender(), reasonHash: call.reason_hash });
+        self.vm().log(Paused {
+            by: self.vm().msg_sender(),
+            reasonHash: call.reason_hash,
+        });
         Ok(Vec::new())
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_unpause(&mut self, _args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_unpause(
+        &mut self,
+        _args: &[u8],
+        _user: Option<Address>,
+    ) -> ArbResult {
         self.require_owner()?;
         if !self.paused.get() {
             return Ok(Vec::new());
         }
         self.paused.set(false);
         self.pause_reason_hash.set(B256::ZERO);
-        self.vm().log(Unpaused { by: self.vm().msg_sender() });
+        self.vm().log(Unpaused {
+            by: self.vm().msg_sender(),
+        });
         Ok(Vec::new())
     }
 }

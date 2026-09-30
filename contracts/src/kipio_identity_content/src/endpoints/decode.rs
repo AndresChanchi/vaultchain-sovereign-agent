@@ -48,7 +48,7 @@ pub(crate) fn decode_on_report(args: &[u8]) -> Result<onReportCall, Vec<u8>> {
 }
 
 /// @dev Decodes
-///      `verifyIdentityAuthorization(address,bytes32,bytes,bytes,uint256,uint256)`.
+///      `verifyIdentityAuthorization(bytes32,bytes,bytes,uint256,uint256)`.
 #[inline(never)]
 pub(crate) fn decode_verify_identity_authorization(
     args: &[u8],
@@ -62,14 +62,6 @@ pub(crate) fn decode_rotate_key(args: &[u8]) -> Result<rotateKeyCall, Vec<u8>> {
     rotateKeyCall::abi_decode(args).map_err(|_| Vec::new())
 }
 
-/// @dev Decodes `rotateKeyFromPolicy(address,bytes32,bytes)`.
-#[inline(never)]
-pub(crate) fn decode_rotate_key_from_policy(
-    args: &[u8],
-) -> Result<rotateKeyFromPolicyCall, Vec<u8>> {
-    rotateKeyFromPolicyCall::abi_decode(args).map_err(|_| Vec::new())
-}
-
 /// @dev Decodes `register(bytes,uint256)`.
 #[inline(never)]
 pub(crate) fn decode_register(args: &[u8]) -> Result<registerCall, Vec<u8>> {
@@ -80,4 +72,12 @@ pub(crate) fn decode_register(args: &[u8]) -> Result<registerCall, Vec<u8>> {
 #[inline(never)]
 pub(crate) fn decode_verify(args: &[u8]) -> Result<verifyCall, Vec<u8>> {
     verifyCall::abi_decode(args).map_err(|_| Vec::new())
+}
+
+/// @dev Decodes `applyAuthorizedRotation(bytes,uint256)`.
+#[inline(never)]
+pub(crate) fn decode_apply_authorized_rotation(
+    args: &[u8],
+) -> Result<applyAuthorizedRotationCall, Vec<u8>> {
+    applyAuthorizedRotationCall::abi_decode(args).map_err(|_| Vec::new())
 }

@@ -147,14 +147,17 @@ sol! {
         uint256 newNonce
     );
 
-    /// @notice Emitted when a pre-approved external policy drives a key rotation.
-    /// @dev Asymmetric with `KeyRotated`: authorization comes from the ledger,
-    ///      not from a signature. Both paths preserve Auth as single source of truth.
+    /// @notice Emitted when the runtime orchestrator applies a rotation
+    ///         that was authorized by an external policy ledger.
+    /// @dev Asymmetric with `KeyRotated`: authorization comes from the
+    ///      ledger (validated by runtime), not from a signature. The
+    ///      runtime reads the ledger, verifies the policy, then forwards
+    ///      the call to `applyAuthorizedRotation`. This contract only
+    ///      executes the resulting state mutation.
     event KeyRotatedFromPolicy(
         address indexed user,
-        address indexed ledger,
-        bytes32 indexed requestId,
         bytes32 newPubkeyHash,
-        uint256 newCurve
+        uint256 newCurve,
+        uint256 newNonce
     );
 }

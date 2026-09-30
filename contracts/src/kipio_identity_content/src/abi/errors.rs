@@ -90,4 +90,18 @@ sol! {
     error HashMismatch();
     error ConsumePolicyFailed();
     error TargetCurveNotActive();
+
+    // ========================================================================
+    // EIP-2771 (MODEL B — TRUSTED FORWARDER)
+    // ========================================================================
+
+    /// @notice The calldata tail is shorter than the 20-byte user suffix
+    ///         required by EIP-2771.
+    error InvalidForwardedCall();
+
+    /// @notice The call reached a user-facing mutator without the
+    ///         runtime forwarder wrapping it. The mutator requires
+    ///         `msg_sender == runtime` with the effective user appended
+    ///         as a 20-byte suffix.
+    error NotForwarded();
 }

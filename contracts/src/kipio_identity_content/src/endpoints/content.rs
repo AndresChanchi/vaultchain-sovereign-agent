@@ -1,10 +1,14 @@
 //! Content registration and rotation dispatch handlers.
 //!
 //! User-sovereign content registry: every caller owns their own vault
-//! (`vaults[msg_sender]`). `register_content` inserts a new record,
-//! `register_batch` amortizes the cost across many, and `rotate_content`
-//! / `rotate_content_cas` update the transaction commitment to a new
-//! version. All are gated by the circuit breaker.
+//! (`vaults[msg_sender]`). Under Model B + EIP-2771, the effective
+//! user is resolved from the calldata suffix appended by the trusted
+//! runtime; the handler uses that address as the vault owner.
+//!
+//! `register_content` inserts a new record, `register_batch` amortizes
+//! the cost across many, and `rotate_content` / `rotate_content_cas`
+//! update the transaction commitment to a new version. All are gated
+//! by the circuit breaker.
 
 use super::*;
 
@@ -14,7 +18,11 @@ impl KipioIdentityContent {
     // --------------------------------------------------------------------
 
     #[inline(never)]
-    pub(crate) fn dispatch_register_content(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_register_content(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = registerContentCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -29,7 +37,7 @@ impl KipioIdentityContent {
         validate_storage_term(call.storage_term)?;
         let resolved_delta = resolve_expiry_delta(call.storage_term, call.expiry_delta)?;
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
 
         {
             let vault = self.vaults.getter(sender);
@@ -63,7 +71,10 @@ impl KipioIdentityContent {
 
             let new_index = vault.content_list.len() as u64;
             vault.content_list.grow().set(call.content_id);
-            vault.content_positions.setter(call.content_id).set(U256::from(new_index + 1));
+            vault
+                .content_positions
+                .setter(call.content_id)
+                .set(U256::from(new_index + 1));
         }
 
         let current_total = self.global_registrations.get();
@@ -81,10 +92,16 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_register_batch(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_register_batch(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = decode_register_batch(args)?;
 
         self.require_not_paused()?;
+
+        let sender = self.require_forwarded(user)?;
 
         let content_ids = &call.content_ids;
         let tx_commitments = &call.tx_commitments;
@@ -108,8 +125,6 @@ impl KipioIdentityContent {
         {
             return Err(LengthMismatch {}.abi_encode());
         }
-
-        let sender = self.vm().msg_sender();
 
         let mut to_insert: Vec<(usize, u32)> = Vec::new();
         {
@@ -162,7 +177,10 @@ impl KipioIdentityContent {
 
                 let new_index = vault.content_list.len() as u64;
                 vault.content_list.grow().set(content_id);
-                vault.content_positions.setter(content_id).set(U256::from(new_index + 1));
+                vault
+                    .content_positions
+                    .setter(content_id)
+                    .set(U256::from(new_index + 1));
 
                 events.push((content_id, tx_commitment, provider_id, storage_term));
             }
@@ -188,7 +206,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_rotate_content(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_rotate_content(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = rotateContentCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -196,7 +218,7 @@ impl KipioIdentityContent {
             return Err(ZeroCommitment {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
         let now = self.vm().block_timestamp();
         let new_version: u64;
 
@@ -213,7 +235,9 @@ impl KipioIdentityContent {
 
             record.tx_commitment.set(call.new_tx_commitment);
             record.access_policy_hash.set(call.new_access_policy_hash);
-            record.packed.set(write_version(write_updated_at(packed, now), new_version));
+            record
+                .packed
+                .set(write_version(write_updated_at(packed, now), new_version));
         }
 
         self.vm().log(ContentRotated {
@@ -227,7 +251,11 @@ impl KipioIdentityContent {
     }
 
     #[inline(never)]
-    pub(crate) fn dispatch_rotate_content_cas(&mut self, args: &[u8]) -> ArbResult {
+    pub(crate) fn dispatch_rotate_content_cas(
+        &mut self,
+        args: &[u8],
+        user: Option<Address>,
+    ) -> ArbResult {
         let call = rotateContentCasCall::abi_decode(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
@@ -235,7 +263,7 @@ impl KipioIdentityContent {
             return Err(ZeroCommitment {}.abi_encode());
         }
 
-        let sender = self.vm().msg_sender();
+        let sender = self.require_forwarded(user)?;
         let now = self.vm().block_timestamp();
         let new_version: u64;
 
@@ -256,7 +284,9 @@ impl KipioIdentityContent {
             new_version = current_version + 1;
             record.tx_commitment.set(call.new_tx_commitment);
             record.access_policy_hash.set(call.new_access_policy_hash);
-            record.packed.set(write_version(write_updated_at(packed, now), new_version));
+            record
+                .packed
+                .set(write_version(write_updated_at(packed, now), new_version));
         }
 
         self.vm().log(ContentRotated {

@@ -59,36 +59,19 @@ sol_interface! {
     }
 
     /// @title Protocol Configuration Manager Interface
-    /// @notice Centralized administrative hub and source of truth for protocol infrastructure.
+    /// @notice Centralized administrative hub and source of truth for
+    ///         protocol infrastructure.
+    ///
+    /// The `getRuntimeAddress` accessor is the Model B trust anchor: the
+    /// contract reads it on every fallback dispatch to decide whether
+    /// `msg_sender` is the trusted forwarder. When the runtime is
+    /// upgraded, updating the address in `kipio_protocol_config` is
+    /// enough — every consumer resolves the new runtime on the next
+    /// call, without redeploying.
     interface IKipioProtocolConfig {
         function getVerifier(uint256 curve_id) external view returns (address);
         function getCurveStatus(uint256 curve_id) external view returns (uint256);
         function isAuthorizedLedger(address ledger) external view returns (bool);
-    }
-
-    /// @title External Policy Ledger Interface
-    /// @notice This interface intentionally exposes a stable semantic view.
-    ///
-    /// Auth depends on policy semantics,
-    /// not on the storage layout of any particular policy engine.
-    ///
-    /// Recovery,
-    /// Enterprise Approval,
-    /// Agent Governance,
-    /// or future policy providers
-    /// are free to change their internal implementation
-    /// without requiring changes inside Auth,
-    /// provided this interface remains stable.
-    interface IKipioPolicyLedger {
-        function getPolicyRecord(bytes32 request_id) external view returns (
-            uint256 status,
-            bytes32 policy_type,
-            address user,
-            bytes32 target_hash,
-            uint256 curve,
-            uint256 deadline
-        );
-
-        function consumePolicy(bytes32 request_id) external;
+        function getRuntimeAddress() external view returns (address);
     }
 }
