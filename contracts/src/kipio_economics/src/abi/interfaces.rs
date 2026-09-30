@@ -1,13 +1,19 @@
 //! Shared domain boundary between `kipio_economics` and its consumers.
 //!
-//! These types define the economic contract of the protocol: what a
-//! settlement receipt is, what an economic intent looks like, and how the
-//! Chainlink CRE report is shaped.
+//! This module holds two kinds of ABI items:
 //!
-//! They MUST remain stable. Changing any of them breaks the ABI consumed by
-//! `kipio_execution_gateway` and `kipio_runtime`.
+//!   1. The `sol!` block with the domain types that define the economic
+//!      contract of the protocol: what a settlement receipt is, what an
+//!      economic intent looks like, and how the Chainlink CRE report is
+//!      shaped. These MUST remain stable. Changing any of them breaks
+//!      the ABI consumed by `kipio_execution_gateway` and `kipio_runtime`.
+//!
+//!   2. The `sol_interface!` block with the external interfaces that
+//!      Economics depends on. Currently only `IKipioProtocolConfig`, used
+//!      to resolve the trusted runtime orchestrator under Model B.
 
 use stylus_sdk::alloy_sol_types::sol;
+use stylus_sdk::prelude::*;
 
 sol! {
     /// Represents a successful economic clearance for protocol operations.
@@ -63,5 +69,20 @@ sol! {
         uint8 service_id;
         uint256 requested_capacity;
         uint256 nonce;
+    }
+}
+
+sol_interface! {
+    /// Protocol configuration registry.
+    ///
+    /// Economics reads the trusted runtime orchestrator address from this
+    /// registry on every user-facing endpoint to distinguish a forwarded
+    /// call (from the runtime) from a direct call (from the user).
+    ///
+    /// The registry uses per-module getters rather than a generic
+    /// `getModule(uint8)`, keeping each lookup explicit and type-safe at
+    /// the ABI level. New operational modules add their own getter.
+    interface IKipioProtocolConfig {
+        function getRuntimeAddress() external view returns (address);
     }
 }

@@ -43,4 +43,18 @@ sol! {
     error ReplayDetected();
     error InvalidCreReport();
     error InsufficientDeposit();
+
+    // --- MODEL B (TRUSTED FORWARDER) ---
+    /// @notice The protocol configuration address is not set. Economics
+    ///         cannot resolve the trusted runtime orchestrator and
+    ///         therefore cannot accept a forwarded call.
+    error ProtocolConfigNotSet();
+
+    /// @notice A cross-call to the protocol configuration registry failed.
+    error ConfigQueryFailed();
+
+    /// @notice A user-facing endpoint received `Address::ZERO` as the
+    ///         effective user. Rejected to avoid silently crediting
+    ///         state to a phantom address.
+    error ZeroUser();
 }

@@ -11,7 +11,22 @@
 //! `#[public]` block with thin delegators, and the actual logic lives in
 //! sibling modules as `pub(crate) fn handle_*` methods on the same type.
 //! The delegators carry the exact same signatures as the pre-split
-//! endpoints, so the ABI is unchanged.
+//! endpoints, so the ABI is unchanged except for the endpoints that gained
+//! the Model B `user` parameter (see below).
+//!
+//! # Model B changes
+//!
+//! `deposit_credit`, `withdraw_credit`, `withdraw_refund`,
+//! `deposit_sponsor_funds`, `fund_treasury`, and
+//! `settle_economic_obligation` gained an explicit `user` / `funder`
+//! parameter as their first argument. Each of those handlers validates
+//! the caller through `require_user_or_runtime(user)`, accepting either a
+//! direct call from the user (`msg_sender == user`) or a forwarded call
+//! from the runtime (`msg_sender == runtime`, `user` supplied by the
+//! orchestrator).
+//!
+//! `credit_identity_refund` and every governance/view endpoint retain
+//! their original signatures.
 
 use alloc::vec::Vec;
 
@@ -40,10 +55,11 @@ impl KipioEconomics {
     #[constructor]
     pub fn constructor(
         &mut self,
+        protocol_config: Address,
         cre_forwarder: Address,
         cre_workflow_id: B256,
     ) -> Result<(), Vec<u8>> {
-        constructor::handle_constructor(self, cre_forwarder, cre_workflow_id)
+        constructor::handle_constructor(self, protocol_config, cre_forwarder, cre_workflow_id)
     }
 
     // =======================================================================
@@ -129,9 +145,10 @@ impl KipioEconomics {
     #[payable]
     pub fn settle_economic_obligation(
         &mut self,
+        funder: Address,
         plan_payload: Vec<u8>,
     ) -> Result<Vec<u8>, Vec<u8>> {
-        settlement::handle_settle_economic_obligation(self, plan_payload)
+        settlement::handle_settle_economic_obligation(self, funder, plan_payload)
     }
 
     // =======================================================================
@@ -189,23 +206,23 @@ impl KipioEconomics {
     // =======================================================================
 
     #[payable]
-    pub fn deposit_credit(&mut self) -> Result<(), Vec<u8>> {
-        credit::handle_deposit_credit(self)
+    pub fn deposit_credit(&mut self, user: Address) -> Result<(), Vec<u8>> {
+        credit::handle_deposit_credit(self, user)
     }
 
-    pub fn withdraw_credit(&mut self) -> Result<(), Vec<u8>> {
-        credit::handle_withdraw_credit(self)
+    pub fn withdraw_credit(&mut self, user: Address) -> Result<(), Vec<u8>> {
+        credit::handle_withdraw_credit(self, user)
     }
 
-    pub fn withdraw_refund(&mut self) -> Result<(), Vec<u8>> {
-        credit::handle_withdraw_refund(self)
+    pub fn withdraw_refund(&mut self, user: Address) -> Result<(), Vec<u8>> {
+        credit::handle_withdraw_refund(self, user)
     }
 
     /// Credits an identity's refund balance with attached ETH.
     ///
-    /// The caller must attach exactly `amount` wei. Used by the Execution
-    /// Gateway to return unused sponsorship budget to the identity after a
-    /// sponsored activation.
+    /// Permissionless: the caller must attach exactly `amount` wei. Used
+    /// by the Execution Gateway to return unused sponsorship budget to
+    /// the identity after a sponsored activation.
     #[payable]
     pub fn credit_identity_refund(
         &mut self,
@@ -216,13 +233,17 @@ impl KipioEconomics {
     }
 
     #[payable]
-    pub fn deposit_sponsor_funds(&mut self, sponsor_id: B256) -> Result<(), Vec<u8>> {
-        sponsors::handle_deposit_sponsor_funds(self, sponsor_id)
+    pub fn deposit_sponsor_funds(
+        &mut self,
+        user: Address,
+        sponsor_id: B256,
+    ) -> Result<(), Vec<u8>> {
+        sponsors::handle_deposit_sponsor_funds(self, user, sponsor_id)
     }
 
     #[payable]
-    pub fn fund_treasury(&mut self) -> Result<(), Vec<u8>> {
-        sponsors::handle_fund_treasury(self)
+    pub fn fund_treasury(&mut self, user: Address) -> Result<(), Vec<u8>> {
+        sponsors::handle_fund_treasury(self, user)
     }
 
     // =======================================================================

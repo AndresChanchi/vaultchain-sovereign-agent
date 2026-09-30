@@ -14,6 +14,14 @@ use crate::storage::treasury::TreasuryModule;
 #[storage]
 #[entrypoint]
 pub struct KipioEconomics {
+    /// Address of the protocol configuration registry.
+    ///
+    /// Set once at construction. Read on every user-facing endpoint to
+    /// resolve the trusted runtime orchestrator (Model B). The registry
+    /// is immutable in the sense that this slot is never overwritten;
+    /// individual module addresses are read through it.
+    pub(crate) protocol_config: StorageAddress,
+
     pub(crate) credit_module: CreditModule,
     pub(crate) treasury_module: TreasuryModule,
     pub(crate) service_registry: StorageMap<u8, StorageAddress>,

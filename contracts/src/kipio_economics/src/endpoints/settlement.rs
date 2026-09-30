@@ -1,8 +1,18 @@
 //! Native Arbitrum settlement handler.
+//!
+//! The funder is passed as an explicit parameter and validated through
+//! `require_user_or_runtime(funder)`. The runtime orchestrator forwards
+//! this call as part of a `dispatch` when the intent carries a settlement
+//! payload. Direct callers (EOAs) invoke it with `msg_sender == funder`.
+//!
+//! All state transitions and cross-contract calls observe strict CEI
+//! ordering. The storage cache is flushed before the external payment to
+//! the provider so that a malicious provider cannot observe a stale
+//! intermediate state.
 
 use alloc::vec::Vec;
 
-use stylus_sdk::alloy_primitives::U256;
+use stylus_sdk::alloy_primitives::{Address, U256};
 use stylus_sdk::alloy_sol_types::{SolError, SolValue};
 use stylus_sdk::prelude::*;
 
@@ -21,9 +31,11 @@ use crate::storage::pricing::PricingModule;
 
 pub(crate) fn handle_settle_economic_obligation(
     this: &mut KipioEconomics,
+    funder: Address,
     plan_payload: Vec<u8>,
 ) -> Result<Vec<u8>, Vec<u8>> {
     this.require_not_paused()?;
+    this.require_user_or_runtime(funder)?;
 
     let plan = SettlementPlan::abi_decode(&plan_payload)
         .map_err(|_| InvalidSettlementPlan {}.abi_encode())?;
@@ -31,8 +43,6 @@ pub(crate) fn handle_settle_economic_obligation(
     if plan.requested_capacity == U256::ZERO {
         return Err(InvalidPricingParameters {}.abi_encode());
     }
-
-    let funder = this.vm().msg_sender();
 
     // --- Anti-replay: validate and consume the nonce ---
     this.use_checked_nonce(funder, plan.nonce)?;

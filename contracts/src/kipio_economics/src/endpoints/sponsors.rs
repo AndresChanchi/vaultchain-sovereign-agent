@@ -1,8 +1,13 @@
 //! Permissionless sponsor funding and treasury funding handlers.
+//!
+//! Both endpoints accept the effective user as an explicit parameter and
+//! validate the caller through `require_user_or_runtime(user)`. The user
+//! is the sponsor of the deposit: for a direct call `msg_sender == user`,
+//! for a forwarded call the runtime passes the effective user.
 
 use alloc::vec::Vec;
 
-use stylus_sdk::alloy_primitives::{B256, U256};
+use stylus_sdk::alloy_primitives::{Address, B256, U256};
 use stylus_sdk::alloy_sol_types::SolError;
 use stylus_sdk::prelude::*;
 
@@ -13,9 +18,11 @@ use crate::storage::entrypoint::KipioEconomics;
 
 pub(crate) fn handle_deposit_sponsor_funds(
     this: &mut KipioEconomics,
+    user: Address,
     sponsor_id: B256,
 ) -> Result<(), Vec<u8>> {
     this.require_not_paused()?;
+    this.require_user_or_runtime(user)?;
 
     let amount = this.vm().msg_value();
     if amount == U256::ZERO {
@@ -43,22 +50,28 @@ pub(crate) fn handle_deposit_sponsor_funds(
 
     this.vm().log(SponsorRegistered {
         sponsor_id,
-        sponsor: this.vm().msg_sender(),
+        sponsor: user,
         amount,
     });
     Ok(())
 }
 
-pub(crate) fn handle_fund_treasury(this: &mut KipioEconomics) -> Result<(), Vec<u8>> {
+pub(crate) fn handle_fund_treasury(
+    this: &mut KipioEconomics,
+    user: Address,
+) -> Result<(), Vec<u8>> {
     this.require_not_paused()?;
+    this.require_user_or_runtime(user)?;
 
     let amount = this.vm().msg_value();
     if amount == U256::ZERO {
         return Err(ZeroAmount {}.abi_encode());
     }
 
-    let sponsor = this.vm().msg_sender();
     this.treasury_module.add_reserves(amount);
-    this.vm().log(TreasuryFunded { sponsor, amount });
+    this.vm().log(TreasuryFunded {
+        sponsor: user,
+        amount,
+    });
     Ok(())
 }

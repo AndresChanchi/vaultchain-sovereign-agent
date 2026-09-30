@@ -10,11 +10,63 @@ use stylus_sdk::alloy_primitives::{Address, U256};
 use stylus_sdk::alloy_sol_types::SolError;
 use stylus_sdk::prelude::*;
 
-use crate::abi::errors::{InvalidNonce, PausedError, TransferFailed, Unauthorized};
+use crate::abi::errors::{
+    ConfigQueryFailed, InvalidNonce, PausedError, ProtocolConfigNotSet, TransferFailed,
+    Unauthorized, ZeroUser,
+};
 use crate::abi::events::{NonceConsumed, RefundCredited};
+use crate::abi::interfaces::IKipioProtocolConfig;
 use crate::storage::entrypoint::KipioEconomics;
 
 impl KipioEconomics {
+    /// Resolves the trusted runtime orchestrator address from the protocol
+    /// configuration registry.
+    ///
+    /// Called by every user-facing endpoint that accepts a forwarded call
+    /// under Model B. A forwarded call arrives with `msg_sender == runtime`
+    /// and the effective user passed as an explicit parameter. Economics
+    /// never falls back to `msg_sender` for the user identity: the
+    /// parameter is the only source of truth for who the user is.
+    pub(crate) fn resolve_runtime(&self) -> Result<Address, Vec<u8>> {
+        let config_addr = self.protocol_config.get();
+        if config_addr == Address::ZERO {
+            return Err(ProtocolConfigNotSet {}.abi_encode());
+        }
+        let config = IKipioProtocolConfig::new(config_addr);
+        config
+            .get_runtime_address(self.vm(), Call::new())
+            .map_err(|_| ConfigQueryFailed {}.abi_encode())
+    }
+
+    /// Authorization gate for a user-facing endpoint under Model B.
+    ///
+    /// Two authorized callers are accepted:
+    ///
+    ///   1. The user themselves (`msg_sender == user`). This is the
+    ///      direct-call path, used by EOAs and by any caller that has
+    ///      verified itself as the effective user of the operation.
+    ///
+    ///   2. The trusted runtime (`msg_sender == resolve_runtime()`). This
+    ///      is the forwarded path, where the runtime drives the flow on
+    ///      behalf of the user and the effective user is passed as a
+    ///      parameter.
+    ///
+    /// Any other caller reverts with `Unauthorized`.
+    pub(crate) fn require_user_or_runtime(&self, user: Address) -> Result<(), Vec<u8>> {
+        if user == Address::ZERO {
+            return Err(ZeroUser {}.abi_encode());
+        }
+        let caller = self.vm().msg_sender();
+        if caller == user {
+            return Ok(());
+        }
+        let runtime = self.resolve_runtime()?;
+        if caller == runtime {
+            return Ok(());
+        }
+        Err(Unauthorized {}.abi_encode())
+    }
+
     /// Validates and consumes a nonce for an account.
     ///
     /// The nonce must exactly equal the account's current nonce. On success,
