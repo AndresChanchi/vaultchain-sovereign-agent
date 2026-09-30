@@ -6,5 +6,5 @@ pub extern "C" fn main() {}
 
 #[cfg(feature = "export-abi")]
 fn main() {
-    kipio_protocol_config::print_from_args();
+    kipio_protocol_config::endpoints::print_from_args();
 }
