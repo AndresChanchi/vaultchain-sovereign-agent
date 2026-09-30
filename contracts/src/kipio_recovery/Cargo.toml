@@ -25,4 +25,4 @@ crate-type = ["lib","cdylib"]
 
 [[bin]]
 name = "export-abi"
-path = "src/bin/export_abi.rs"
+path = "src/bin/export-abi.rs"
