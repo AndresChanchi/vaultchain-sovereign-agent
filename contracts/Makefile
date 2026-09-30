@@ -1,31 +1,20 @@
 # Force bash so we can use PIPESTATUS, pipefail, and array semantics.
 SHELL := /bin/bash
 
-# Load environment variables from .env file
+# Load environment variables from .env file.
 ifneq ("$(wildcard .env)","")
 	include .env
 	export $(shell sed 's/=.*//' .env)
 endif
 
 # ============================================================
-# Configuration
+# CONFIGURATION
 # ============================================================
 
-# Primary endpoint for Arbitrum Sepolia.
-# The official Offchain Labs endpoint is listed first but may reject
-# activation requests under load. The fallback list below provides
-# redundancy so `make check` never blocks on a single RPC provider.
 ENDPOINT_SEPOLIA = https://sepolia-rollup.arbitrum.io/rpc
 
-# Fallback endpoints, tried in order when the primary fails.
-# Only public (no-API-key) endpoints are included by default so the
-# Makefile works out-of-the-box. To add a keyed provider (Alchemy,
-# Infura, QuickNode, Chainstack), prepend the full URL with the key.
 ENDPOINT_SEPOLIA_FALLBACKS = https://arbitrum-sepolia-rpc.publicnode.com https://arbitrum-sepolia.api.onfinality.io/public https://arbitrum-sepolia.gateway.tenderly.co https://arbitrum-sepolia.drpc.org https://arbitrum-sepolia.blockpi.network/v1/rpc/public
 
-# Full list: primary + fallbacks, space-separated on a single line.
-# Defined explicitly to avoid Make's line-continuation quirks when
-# expanding inside shell recipes.
 ENDPOINT_SEPOLIA_ALL = $(ENDPOINT_SEPOLIA) $(ENDPOINT_SEPOLIA_FALLBACKS)
 
 FOUNDRY_INTERFACES = foundry/src/interfaces
@@ -34,26 +23,36 @@ DEPLOYMENTS_DIR = deployments
 SCRIPTS_DIR = scripts
 PROJECT_NAME = kipio-protocol
 
-# ============================================================
-# SOLIDITY PRAGMA
-# ============================================================
-#
-# Stylus SDK 0.10.9 hardcodes DEFAULT_PRAGMA = "^0.8.23" in
-# stylus-sdk/src/abi/export/mod.rs. That value predates the current
-# Solidity release line and is used only by the ABI export path; it
-# does not affect the Stylus WASM, the ArbOS VM, or on-chain contract
-# compatibility in any way.
-#
-# `print_from_args` accepts `--pragma <string>` to override the
-# default. The value must include the full pragma directive (including
-# the `pragma solidity` prefix and the trailing semicolon) because the
-# SDK emits it verbatim into the interface header.
-#
-# Bump this variable when a newer ^0.8.x line becomes the standard for
-# the off-chain Solidity consumers of these interfaces.
-# ------------------------------------------------------------
-# https://docs.soliditylang.org/en/latest/
 SOLIDITY_PRAGMA = pragma solidity ^0.8.37;
+
+# ============================================================
+# CONTRACT LISTS
+# ============================================================
+#
+# CONTRACTS: every crate in the workspace that produces a deployable
+#            artifact. Used by build, abi, and check.
+#
+# DEPLOYABLES: the ordered list of contracts that deploy-full walks
+#              through. The order matters because each contract's
+#              constructor arguments may reference the address of a
+#              previously deployed one.
+#
+# WHY kipio_account IS NOT IN DEPLOYABLES:
+#
+#   It is per-user. Its address is derived deterministically by the
+#   Execution Gateway via CREATE2, seeded by the user's identity. There
+#   is no singleton account to deploy.
+#
+# WHY THE ORDER MATTERS:
+#
+#   1. kipio_protocol_config   (no constructor args)
+#   2. kipio_runtime           (needs protocol_config)
+#   3. kipio_recovery          (needs runtime)
+#   4. kipio_economics         (needs protocol_config + CRE forwarder)
+#   5. kipio_identity_content  (needs providers)
+#   6. kipio_execution_gateway (no constructor args; compile-time
+#                               constants reference deployed modules)
+# ------------------------------------------------------------
 
 CONTRACTS = \
 	kipio_protocol_config \
@@ -62,107 +61,53 @@ CONTRACTS = \
 	kipio_recovery \
 	kipio_runtime \
 	kipio_economics \
-	kipio_execution_gateway \
+	kipio_execution_gateway
 
-ifdef contract
-	CONTRACT_DIR = src/$(contract)
-	STYLUS_CMD = cd $(CONTRACT_DIR) && cargo stylus
-else
-	STYLUS_CMD = cargo stylus
-endif
-
-# ============================================================
-# DOCKER ROOT-OWNERSHIP CAVEAT
-# ============================================================
-#
-# `cargo stylus deploy` (0.10.9) compiles inside a Docker container to
-# guarantee reproducibility. The container runs as root and writes to
-# target/ via a bind mount, so files under target/ end up owned by
-# root:root on the host.
-#
-# Symptom: `make abi` or `make build` fail with:
-#   error: failed to open: .../target/debug/.cargo-lock
-#   Caused by: Permission denied (os error 13)
-#
-# `make check` is unaffected because it uses the release profile, which
-# writes to a different subtree that the deploy container never touched.
-#
-# Fix: run `make fix-perms` after any deploy that used Docker.
-# Or `make nuke` for a hard reset (nukes target/, Docker containers, and
-# cached images).
-# ------------------------------------------------------------
+DEPLOYABLES = \
+	kipio_protocol_config \
+	kipio_runtime \
+	kipio_recovery \
+	kipio_economics \
+	kipio_identity_content \
+	kipio_execution_gateway
 
 # ============================================================
 # PER-CONTRACT CONSTRUCTOR ARGUMENTS
 # ============================================================
 #
-# cargo stylus deploy --constructor-args takes ONE VALUE PER PARAMETER,
-# separated by spaces. It then ABI-encodes them internally.
+# Constructor arguments are read from environment variables (typically
+# set in .env). Names follow the pattern CTOR_<CONTRACT>_<PARAM>.
 #
-# Wired for Arbitrum Sepolia testnet:
-#   storage_provider     = 0x0                 (Irys adapter TBD)
-#   query_provider       = KeystoneForwarder   (production)
-#   access_provider      = 0x0                 (Lit/TACo adapter TBD)
-#   expected_workflow_id = 0x0                 (set later via set_expected_workflow_id)
+# Example .env entries:
+#
+#   CTOR_RUNTIME_PROTOCOL_CONFIG=0x...
+#   CTOR_RECOVERY_RUNTIME=0x...
+#   CTOR_ECONOMICS_PROTOCOL_CONFIG=0x...
+#   CTOR_ECONOMICS_CRE_FORWARDER=0x...
+#   CTOR_ECONOMICS_CRE_WORKFLOW_ID=0x...
+#   CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER=0x...
+#   CTOR_IDENTITY_CONTENT_QUERY_PROVIDER=0x...
+#   CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER=0x...
+#   CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID=0x...
+#
+# Contracts without constructor args have empty entries. The deploy
+# recipe checks the expanded array length and skips --constructor-args
+# when empty.
 # ------------------------------------------------------------
 
-CONSTRUCTOR_ARGS_kipio_content_access = 0x0000000000000000000000000000000000000000 0x76c9cf548b4179F8901cda1f8623568b58215E62 0x0000000000000000000000000000000000000000 0x0000000000000000000000000000000000000000000000000000000000000000
+CONSTRUCTOR_ARGS_kipio_protocol_config =
+CONSTRUCTOR_ARGS_kipio_runtime = $(CTOR_RUNTIME_PROTOCOL_CONFIG)
+CONSTRUCTOR_ARGS_kipio_recovery = $(CTOR_RECOVERY_RUNTIME)
+CONSTRUCTOR_ARGS_kipio_economics = $(CTOR_ECONOMICS_PROTOCOL_CONFIG) $(CTOR_ECONOMICS_CRE_FORWARDER) $(CTOR_ECONOMICS_CRE_WORKFLOW_ID)
+CONSTRUCTOR_ARGS_kipio_identity_content = $(CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER) $(CTOR_IDENTITY_CONTENT_QUERY_PROVIDER) $(CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER) $(CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID)
+CONSTRUCTOR_ARGS_kipio_execution_gateway =
 
 CTOR_ARG_VARS := $(filter CONSTRUCTOR_ARGS_%,$(.VARIABLES))
 export $(CTOR_ARG_VARS)
 
 # ============================================================
-# ENDPOINT RESOLUTION
-# ============================================================
-#
-# resolve_endpoint: probes each endpoint in ENDPOINT_SEPOLIA_ALL in order,
-#                   writes the first reachable one to
-#                   .check-reports/.active-endpoint, and exits 0. If none
-#                   respond, prints the full list of tried URLs and exits 1.
-#
-# The loop uses `for ep in $$ENDPOINTS` where ENDPOINTS is a single-line
-# space-separated string. This avoids Make's line-continuation expansion
-# quirks inside shell recipes.
-#
-# `exit 0` exits the recipe's shell after the first working endpoint is
-# found. This is intentional: subsequent targets reuse the cached endpoint
-# via .check-reports/.active-endpoint.
-#
-# To force a specific endpoint without editing the Makefile:
-#   ENDPOINT_SEPOLIA=https://... make check contract=kipio_economics
-# ------------------------------------------------------------
-
-define resolve_endpoint
-	@mkdir -p $(CHECK_REPORTS); \
-	ENDPOINT_FILE="$(CHECK_REPORTS)/.active-endpoint"; \
-	ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
-	found=0; \
-	for ep in $$ENDPOINTS; do \
-		if curl -s -m 5 -X POST -H "Content-Type: application/json" \
-			--data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-			"$$ep" 2>/dev/null | grep -q '"result"'; then \
-			echo "$$ep" > "$$ENDPOINT_FILE"; \
-			echo "  RPC endpoint: $$ep"; \
-			found=1; \
-			break; \
-		fi; \
-	done; \
-	if [ $$found -eq 0 ]; then \
-		echo "  ERROR: no reachable RPC endpoint found."; \
-		echo "  Tried:"; \
-		for ep in $$ENDPOINTS; do echo "    - $$ep"; done; \
-		exit 1; \
-	fi
-endef
-
-# ============================================================
 # PERMISSION GUARD
 # ============================================================
-#
-# Detects root-owned files under target/ and aborts with a clear
-# message pointing to `make fix-perms`. Used by build/abi/test as a
-# precondition.
-# ------------------------------------------------------------
 
 define guard_perms
 	@if [ -e target/debug/.cargo-lock ] && [ "$$(stat -c %U target/debug/.cargo-lock 2>/dev/null)" = "root" ]; then \
@@ -204,23 +149,31 @@ else
 	echo "All contracts built."
 endif
 
-# ABI export.
+# ============================================================
+# ABI EXPORT
+# ============================================================
 #
-# Naming convention: `kipio_content_access` → `IKipioContentAccess.sol`.
-# The sed capitalizes the first letter of each segment separated by `_`.
+# After each export, three post-processing scripts run in this order:
 #
-# WHY `cargo run --features export-abi` AND NOT `cargo stylus export-abi`:
+#   1. scripts/fix-tuple-abi.sh
+#      Rewrites inline tuple parameters into named structs. Solidity
+#      rejects inline tuples in external function signatures. SDK
+#      issue #368, audit finding M-17.
 #
-# Stylus SDK 0.10.9's `cargo stylus export-abi` uses a hardcoded
-# DEFAULT_PRAGMA of `^0.8.23`. That is an artefact of the SDK's example
-# templates and has no relationship to Stylus, ArbOS, or on-chain
-# compatibility. To emit a newer pragma without forking the SDK, we
-# invoke the `export-abi` binary directly through `cargo run` and pass
-# `--pragma "$(SOLIDITY_PRAGMA)"`. The binary writes the same Solidity
-# interface to stdout; we redirect to the target file.
+#   2. scripts/fix-abi-structs.sh
+#      Injects missing struct declarations from the companion file.
+#      The SDK omits structs that are only used as input parameters.
+#      Solidity then rejects the interface with Error (7920). The
+#      script computes the transitive closure of referenced structs.
 #
-# The `--quiet` flag suppresses cargo's own build chatter so the
-# stdout stream is pure interface text. Program output is unaffected.
+#   3. scripts/fix-abi-data-locations.sh
+#      Adds missing data location keywords (memory / calldata) on
+#      struct, bytes and string parameters in external function
+#      signatures. The SDK handles arrays correctly but omits the
+#      keyword on singular reference types. Solidity rejects this
+#      with Error (6651).
+#
+# All three scripts are idempotent.
 # ------------------------------------------------------------
 
 abi:
@@ -243,9 +196,16 @@ ifdef contract
 		echo "  EXPORT FAILED (exit $$RC)"; \
 		exit 1; \
 	fi; \
+	bash $(SCRIPTS_DIR)/fix-tuple-abi.sh "$$OUT" || exit 1; \
+	bash $(SCRIPTS_DIR)/fix-abi-structs.sh "$$OUT" "$(SCRIPTS_DIR)/abi-structs-companion.sol" || exit 1; \
+	bash $(SCRIPTS_DIR)/fix-abi-data-locations.sh "$$OUT" "$(SCRIPTS_DIR)/abi-structs-companion.sol" || exit 1; \
 	bytes=$$(stat -c %s "$$OUT"); \
 	echo "  $$name.sol ($$bytes B)"; \
-	echo "============================================================"
+	echo "============================================================"; \
+	echo ""; \
+	echo "  --- Exported interface ---"; \
+	cat "$$OUT"; \
+	echo "  --- end ---"
 else
 	@set +e; \
 	FAILED=""; \
@@ -268,6 +228,24 @@ else
 			printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "0" "FAILED" >> "$$REPORT"; \
 			continue; \
 		fi; \
+		bash $(SCRIPTS_DIR)/fix-tuple-abi.sh "$$OUT" || { \
+			echo "  fix-tuple-abi FAILED"; \
+			FAILED="$$FAILED $$c"; \
+			printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "0" "TUPLE-FIX-FAILED" >> "$$REPORT"; \
+			continue; \
+		}; \
+		bash $(SCRIPTS_DIR)/fix-abi-structs.sh "$$OUT" "$(SCRIPTS_DIR)/abi-structs-companion.sol" || { \
+			echo "  fix-abi-structs FAILED"; \
+			FAILED="$$FAILED $$c"; \
+			printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "0" "STRUCT-FIX-FAILED" >> "$$REPORT"; \
+			continue; \
+		}; \
+		bash $(SCRIPTS_DIR)/fix-abi-data-locations.sh "$$OUT" "$(SCRIPTS_DIR)/abi-structs-companion.sol" || { \
+			echo "  fix-abi-data-locations FAILED"; \
+			FAILED="$$FAILED $$c"; \
+			printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "0" "DATA-LOC-FIX-FAILED" >> "$$REPORT"; \
+			continue; \
+		}; \
 		bytes=$$(stat -c %s "$$OUT"); \
 		echo "  $$name.sol ($$bytes B)"; \
 		printf "%s\t%s\t%s\t%s\n" "$$c" "$$name.sol" "$$bytes" "OK" >> "$$REPORT"; \
@@ -312,7 +290,11 @@ else
 		exit 1; \
 	fi; \
 	echo "All ABIs generated in $(FOUNDRY_INTERFACES)/"; \
-	echo "Report: $$REPORT"
+	echo "Report: $$REPORT"; \
+	echo ""; \
+	echo "  To inspect an individual interface:"; \
+	echo "    cat $(FOUNDRY_INTERFACES)/IKipioRuntime.sol"; \
+	echo ""
 endif
 
 lock:
@@ -340,21 +322,11 @@ test-all: test test-bridge test-fork
 # 3. ON-CHAIN VALIDATION
 # ============================================================
 
-# probe-rpc: diagnostic target. Tests every endpoint in ENDPOINT_SEPOLIA_ALL
-#            individually and reports chain ID + latency. Use this before
-#            `make check` if you suspect RPC issues.
-#
-# Unlike resolve_endpoint, this target does NOT exit on the first working
-# endpoint: it tests all of them and prints a table so you can see which
-# ones are healthy right now.
-# ------------------------------------------------------------
-
 probe-rpc:
 	@echo ""
 	@echo "============================================================"
 	@echo "  RPC PROBE — Arbitrum Sepolia (chain ID 421614)"
 	@echo "============================================================"
-	@echo "  Endpoints to test:"
 	@ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
 	for ep in $$ENDPOINTS; do \
 		printf "  %-70s " "$$ep"; \
@@ -369,8 +341,7 @@ probe-rpc:
 		elif echo "$$resp" | grep -q '"result"'; then \
 			cid=$$(echo "$$resp" | grep -oE '"result":"0x[0-9a-f]+"' | head -1); \
 			echo "OK   ($${latency}ms)  $$cid"; \
-		elif echo "$$resp" | grep -q '"error"'; \
-		then \
+		elif echo "$$resp" | grep -q '"error"'; then \
 			err=$$(echo "$$resp" | head -c 80); \
 			echo "ERR  ($${latency}ms)  $$err"; \
 		else \
@@ -378,34 +349,120 @@ probe-rpc:
 		fi; \
 	done; \
 	echo ""
+	@echo "  NOTE: chainId OK does not imply the endpoint accepts"
+	@echo "        stylus activation simulations. Run 'make check' to"
+	@echo "        verify end-to-end."
 
 check:
 ifdef contract
-	@echo "Checking $(contract)"
-	@echo "------------------------------------------------------------"
-	$(resolve_endpoint)
-	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	cd src/$(contract) && cargo stylus check --endpoint "$$ACTIVE" --verbose
+	@mkdir -p $(CHECK_REPORTS); \
+	LOG="$(CHECK_REPORTS)/$(contract).log"; \
+	ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
+	echo "Checking $(contract)"; \
+	echo "------------------------------------------------------------"; \
+	SUCCESS=0; \
+	LAST_ERR=""; \
+	for ep in $$ENDPOINTS; do \
+		echo "  Trying: $$ep"; \
+		(cd src/$(contract) && cargo stylus check --endpoint "$$ep" --verbose) > "$$LOG" 2>&1; \
+		RC=$$?; \
+		if [ $$RC -eq 0 ] && ! grep -q 'stylus activations not allowed' "$$LOG"; then \
+			SUCCESS=1; \
+			echo "$$ep" > $(CHECK_REPORTS)/.active-endpoint; \
+			echo "  Endpoint OK: $$ep"; \
+			break; \
+		fi; \
+		if grep -q 'stylus activations not allowed' "$$LOG"; then \
+			echo "  Endpoint rejected activation simulation, trying next..."; \
+			continue; \
+		fi; \
+		if grep -qE 'error\[E[0-9]+\]' "$$LOG" || grep -q 'could not compile' "$$LOG"; then \
+			echo ""; \
+			echo "  COMPILATION ERROR:"; \
+			cat "$$LOG"; \
+			exit 1; \
+		fi; \
+		LAST_ERR="$$(tail -1 $$LOG)"; \
+		echo "  Unexpected error, stopping."; \
+		break; \
+	done; \
+	echo ""; \
+	if [ $$SUCCESS -eq 0 ]; then \
+		echo "============================================================"; \
+		echo "  NO ENDPOINT ACCEPTED THE ACTIVATION SIMULATION"; \
+		echo "============================================================"; \
+		echo "  Tried endpoints:"; \
+		for ep in $$ENDPOINTS; do echo "    - $$ep"; done; \
+		echo ""; \
+		echo "  This is a public-RPC limitation, not a contract bug."; \
+		echo "  To use a keyed provider, override ENDPOINT_SEPOLIA_ALL:"; \
+		echo "    make check contract=$(contract) ENDPOINT_SEPOLIA_ALL='https://arb-sepolia.g.alchemy.com/v2/KEY'"; \
+		if [ -n "$$LAST_ERR" ]; then \
+			echo ""; \
+			echo "  Last error:"; \
+			echo "    $$LAST_ERR"; \
+		fi; \
+		echo "============================================================"; \
+		exit 1; \
+	fi; \
+	echo "  Full trace: $$LOG"; \
+	echo ""; \
+	echo "  --- cargo stylus check output ---"; \
+	cat "$$LOG"; \
+	echo "  --- end ---"
 else
 	@set +e; \
 	FAILED=""; \
 	mkdir -p $(CHECK_REPORTS); \
 	REPORT="$(CHECK_REPORTS)/sizes.tsv"; \
-	printf "contract\tcompressed_bytes\tuncompressed_bytes\tfragments\n" > "$$REPORT"; \
-	$(resolve_endpoint); \
-	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	echo "  Using RPC: $$ACTIVE"; \
-	echo ""; \
+	printf "contract\tcompressed_bytes\tuncompressed_bytes\tfragments\tendpoint\n" > "$$REPORT"; \
+	ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
 	for c in $(CONTRACTS); do \
 		LOG="$(CHECK_REPORTS)/$$c.log"; \
 		echo ""; \
 		echo "============================================================"; \
 		echo "Checking $$c"; \
 		echo "============================================================"; \
-		(cd src/$$c && cargo stylus check --endpoint "$$ACTIVE" --verbose) > "$$LOG" 2>&1; \
-		RC=$$?; \
+		SUCCESS=0; \
+		USED_EP=""; \
+		for ep in $$ENDPOINTS; do \
+			echo "  Trying: $$ep"; \
+			(cd src/$$c && cargo stylus check --endpoint "$$ep" --verbose) > "$$LOG" 2>&1; \
+			RC=$$?; \
+			if [ $$RC -eq 0 ] && ! grep -q 'stylus activations not allowed' "$$LOG"; then \
+				SUCCESS=1; \
+				USED_EP="$$ep"; \
+				echo "  Endpoint OK: $$ep"; \
+				break; \
+			fi; \
+			if grep -q 'stylus activations not allowed' "$$LOG"; then \
+				echo "  Endpoint rejected activation simulation, trying next..."; \
+				continue; \
+			fi; \
+			if grep -qE 'error\[E[0-9]+\]' "$$LOG" || grep -q 'could not compile' "$$LOG"; then \
+				echo "  COMPILATION ERROR on $$c:"; \
+				cat "$$LOG"; \
+				break; \
+			fi; \
+			break; \
+		done; \
+		if [ $$SUCCESS -eq 0 ]; then \
+			echo "  FAILED: $$c (no endpoint accepted activation simulation)"; \
+			FAILED="$$FAILED $$c"; \
+			printf "%s\t%s\t%s\t%s\t%s\n" "$$c" "0" "0" "-1" "no-endpoint" >> "$$REPORT"; \
+			continue; \
+		fi; \
+		echo ""; \
+		echo "  --- cargo stylus check output ---"; \
 		cat "$$LOG"; \
-		if [ $$RC -ne 0 ]; then FAILED="$$FAILED $$c"; fi; \
+		echo "  --- end ---"; \
+		line=$$(grep 'contract size:' "$$LOG" | head -1); \
+		cb=$$(echo "$$line" | grep -oE '\([0-9]+ bytes\)' | head -1 | grep -oE '[0-9]+'); \
+		fr=$$(echo "$$line" | grep -oE '\([0-9]+ fragments?\)' | head -1 | grep -oE '[0-9]+'); \
+		wline=$$(grep 'wasm size:' "$$LOG" | head -1); \
+		ub=$$(echo "$$wline" | grep -oE '\([0-9]+ bytes\)' | head -1 | grep -oE '[0-9]+'); \
+		cb=$${cb:-0}; ub=$${ub:-0}; fr=$${fr:-1}; \
+		printf "%s\t%s\t%s\t%s\t%s\n" "$$c" "$$cb" "$$ub" "$$fr" "$$USED_EP" >> "$$REPORT"; \
 	done; \
 	echo ""; \
 	echo "============================================================"; \
@@ -413,34 +470,25 @@ else
 	echo "============================================================"; \
 	printf "%-30s %16s %20s %11s\n" "CONTRACT" "COMPRESSED" "UNCOMPRESSED" "FRAGMENTS"; \
 	printf "%-30s %16s %20s %11s\n" "------------------------------" "----------------" "--------------------" "-----------"; \
-	for c in $(CONTRACTS); do \
-		LOG="$(CHECK_REPORTS)/$$c.log"; \
-		line=$$(grep 'contract size:' "$$LOG" | head -1); \
-		if [ -z "$$line" ]; then \
+	tail -n +2 "$$REPORT" | while IFS=$$'\t' read -r c cb ub fr ep; do \
+		if [ "$$cb" = "0" ] && [ "$$ub" = "0" ]; then \
 			printf "%-30s %16s %20s %11s\n" "$$c" "FAILED" "-" "-"; \
 			continue; \
 		fi; \
-		ckb=$$(echo "$$line" | grep -oE '[0-9.]+ KB' | head -1); \
-		cb=$$(echo "$$line" | grep -oE '\([0-9]+ bytes\)' | head -1 | grep -oE '[0-9]+'); \
-		fr=$$(echo "$$line" | grep -oE '\([0-9]+ fragments?\)' | head -1 | grep -oE '[0-9]+'); \
-		wline=$$(grep 'wasm size:' "$$LOG" | head -1); \
-		ukb=$$(echo "$$wline" | grep -oE '[0-9.]+ KB' | head -1); \
-		ub=$$(echo "$$wline" | grep -oE '\([0-9]+ bytes\)' | head -1 | grep -oE '[0-9]+'); \
-		cb=$${cb:-0}; ub=$${ub:-0}; fr=$${fr:-1}; \
-		printf "%-30s %16s %20s %11s\n" "$$c" "$${ckb:-?} ($${cb} B)" "$${ukb:-?} ($${ub} B)" "$${fr}"; \
-		printf "%s\t%s\t%s\t%s\n" "$$c" "$$cb" "$$ub" "$$fr" >> "$$REPORT"; \
+		ckb=$$(awk "BEGIN {printf \"%.1f\", $$cb/1024}"); \
+		ukb=$$(awk "BEGIN {printf \"%.1f\", $$ub/1024}"); \
+		printf "%-30s %12s KB %16s KB %11s\n" "$$c" "$$ckb" "$$ukb" "$$fr"; \
 	done; \
 	echo ""; \
-	if [ -z "$$FAILED" ]; then \
-		echo "All contracts passed check."; \
-		echo "Size report: $$REPORT"; \
-	else \
+	if [ -n "$$FAILED" ]; then \
 		echo "FAILED CONTRACTS:"; \
 		for c in $$FAILED; do echo "  - $$c"; done; \
 		echo ""; \
 		echo "Per-contract logs: $(CHECK_REPORTS)/<contract>.log"; \
 		exit 1; \
-	fi
+	fi; \
+	echo "All contracts passed check."; \
+	echo "Size report: $$REPORT"
 endif
 
 # ============================================================
@@ -448,9 +496,12 @@ endif
 # ============================================================
 
 deploy:
-ifdef contract
-	@mkdir -p $(DEPLOYMENTS_DIR)
-	@DIR="$(DEPLOYMENTS_DIR)/$$(date +%Y%m%d_%H%M%S)"; \
+ifndef contract
+	@echo "ERROR: deploy requires contract=<name>. To deploy all, use deploy-full."
+	@exit 1
+endif
+	@mkdir -p $(DEPLOYMENTS_DIR); \
+	DIR="$(DEPLOYMENTS_DIR)/$$(date +%Y%m%d_%H%M%S)"; \
 	mkdir -p "$$DIR"; \
 	LOG="$$DIR/$(contract).log"; \
 	ARGS="$(CONSTRUCTOR_ARGS_$(contract))"; \
@@ -458,9 +509,7 @@ ifdef contract
 	echo "============================================================"; \
 	echo "  Deploying $(contract)"; \
 	echo "============================================================"; \
-	$(resolve_endpoint); \
-	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	printf "  %-22s %s\n" "Endpoint:"         "$$ACTIVE"; \
+	printf "  %-22s %s\n" "Endpoint (rpc):"  "$(ENDPOINT_SEPOLIA)"; \
 	printf "  %-22s %s\n" "Constructor args:" "$${CTOR_ARGS[*]:-<none>}"; \
 	printf "  %-22s %s\n" "Args count:"       "$${#CTOR_ARGS[@]}"; \
 	printf "  %-22s %s\n" "Log file:"         "$$LOG"; \
@@ -468,13 +517,13 @@ ifdef contract
 	set -o pipefail; \
 	if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 		( cd src/$(contract) && cargo stylus deploy \
-			--endpoint "$$ACTIVE" \
+			--endpoint "$(ENDPOINT_SEPOLIA)" \
 			--private-key $(PRIVATE_KEY) \
 			--max-fee-per-gas-gwei=1 \
 			--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 	else \
 		( cd src/$(contract) && cargo stylus deploy \
-			--endpoint "$$ACTIVE" \
+			--endpoint "$(ENDPOINT_SEPOLIA)" \
 			--private-key $(PRIVATE_KEY) \
 			--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 	fi; \
@@ -488,7 +537,7 @@ ifdef contract
 		exit $$PIPE_RC; \
 	fi; \
 	DEPLOYER=$$(cast wallet address --private-key "$(PRIVATE_KEY)" 2>/dev/null || echo ""); \
-	bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$(contract)" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/manifest.json"; \
+	bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$(contract)" "$$DEPLOYER" "$(ENDPOINT_SEPOLIA)" > "$$DIR/manifest.json"; \
 	addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/manifest.json"); \
 	if [ -z "$$addr" ]; then \
 		echo ""; \
@@ -499,122 +548,27 @@ ifdef contract
 		exit 1; \
 	fi; \
 	jq -n --arg a "$$addr" --arg k "$(contract)" '{($$k): $$a}' > "$$DIR/addresses.json"; \
-	tx_deploy=$$(jq -r '.contract_details.deployment_tx_hash // "-"' "$$DIR/manifest.json"); \
-	tx_activate=$$(jq -r '.activation_details.activation_tx_hash // "-"' "$$DIR/manifest.json"); \
-	compressed=$$(jq -r '.deployment_fingerprint.compressed_bytes' "$$DIR/manifest.json"); \
-	uncompressed=$$(jq -r '.deployment_fingerprint.uncompressed_bytes' "$$DIR/manifest.json"); \
-	fragments=$$(jq -r '.deployment_fingerprint.fragments' "$$DIR/manifest.json"); \
-	project_hash=$$(jq -r '.deployment_fingerprint.project_metadata_hash // "-"' "$$DIR/manifest.json"); \
-	wasm_opt=$$(jq -r '.deployment_fingerprint.wasm_opt_version // "-"' "$$DIR/manifest.json"); \
 	echo ""; \
 	echo "============================================================"; \
 	echo "  DEPLOY SUMMARY"; \
 	echo "============================================================"; \
 	printf "  %-22s %s\n" "Contract:"       "$(contract)"; \
 	printf "  %-22s %s\n" "Address:"        "$$addr"; \
-	printf "  %-22s %s\n" "Deployment tx:"  "$$tx_deploy"; \
-	printf "  %-22s %s\n" "Activation tx:"  "$$tx_activate"; \
-	printf "  %-22s %s\n" "Compressed:"     "$${compressed} bytes ($${fragments} fragments)"; \
-	printf "  %-22s %s\n" "Uncompressed:"   "$${uncompressed} bytes"; \
-	printf "  %-22s %s\n" "Project hash:"   "$$project_hash"; \
-	printf "  %-22s %s\n" "wasm-opt:"       "$$wasm_opt"; \
 	echo "------------------------------------------------------------"; \
 	printf "  %-22s %s\n" "Log:"            "$$LOG"; \
 	printf "  %-22s %s\n" "Addresses:"      "$$DIR/addresses.json"; \
 	printf "  %-22s %s\n" "Manifest:"       "$$DIR/manifest.json"; \
 	echo "============================================================"; \
 	echo ""; \
-	echo "  NOTE: cargo stylus deploy ran inside Docker as root."; \
-	echo "  Files under target/ may now be root-owned. If you need to"; \
-	echo "  run 'make abi' or 'make build', execute 'make fix-perms'."; \
+	echo "  NOTE: cargo stylus deploy runs inside Docker as root."; \
+	echo "  Files under target/ may now be root-owned. Run 'make fix-perms'"; \
+	echo "  before the next local build or ABI export."; \
 	echo "============================================================"
-else
-	@echo "Deploying ALL contracts (use deploy-full for a manifest)"
-	@set -e; \
-	$(resolve_endpoint); \
-	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	echo "  Using RPC: $$ACTIVE"; \
-	for c in $(CONTRACTS); do \
-		echo ""; \
-		echo "============================================================"; \
-		echo "  Deploying $$c"; \
-		echo "============================================================"; \
-		ARGS_VAR="CONSTRUCTOR_ARGS_$$c"; \
-		ARGS="$${!ARGS_VAR}"; \
-		read -ra CTOR_ARGS <<< "$$ARGS"; \
-		printf "  %-22s %s\n" "Constructor args:" "$${CTOR_ARGS[*]:-<none>}"; \
-		echo "------------------------------------------------------------"; \
-		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
-			(cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
-				--private-key $(PRIVATE_KEY) \
-				--max-fee-per-gas-gwei=1 \
-				--constructor-args "$${CTOR_ARGS[@]}"); \
-		else \
-			(cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
-				--private-key $(PRIVATE_KEY) \
-				--max-fee-per-gas-gwei=1); \
-		fi; \
-	done; \
-	echo ""; \
-	echo "All contracts deployed."; \
-	echo ""; \
-	echo "  NOTE: Deploy containers may have left root-owned files in target/."; \
-	echo "  Run 'make fix-perms' before the next local build/abi."
-endif
-
-verify:
-ifndef contract
-	@echo "ERROR: verify requires contract=<name>"; exit 1
-endif
-ifndef tx
-	@echo "ERROR: verify requires tx=0x<deployment-tx-hash>"; exit 1
-endif
-	$(resolve_endpoint)
-	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	cd src/$(contract) && cargo stylus verify --deployment-tx $(tx) --endpoint "$$ACTIVE"
-
-# ============================================================
-# 5. CACHE (ArbOS CacheManager)
-# ============================================================
-
-cache-suggest:
-ifndef addr
-	@echo "ERROR: cache-suggest requires addr=<contract-address>"; exit 1
-endif
-	$(resolve_endpoint)
-	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	cargo stylus cache suggest-bid $(addr) --endpoint "$$ACTIVE"
-
-cache-bid:
-ifndef addr
-	@echo "ERROR: cache-bid requires addr=<contract-address>"; exit 1
-endif
-ifndef bid
-	@echo "ERROR: cache-bid requires bid=<amount-in-wei>"; exit 1
-endif
-	$(resolve_endpoint)
-	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	cargo stylus cache bid $(addr) $(bid) --endpoint "$$ACTIVE" --private-key $(PRIVATE_KEY)
-
-cache-status:
-ifndef addr
-	@echo "ERROR: cache-status requires addr=<contract-address>"; exit 1
-endif
-	$(resolve_endpoint)
-	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	cargo stylus cache status $(addr) --endpoint "$$ACTIVE"
-
-# ============================================================
-# 6. FULL DEPLOYMENT PIPELINE
-# ============================================================
 
 deploy-full:
 	@set -o pipefail; \
-	$(resolve_endpoint); \
-	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
 	PKEY="$(PRIVATE_KEY)"; \
+	if [ -z "$$PKEY" ]; then echo "ERROR: PRIVATE_KEY is not set in .env"; exit 1; fi; \
 	DIR="$(DEPLOYMENTS_DIR)/$$(date +%Y%m%d_%H%M%S)"; \
 	mkdir -p "$$DIR"; \
 	echo "{}" > "$$DIR/addresses.json"; \
@@ -623,12 +577,12 @@ deploy-full:
 	jq -n \
 		--arg project "$(PROJECT_NAME)" \
 		--arg ts "$$TIMESTAMP" \
-		--arg endpoint "$$ACTIVE" \
+		--arg endpoint "$(ENDPOINT_SEPOLIA)" \
 		'{project_info: {name: $$project, compiler: "Cargo Stylus (Rust)", timestamp: $$ts, network: "Arbitrum Sepolia (Testnet)", rpc_endpoint: $$endpoint}, contracts: {}}' \
 		> "$$DIR/manifest.json"; \
 	echo "Deployment directory: $$DIR"; \
-	echo "  Using RPC: $$ACTIVE"; \
-	for c in $(CONTRACTS); do \
+	echo "  Using RPC: $(ENDPOINT_SEPOLIA)"; \
+	for c in $(DEPLOYABLES); do \
 		echo ""; \
 		echo "============================================================"; \
 		echo "  Deploying $$c"; \
@@ -641,19 +595,24 @@ deploy-full:
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
+				--endpoint "$(ENDPOINT_SEPOLIA)" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
+				--endpoint "$(ENDPOINT_SEPOLIA)" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
-		if [ $$PIPE_RC -ne 0 ]; then echo "FAILED: $$c (exit $$PIPE_RC)"; exit 1; fi; \
-		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/$$c.manifest.json"; \
+		if [ $$PIPE_RC -ne 0 ]; then \
+			echo "FAILED: $$c (exit $$PIPE_RC)"; \
+			echo "Partial deployment kept at: $$DIR"; \
+			echo "Resume with: make deploy-resume"; \
+			exit 1; \
+		fi; \
+		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$(ENDPOINT_SEPOLIA)" > "$$DIR/$$c.manifest.json"; \
 		addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/$$c.manifest.json"); \
 		if [ -z "$$addr" ]; then echo "FAILED: $$c (no address)"; exit 1; fi; \
 		echo "  $$c → $$addr"; \
@@ -669,20 +628,18 @@ deploy-full:
 	echo "============================================================"; \
 	cat "$$DIR/addresses.json"; \
 	echo ""; \
-	echo "  NOTE: Deploy containers may have left root-owned files in target/."; \
-	echo "  Run 'make fix-perms' before the next local build/abi."
+	echo "  NOTE: cargo stylus deploy runs inside Docker as root."; \
+	echo "  Run 'make fix-perms' before the next local build or ABI export."
 
 deploy-resume:
 	@set -o pipefail; \
 	DIR="$$(ls -d $(DEPLOYMENTS_DIR)/*/ 2>/dev/null | sort | tail -n 1)"; \
 	if [ -z "$$DIR" ]; then echo "No previous deployment found."; exit 1; fi; \
 	echo "Resuming deployment: $$DIR"; \
-	$(resolve_endpoint); \
-	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
-	echo "  Using RPC: $$ACTIVE"; \
+	echo "  Using RPC: $(ENDPOINT_SEPOLIA)"; \
 	PKEY="$(PRIVATE_KEY)"; \
 	DEPLOYER=$$(cast wallet address --private-key "$$PKEY" 2>/dev/null || echo ""); \
-	for c in $(CONTRACTS); do \
+	for c in $(DEPLOYABLES); do \
 		addr=$$(jq -r --arg k "$$c" '.[$$k] // empty' "$$DIR/addresses.json"); \
 		if [ -n "$$addr" ]; then echo "Skipping $$c (already at $$addr)"; continue; fi; \
 		echo ""; \
@@ -697,19 +654,19 @@ deploy-resume:
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
+				--endpoint "$(ENDPOINT_SEPOLIA)" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint "$$ACTIVE" \
+				--endpoint "$(ENDPOINT_SEPOLIA)" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
 		if [ $$PIPE_RC -ne 0 ]; then echo "FAILED: $$c"; exit 1; fi; \
-		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/$$c.manifest.json"; \
+		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$(ENDPOINT_SEPOLIA)" > "$$DIR/$$c.manifest.json"; \
 		addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/$$c.manifest.json"); \
 		if [ -z "$$addr" ]; then echo "FAILED: $$c (no address)"; exit 1; fi; \
 		echo "  $$c → $$addr"; \
@@ -721,8 +678,46 @@ deploy-resume:
 	done; \
 	echo "Resume complete: $$DIR"
 
+verify:
+ifndef contract
+	@echo "ERROR: verify requires contract=<name>"; exit 1
+endif
+ifndef tx
+	@echo "ERROR: verify requires tx=0x<deployment-tx-hash>"; exit 1
+endif
+	@cd src/$(contract) && cargo stylus verify \
+		--deployment-tx $(tx) \
+		--endpoint "$(ENDPOINT_SEPOLIA)"
+
 # ============================================================
-# 7. DIAGNOSTICS
+# 5. CACHE (ArbOS CacheManager)
+# ============================================================
+
+cache-suggest:
+ifndef addr
+	@echo "ERROR: cache-suggest requires addr=<contract-address>"; exit 1
+endif
+	@cargo stylus cache suggest-bid $(addr) --endpoint "$(ENDPOINT_SEPOLIA)"
+
+cache-bid:
+ifndef addr
+	@echo "ERROR: cache-bid requires addr=<contract-address>"; exit 1
+endif
+ifndef bid
+	@echo "ERROR: cache-bid requires bid=<amount-in-wei>"; exit 1
+endif
+	@cargo stylus cache bid $(addr) $(bid) \
+		--endpoint "$(ENDPOINT_SEPOLIA)" \
+		--private-key $(PRIVATE_KEY)
+
+cache-status:
+ifndef addr
+	@echo "ERROR: cache-status requires addr=<contract-address>"; exit 1
+endif
+	@cargo stylus cache status $(addr) --endpoint "$(ENDPOINT_SEPOLIA)"
+
+# ============================================================
+# 6. DIAGNOSTICS
 # ============================================================
 
 print-constructor-args:
@@ -741,8 +736,24 @@ endif
 		i=$$((i+1)); \
 	done
 
+print-deploy-order:
+	@echo "Deploy order (from DEPLOYABLES):"
+	@n=1; \
+	for c in $(DEPLOYABLES); do \
+		printf "  %2d. %s\n" "$$n" "$$c"; \
+		n=$$((n+1)); \
+	done
+	@echo ""
+	@echo "Contracts in CONTRACTS but NOT in DEPLOYABLES (per-user or non-singleton):"
+	@for c in $(CONTRACTS); do \
+		case " $(DEPLOYABLES) " in \
+			*" $$c "*) ;; \
+			*) echo "    - $$c";; \
+		esac; \
+	done
+
 # ============================================================
-# 8. PERMISSION RECOVERY
+# 7. PERMISSION RECOVERY
 # ============================================================
 
 fix-perms:
@@ -778,7 +789,7 @@ nuke:
 	@echo "Nuke complete. Next build will recreate everything from scratch."
 
 # ============================================================
-# 9. MAINTENANCE
+# 8. MAINTENANCE
 # ============================================================
 
 clean:
@@ -788,9 +799,6 @@ clean:
 clean-deployments:
 	rm -rf $(DEPLOYMENTS_DIR)
 
-# Remove all Solidity interfaces under foundry/src/interfaces/.
-# Use after CONTRACTS changes to clear orphaned files. Regenerate
-# with `make abi`.
 clean-abi:
 	@echo "Removing $(FOUNDRY_INTERFACES)/*.sol ..."
 	@rm -f $(FOUNDRY_INTERFACES)/*.sol
@@ -802,7 +810,7 @@ help:
 	@echo ""
 	@echo "BUILD"
 	@echo "  build         Compile Stylus WASM contracts"
-	@echo "  abi           Generate Solidity ABIs"
+	@echo "  abi           Generate Solidity ABIs (tuple + struct + data-location fixes)"
 	@echo "  lock          Regenerate Cargo.lock"
 	@echo ""
 	@echo "TESTING"
@@ -813,11 +821,11 @@ help:
 	@echo ""
 	@echo "ON-CHAIN"
 	@echo "  probe-rpc     Test all RPC endpoints (diagnostic)"
-	@echo "  check         Dry-run activation + verbose output + size table"
-	@echo "  deploy        Deploy single (contract=<name>) or all."
+	@echo "  check         Dry-run activation + retry across endpoints"
+	@echo "  deploy        Deploy single (contract=<name>)"
+	@echo "  deploy-full   Deploy all in dependency order + manifest"
+	@echo "  deploy-resume Resume last incomplete deployment"
 	@echo "  verify        Reproducible verification (contract + tx)"
-	@echo "  deploy-full   Deploy all + single timestamped manifest"
-	@echo "  deploy-resume Resume last deployment"
 	@echo ""
 	@echo "CACHE"
 	@echo "  cache-suggest addr=0x...      Suggested minimum bid"
@@ -826,6 +834,7 @@ help:
 	@echo ""
 	@echo "DIAGNOSTICS"
 	@echo "  print-constructor-args contract=<name>  Show args for deploy"
+	@echo "  print-deploy-order                      Show deploy order"
 	@echo ""
 	@echo "RECOVERY"
 	@echo "  fix-perms          Reclaim ownership of target/ (root -> user)"
@@ -839,8 +848,8 @@ help:
 	@echo "==================================================="
 
 .PHONY: build abi lock test test-bridge test-fork test-all \
-        probe-rpc check deploy verify deploy-full deploy-resume \
+        probe-rpc check deploy deploy-full deploy-resume verify \
         cache-suggest cache-bid cache-status \
-        print-constructor-args \
+        print-constructor-args print-deploy-order \
         fix-perms nuke \
         clean clean-deployments clean-abi help
