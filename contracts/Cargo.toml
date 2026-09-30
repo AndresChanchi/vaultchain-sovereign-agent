@@ -1,12 +1,13 @@
 [workspace]
 members = [
-# "src/kipio_auth_verifier_k256",
+# "src/kipio_auth_verifier_k256",own infrastructure with TPRE.
   "src/kipio_account",           # Sovereign Account -> hot         1
   "src/kipio_economics",         # Business Logic    -> hot         2
   "src/kipio_identity_content",  # Business Logic    -> hot         3
   "src/kipio_runtime",           # Sovereign Account -> hot         4
   "src/kipio_execution_gateway", # Business Logic    -> hot
   "src/kipio_protocol_config",   # Protocol maintainers 
+  "src/kipio_recovery",   # Protocol maintainers 
   "src/bridge",                  # Local too, soon a public crate
   "tests",
   ]

@@ -11,7 +11,23 @@ endif
 # Configuration
 # ============================================================
 
+# Primary endpoint for Arbitrum Sepolia.
+# The official Offchain Labs endpoint is listed first but may reject
+# activation requests under load. The fallback list below provides
+# redundancy so `make check` never blocks on a single RPC provider.
 ENDPOINT_SEPOLIA = https://sepolia-rollup.arbitrum.io/rpc
+
+# Fallback endpoints, tried in order when the primary fails.
+# Only public (no-API-key) endpoints are included by default so the
+# Makefile works out-of-the-box. To add a keyed provider (Alchemy,
+# Infura, QuickNode, Chainstack), prepend the full URL with the key.
+ENDPOINT_SEPOLIA_FALLBACKS = https://arbitrum-sepolia-rpc.publicnode.com https://arbitrum-sepolia.api.onfinality.io/public https://arbitrum-sepolia.gateway.tenderly.co https://arbitrum-sepolia.drpc.org https://arbitrum-sepolia.blockpi.network/v1/rpc/public
+
+# Full list: primary + fallbacks, space-separated on a single line.
+# Defined explicitly to avoid Make's line-continuation quirks when
+# expanding inside shell recipes.
+ENDPOINT_SEPOLIA_ALL = $(ENDPOINT_SEPOLIA) $(ENDPOINT_SEPOLIA_FALLBACKS)
+
 FOUNDRY_INTERFACES = foundry/src/interfaces
 CHECK_REPORTS = .check-reports
 DEPLOYMENTS_DIR = deployments
@@ -43,6 +59,7 @@ CONTRACTS = \
 	kipio_protocol_config \
 	kipio_identity_content \
 	kipio_account \
+	kipio_recovery \
 	kipio_runtime \
 	kipio_economics \
 	kipio_execution_gateway \
@@ -93,6 +110,50 @@ CONSTRUCTOR_ARGS_kipio_content_access = 0x00000000000000000000000000000000000000
 
 CTOR_ARG_VARS := $(filter CONSTRUCTOR_ARGS_%,$(.VARIABLES))
 export $(CTOR_ARG_VARS)
+
+# ============================================================
+# ENDPOINT RESOLUTION
+# ============================================================
+#
+# resolve_endpoint: probes each endpoint in ENDPOINT_SEPOLIA_ALL in order,
+#                   writes the first reachable one to
+#                   .check-reports/.active-endpoint, and exits 0. If none
+#                   respond, prints the full list of tried URLs and exits 1.
+#
+# The loop uses `for ep in $$ENDPOINTS` where ENDPOINTS is a single-line
+# space-separated string. This avoids Make's line-continuation expansion
+# quirks inside shell recipes.
+#
+# `exit 0` exits the recipe's shell after the first working endpoint is
+# found. This is intentional: subsequent targets reuse the cached endpoint
+# via .check-reports/.active-endpoint.
+#
+# To force a specific endpoint without editing the Makefile:
+#   ENDPOINT_SEPOLIA=https://... make check contract=kipio_economics
+# ------------------------------------------------------------
+
+define resolve_endpoint
+	@mkdir -p $(CHECK_REPORTS); \
+	ENDPOINT_FILE="$(CHECK_REPORTS)/.active-endpoint"; \
+	ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
+	found=0; \
+	for ep in $$ENDPOINTS; do \
+		if curl -s -m 5 -X POST -H "Content-Type: application/json" \
+			--data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+			"$$ep" 2>/dev/null | grep -q '"result"'; then \
+			echo "$$ep" > "$$ENDPOINT_FILE"; \
+			echo "  RPC endpoint: $$ep"; \
+			found=1; \
+			break; \
+		fi; \
+	done; \
+	if [ $$found -eq 0 ]; then \
+		echo "  ERROR: no reachable RPC endpoint found."; \
+		echo "  Tried:"; \
+		for ep in $$ENDPOINTS; do echo "    - $$ep"; done; \
+		exit 1; \
+	fi
+endef
 
 # ============================================================
 # PERMISSION GUARD
@@ -147,9 +208,6 @@ endif
 #
 # Naming convention: `kipio_content_access` → `IKipioContentAccess.sol`.
 # The sed capitalizes the first letter of each segment separated by `_`.
-# Bug history: earlier versions used `s/_\([a-z]\)/\U\1/g` which only
-# capitalized after underscores, not at the start, producing names like
-# `IKipiocontentAccess` for newly-generated files.
 #
 # WHY `cargo run --features export-abi` AND NOT `cargo stylus export-abi`:
 #
@@ -282,23 +340,69 @@ test-all: test test-bridge test-fork
 # 3. ON-CHAIN VALIDATION
 # ============================================================
 
+# probe-rpc: diagnostic target. Tests every endpoint in ENDPOINT_SEPOLIA_ALL
+#            individually and reports chain ID + latency. Use this before
+#            `make check` if you suspect RPC issues.
+#
+# Unlike resolve_endpoint, this target does NOT exit on the first working
+# endpoint: it tests all of them and prints a table so you can see which
+# ones are healthy right now.
+# ------------------------------------------------------------
+
+probe-rpc:
+	@echo ""
+	@echo "============================================================"
+	@echo "  RPC PROBE — Arbitrum Sepolia (chain ID 421614)"
+	@echo "============================================================"
+	@echo "  Endpoints to test:"
+	@ENDPOINTS='$(ENDPOINT_SEPOLIA_ALL)'; \
+	for ep in $$ENDPOINTS; do \
+		printf "  %-70s " "$$ep"; \
+		start=$$(date +%s%3N); \
+		resp=$$(curl -s -m 5 -X POST -H "Content-Type: application/json" \
+			--data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+			"$$ep" 2>/dev/null); \
+		end=$$(date +%s%3N); \
+		latency=$$((end - start)); \
+		if echo "$$resp" | grep -q '"result":"0x66eee"'; then \
+			echo "OK   ($${latency}ms)  chainId=0x66eee"; \
+		elif echo "$$resp" | grep -q '"result"'; then \
+			cid=$$(echo "$$resp" | grep -oE '"result":"0x[0-9a-f]+"' | head -1); \
+			echo "OK   ($${latency}ms)  $$cid"; \
+		elif echo "$$resp" | grep -q '"error"'; \
+		then \
+			err=$$(echo "$$resp" | head -c 80); \
+			echo "ERR  ($${latency}ms)  $$err"; \
+		else \
+			echo "FAIL ($${latency}ms)  no JSON-RPC response"; \
+		fi; \
+	done; \
+	echo ""
+
 check:
 ifdef contract
 	@echo "Checking $(contract)"
-	cd src/$(contract) && cargo stylus check --endpoint $(ENDPOINT_SEPOLIA) --verbose
+	@echo "------------------------------------------------------------"
+	$(resolve_endpoint)
+	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	cd src/$(contract) && cargo stylus check --endpoint "$$ACTIVE" --verbose
 else
 	@set +e; \
 	FAILED=""; \
 	mkdir -p $(CHECK_REPORTS); \
 	REPORT="$(CHECK_REPORTS)/sizes.tsv"; \
 	printf "contract\tcompressed_bytes\tuncompressed_bytes\tfragments\n" > "$$REPORT"; \
+	$(resolve_endpoint); \
+	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	echo "  Using RPC: $$ACTIVE"; \
+	echo ""; \
 	for c in $(CONTRACTS); do \
 		LOG="$(CHECK_REPORTS)/$$c.log"; \
 		echo ""; \
 		echo "============================================================"; \
 		echo "Checking $$c"; \
 		echo "============================================================"; \
-		(cd src/$$c && cargo stylus check --endpoint $(ENDPOINT_SEPOLIA) --verbose) > "$$LOG" 2>&1; \
+		(cd src/$$c && cargo stylus check --endpoint "$$ACTIVE" --verbose) > "$$LOG" 2>&1; \
 		RC=$$?; \
 		cat "$$LOG"; \
 		if [ $$RC -ne 0 ]; then FAILED="$$FAILED $$c"; fi; \
@@ -354,7 +458,9 @@ ifdef contract
 	echo "============================================================"; \
 	echo "  Deploying $(contract)"; \
 	echo "============================================================"; \
-	printf "  %-22s %s\n" "Endpoint:"         "$(ENDPOINT_SEPOLIA)"; \
+	$(resolve_endpoint); \
+	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	printf "  %-22s %s\n" "Endpoint:"         "$$ACTIVE"; \
 	printf "  %-22s %s\n" "Constructor args:" "$${CTOR_ARGS[*]:-<none>}"; \
 	printf "  %-22s %s\n" "Args count:"       "$${#CTOR_ARGS[@]}"; \
 	printf "  %-22s %s\n" "Log file:"         "$$LOG"; \
@@ -362,13 +468,13 @@ ifdef contract
 	set -o pipefail; \
 	if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 		( cd src/$(contract) && cargo stylus deploy \
-			--endpoint $(ENDPOINT_SEPOLIA) \
+			--endpoint "$$ACTIVE" \
 			--private-key $(PRIVATE_KEY) \
 			--max-fee-per-gas-gwei=1 \
 			--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 	else \
 		( cd src/$(contract) && cargo stylus deploy \
-			--endpoint $(ENDPOINT_SEPOLIA) \
+			--endpoint "$$ACTIVE" \
 			--private-key $(PRIVATE_KEY) \
 			--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 	fi; \
@@ -382,7 +488,7 @@ ifdef contract
 		exit $$PIPE_RC; \
 	fi; \
 	DEPLOYER=$$(cast wallet address --private-key "$(PRIVATE_KEY)" 2>/dev/null || echo ""); \
-	bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$(contract)" "$$DEPLOYER" "$(ENDPOINT_SEPOLIA)" > "$$DIR/manifest.json"; \
+	bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$(contract)" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/manifest.json"; \
 	addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/manifest.json"); \
 	if [ -z "$$addr" ]; then \
 		echo ""; \
@@ -425,6 +531,9 @@ ifdef contract
 else
 	@echo "Deploying ALL contracts (use deploy-full for a manifest)"
 	@set -e; \
+	$(resolve_endpoint); \
+	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	echo "  Using RPC: $$ACTIVE"; \
 	for c in $(CONTRACTS); do \
 		echo ""; \
 		echo "============================================================"; \
@@ -437,13 +546,13 @@ else
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			(cd src/$$c && cargo stylus deploy \
-				--endpoint $(ENDPOINT_SEPOLIA) \
+				--endpoint "$$ACTIVE" \
 				--private-key $(PRIVATE_KEY) \
 				--max-fee-per-gas-gwei=1 \
 				--constructor-args "$${CTOR_ARGS[@]}"); \
 		else \
 			(cd src/$$c && cargo stylus deploy \
-				--endpoint $(ENDPOINT_SEPOLIA) \
+				--endpoint "$$ACTIVE" \
 				--private-key $(PRIVATE_KEY) \
 				--max-fee-per-gas-gwei=1); \
 		fi; \
@@ -462,7 +571,9 @@ endif
 ifndef tx
 	@echo "ERROR: verify requires tx=0x<deployment-tx-hash>"; exit 1
 endif
-	cd src/$(contract) && cargo stylus verify --deployment-tx $(tx) --endpoint $(ENDPOINT_SEPOLIA)
+	$(resolve_endpoint)
+	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	cd src/$(contract) && cargo stylus verify --deployment-tx $(tx) --endpoint "$$ACTIVE"
 
 # ============================================================
 # 5. CACHE (ArbOS CacheManager)
@@ -472,7 +583,9 @@ cache-suggest:
 ifndef addr
 	@echo "ERROR: cache-suggest requires addr=<contract-address>"; exit 1
 endif
-	cargo stylus cache suggest-bid $(addr) --endpoint $(ENDPOINT_SEPOLIA)
+	$(resolve_endpoint)
+	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	cargo stylus cache suggest-bid $(addr) --endpoint "$$ACTIVE"
 
 cache-bid:
 ifndef addr
@@ -481,13 +594,17 @@ endif
 ifndef bid
 	@echo "ERROR: cache-bid requires bid=<amount-in-wei>"; exit 1
 endif
-	cargo stylus cache bid $(addr) $(bid) --endpoint $(ENDPOINT_SEPOLIA) --private-key $(PRIVATE_KEY)
+	$(resolve_endpoint)
+	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	cargo stylus cache bid $(addr) $(bid) --endpoint "$$ACTIVE" --private-key $(PRIVATE_KEY)
 
 cache-status:
 ifndef addr
 	@echo "ERROR: cache-status requires addr=<contract-address>"; exit 1
 endif
-	cargo stylus cache status $(addr) --endpoint $(ENDPOINT_SEPOLIA)
+	$(resolve_endpoint)
+	@ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	cargo stylus cache status $(addr) --endpoint "$$ACTIVE"
 
 # ============================================================
 # 6. FULL DEPLOYMENT PIPELINE
@@ -495,7 +612,8 @@ endif
 
 deploy-full:
 	@set -o pipefail; \
-	ENDPOINT="$(ENDPOINT_SEPOLIA)"; \
+	$(resolve_endpoint); \
+	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
 	PKEY="$(PRIVATE_KEY)"; \
 	DIR="$(DEPLOYMENTS_DIR)/$$(date +%Y%m%d_%H%M%S)"; \
 	mkdir -p "$$DIR"; \
@@ -505,10 +623,11 @@ deploy-full:
 	jq -n \
 		--arg project "$(PROJECT_NAME)" \
 		--arg ts "$$TIMESTAMP" \
-		--arg endpoint "$$ENDPOINT" \
+		--arg endpoint "$$ACTIVE" \
 		'{project_info: {name: $$project, compiler: "Cargo Stylus (Rust)", timestamp: $$ts, network: "Arbitrum Sepolia (Testnet)", rpc_endpoint: $$endpoint}, contracts: {}}' \
 		> "$$DIR/manifest.json"; \
 	echo "Deployment directory: $$DIR"; \
+	echo "  Using RPC: $$ACTIVE"; \
 	for c in $(CONTRACTS); do \
 		echo ""; \
 		echo "============================================================"; \
@@ -522,19 +641,19 @@ deploy-full:
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint $$ENDPOINT \
+				--endpoint "$$ACTIVE" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint $$ENDPOINT \
+				--endpoint "$$ACTIVE" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
 		if [ $$PIPE_RC -ne 0 ]; then echo "FAILED: $$c (exit $$PIPE_RC)"; exit 1; fi; \
-		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ENDPOINT" > "$$DIR/$$c.manifest.json"; \
+		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/$$c.manifest.json"; \
 		addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/$$c.manifest.json"); \
 		if [ -z "$$addr" ]; then echo "FAILED: $$c (no address)"; exit 1; fi; \
 		echo "  $$c → $$addr"; \
@@ -558,7 +677,9 @@ deploy-resume:
 	DIR="$$(ls -d $(DEPLOYMENTS_DIR)/*/ 2>/dev/null | sort | tail -n 1)"; \
 	if [ -z "$$DIR" ]; then echo "No previous deployment found."; exit 1; fi; \
 	echo "Resuming deployment: $$DIR"; \
-	ENDPOINT="$(ENDPOINT_SEPOLIA)"; \
+	$(resolve_endpoint); \
+	ACTIVE=$$(cat $(CHECK_REPORTS)/.active-endpoint); \
+	echo "  Using RPC: $$ACTIVE"; \
 	PKEY="$(PRIVATE_KEY)"; \
 	DEPLOYER=$$(cast wallet address --private-key "$$PKEY" 2>/dev/null || echo ""); \
 	for c in $(CONTRACTS); do \
@@ -576,19 +697,19 @@ deploy-resume:
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint $$ENDPOINT \
+				--endpoint "$$ACTIVE" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && cargo stylus deploy \
-				--endpoint $$ENDPOINT \
+				--endpoint "$$ACTIVE" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=1 ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
 		if [ $$PIPE_RC -ne 0 ]; then echo "FAILED: $$c"; exit 1; fi; \
-		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ENDPOINT" > "$$DIR/$$c.manifest.json"; \
+		bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$LOG" "$(PROJECT_NAME)" "$$c" "$$DEPLOYER" "$$ACTIVE" > "$$DIR/$$c.manifest.json"; \
 		addr=$$(jq -r '.contract_details.contract_address // empty' "$$DIR/$$c.manifest.json"); \
 		if [ -z "$$addr" ]; then echo "FAILED: $$c (no address)"; exit 1; fi; \
 		echo "  $$c → $$addr"; \
@@ -691,6 +812,7 @@ help:
 	@echo "  test-all      All three layers"
 	@echo ""
 	@echo "ON-CHAIN"
+	@echo "  probe-rpc     Test all RPC endpoints (diagnostic)"
 	@echo "  check         Dry-run activation + verbose output + size table"
 	@echo "  deploy        Deploy single (contract=<name>) or all."
 	@echo "  verify        Reproducible verification (contract + tx)"
@@ -717,7 +839,7 @@ help:
 	@echo "==================================================="
 
 .PHONY: build abi lock test test-bridge test-fork test-all \
-        check deploy verify deploy-full deploy-resume \
+        probe-rpc check deploy verify deploy-full deploy-resume \
         cache-suggest cache-bid cache-status \
         print-constructor-args \
         fix-perms nuke \
