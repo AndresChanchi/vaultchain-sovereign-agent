@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 
-use stylus_sdk::alloy_primitives::U256;
+use stylus_sdk::alloy_primitives::{Address, U256};
 use stylus_sdk::alloy_sol_types::SolError;
 use stylus_sdk::prelude::*;
 
@@ -73,5 +73,38 @@ pub(crate) fn handle_withdraw_refund(this: &mut KipioEconomics) -> Result<(), Ve
     this.settle_payment(account, amount)?;
 
     this.vm().log(RefundWithdrawn { account, amount });
+    Ok(())
+}
+
+/// Credits an identity's pull-based refund balance with attached ETH.
+///
+/// Called by the Execution Gateway after a sponsored activation to return
+/// the unused sponsorship budget to the identity. The ETH is attached as
+/// `msg.value` to keep the interface minimal: the caller sends exactly the
+/// amount it wants credited.
+///
+/// # Validation
+///
+/// `msg.value` must equal `amount`. This prevents a caller from crediting
+/// less than it claims, or from crediting arbitrary amounts without
+/// attaching the ETH.
+///
+/// # Permissionless
+///
+/// Anyone can credit any identity. There is no security risk: the caller
+/// must attach the ETH being credited, so it is effectively a donation to
+/// the identity's refund balance. The identity withdraws later via
+/// `withdraw_refund`.
+pub(crate) fn handle_credit_identity_refund(
+    this: &mut KipioEconomics,
+    identity: Address,
+    amount: U256,
+) -> Result<(), Vec<u8>> {
+    let msg_value = this.vm().msg_value();
+    if msg_value != amount {
+        return Err(ZeroAmount {}.abi_encode());
+    }
+
+    this.credit_refund(identity, amount);
     Ok(())
 }

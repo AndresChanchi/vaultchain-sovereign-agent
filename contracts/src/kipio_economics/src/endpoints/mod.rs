@@ -201,6 +201,20 @@ impl KipioEconomics {
         credit::handle_withdraw_refund(self)
     }
 
+    /// Credits an identity's refund balance with attached ETH.
+    ///
+    /// The caller must attach exactly `amount` wei. Used by the Execution
+    /// Gateway to return unused sponsorship budget to the identity after a
+    /// sponsored activation.
+    #[payable]
+    pub fn credit_identity_refund(
+        &mut self,
+        identity: Address,
+        amount: U256,
+    ) -> Result<(), Vec<u8>> {
+        credit::handle_credit_identity_refund(self, identity, amount)
+    }
+
     #[payable]
     pub fn deposit_sponsor_funds(&mut self, sponsor_id: B256) -> Result<(), Vec<u8>> {
         sponsors::handle_deposit_sponsor_funds(self, sponsor_id)
