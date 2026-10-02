@@ -310,6 +310,22 @@ cast call -r http://localhost:8547 \
 # Should print 116 (61 + 55) after the upgrade
 ```
 
+Verify that the devnode is active and that your account balance is zero:
+
+```bash
+cast balance 0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9 \
+  --rpc-url http://localhost:8547
+```
+
+Transfer 100 ETH from the devnode account to your account:
+
+```bash
+cast send 0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9 \
+  --value 100ether \
+  --private-key 0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659 \
+  --rpc-url http://localhost:8547
+```
+
 Then run the check:
 
 ```bash
@@ -349,6 +365,8 @@ Alternatively, pass overrides inline:
 make check ENDPOINT_SEPOLIA="http://localhost:8547" \
            ENDPOINT_SEPOLIA_ALL="http://localhost:8547"
 ```
+
+**Watch out for the shell environment overriding `.env`.** The Makefile does `include .env` and re-exports every variable, which means the values in the file always win for Makefile-invoked commands. `cast send` invoked directly, however, resolves `$PRIVATE_KEY` from the shell first. If a `PRIVATE_KEY` is left exported in your shell session (from an earlier experiment or another `.env`), `cast send` will sign with that account instead of the one in `.env`. If a `cast send` returns `Unauthorized`, or the transaction succeeds but the contract state does not change, this is the usual cause. Prefix the command with `set -a; source .env; set +a` to reset the environment for that invocation.
 
 ### Interaction with `fragments.toml`
 
@@ -623,6 +641,37 @@ They are not interchangeable. Passing `--max-fee-per-gas-gwei` to `cast send` fa
 
 ---
 
+## Why immutable contracts and a registry
+
+Every contract in this workspace is deployed **once** and lives at its address **forever**. No delegatecall, no proxy, no storage slot that points to an implementation, no upgrade admin. When a contract needs to change, a new instance is deployed and the change is announced through `kipio_protocol_config`, which is the only mutable piece in the system.
+
+This is a deliberate architectural choice. The alternatives were considered and rejected:
+
+* **UUPS / Transparent proxy.** Introduces a storage layout that must be preserved across upgrades, a delegatecall boundary on every call, and an upgrade admin whose compromise invalidates the entire protocol. Every state read becomes an SLOAD against a slot that was written by a constructor of a different contract; every internal call crosses a `DELEGATECALL` that hides its true `msg.sender`.
+* **Diamond (EIP-2535).** Multiple facets sharing storage through a fallback that dispatches by selector. The selector table becomes the upgrade surface, and any missing selector reverts without a message. Debugging cross-facet interactions requires reasoning about a shared storage layout that no single file owns.
+* **Minimal proxies (EIP-1167 / EIP-1967).** Same storage-collision risk, same delegatecall opacity, plus a bytecode layout that must be maintained out of band.
+
+The registry pattern inverts the tradeoff:
+
+* **Immutability is a feature, not a constraint.** A contract's bytecode hash is its identity. `cargo stylus verify` can prove that the WASM on-chain matches the source in the repository, because neither has changed since deploy.
+* **Upgrades are explicit and visible.** A module change is an on-chain transaction (`setXAddress`) that emits `ModuleAddressUpdated(moduleId, oldAddress, newAddress)`. Every consumer sees the change on the next block. There is no silent delegatecall that swaps implementation under the caller's feet.
+* **The audit trail is the chain.** Every version of every module lives at its own address, callable forever. There is no "the old implementation was deleted". A user can always point a block explorer at the address a contract used to resolve to and inspect exactly what ran.
+* **Each module owns its storage.** No two contracts share a slot. No contract has to reason about a storage layout defined elsewhere. This makes verification, testing, and reasoning local: everything a contract needs is inside that contract.
+* **The frontend's job is small and precise.** It tracks one address (`protocol_config`) and one event (`ModuleAddressUpdated`). Everything else is resolved dynamically.
+
+The one contract that does not follow the pattern is `kipio_execution_gateway`. It hardcodes the runtime, economics, and recovery addresses at compile time, because those three are baked into the CREATE2 derivation of every account it deploys. Changing them would change the address of every future account, and existing accounts would still reject calls from a `runtime` different from the one recorded in their storage. The Gateway is a version anchor, not a module. See **Versioning Model** for the full reasoning.
+
+The consequence is that "upgrading" the protocol means:
+
+1. Deploy a new instance of the module that changed.
+2. Call the corresponding setter in `kipio_protocol_config`.
+3. If the module is `runtime`, `economics`, or `recovery`, also redeploy the Gateway so it embeds the new triple.
+4. Emit the event, and let the frontend react.
+
+Nothing is destroyed. Everything is traceable. The cost is one extra deploy per change, which on Arbitrum is bounded by the arb gas of the module itself. The benefit is that the protocol's history is linear and auditable, and no state can be mutated by an admin.
+
+---
+
 ## Versioning Model
 
 The protocol has a **two-layer versioning scheme**: an on-chain registry that resolves the *current* version of each module, and a set of immutable contracts whose coupling is determined at deployment time. This section documents how the two layers relate and what they imply for upgrades.
@@ -803,6 +852,54 @@ Deploy the new module, then redeploy the Gateway with the new triple, then regis
 **Cost:** Deployment gas for the new module + deployment gas for the new Gateway + 4 `cast send` calls.
 
 **Consequence:** Existing accounts remain bound to the old triple. They continue to accept calls from the old `runtime`. New accounts use the new triple. Both sets of accounts coexist indefinitely.
+
+### Case 3b — A single `kipio_identity_content` bug fix or feature change
+
+This is the case that surfaced the `abi_decode` bug. `kipio_identity_content` is a regular registry consumer: it does not feed the Gateway's CREATE2 derivation and does not hold the runtime's account state. Changing it is a two-step operation.
+
+**Scenario:** You found a bug in `kipio_identity_content`, or you added an endpoint that needs to reach production.
+
+**Steps:**
+
+1. Deploy the new version:
+
+   ```bash
+   make deploy contract=kipio_identity_content
+   ```
+
+   The new address lands in a fresh `deployments/<ts>/` folder. The old one remains untouched at its address.
+
+2. Re-point the registry:
+
+   ```bash
+   PROTOCOL_CONFIG=<from deployments/latest/addresses.json>
+   NEW_IDENTITY=0x...
+
+   cast send $PROTOCOL_CONFIG "setIdentityContentAddress(address)" $NEW_IDENTITY \
+     --rpc-url https://arbitrum-sepolia-rpc.publicnode.com \
+     --private-key $PRIVATE_KEY \
+     --gas-price 1gwei
+   ```
+
+   Emits `ModuleAddressUpdated(2, old, new)`.
+
+3. Re-apply the provider slots on the new instance. The provider addresses are stored per-contract, so a fresh deploy starts from the constructor defaults (the placeholders from `Makefile`). To restore the real Irys address:
+
+   ```bash
+   IRYS=0x853758425e953739F5438fd6fd0Efe04A477b039
+   cast send $NEW_IDENTITY "setStorageProvider(address)" $IRYS \
+     --rpc-url https://arbitrum-sepolia-rpc.publicnode.com \
+     --private-key $PRIVATE_KEY \
+     --gas-price 1gwei
+   ```
+
+   The `query_provider` and `access_provider` slots stay at their placeholders until the real providers land. See **Pending and blocked items**.
+
+4. No Gateway change, no runtime change, no account migration. The consumers of `kipio_identity_content` resolve the new address from the registry on their next call.
+
+**Events emitted:** `ModuleAddressUpdated(2, old, new)` and `ProviderUpdated(0, placeholder, irys)`.
+
+**Cost:** Deploy + 4 `cast send` calls.
 
 ### Case 4 — `kipio_account` changes
 
@@ -1064,6 +1161,44 @@ The lookup produces a `call_indirect` in WASM whose target is a runtime value lo
 
 The rule of thumb for future contracts: if the post-`wasm-opt` `user_entrypoint` exceeds ~30,000 ops (`wasm-objdump -d` count), it is at risk of crossing the ArbOS limit. Re-measure after every significant endpoint addition.
 
+### Manual fallback dispatch: the `abi_decode` contract
+
+Every `dispatch_*` handler in a contract that uses a manual `#[fallback]` receives an **argument slice without a selector**. The fallback consumes the first four bytes and forwards the rest:
+
+```rust
+let selector = u32::from_be_bytes([calldata[0], calldata[1], calldata[2], calldata[3]]);
+let args = &calldata[4..];
+// ...
+h(self, args_inner, user)
+```
+
+Alloy exposes two decode paths on the `SolCall` trait, and they are **not interchangeable** on a slice without a selector:
+
+| Function | Expects | Behavior on selector-less input |
+|---|---|---|
+| `SolCall::abi_decode(data)` | `selector \|\| args` | **Fails silently.** Validates `data[..4] == Self::SELECTOR` before decoding. On a slice whose first four bytes are the start of the arguments (not the selector), the check fails and returns `Err`. |
+| `SolCall::abi_decode_raw(data)` | `args` only | Decodes the argument tuple directly, no selector validation. |
+
+Using `abi_decode` on a selector-stripped slice is the single most common bug in manual fallback dispatch. It produces a very specific and misleading symptom:
+
+* **0-argument functions work.** They never call `abi_decode`, so the selector check never runs. The fallback dispatches the handler, the handler returns a constant or reads storage, and the call succeeds.
+* **1+ argument functions fail with `revert data: "0x"`.** The handler calls `abi_decode`, which returns `Err`. The typical pattern `let call = someCall::abi_decode(args).map_err(|_| Vec::new())?;` collapses that into an empty revert. The transaction reverts with no message, no selector, no custom error, nothing.
+
+Because the failure is empty, it looks identical to a missing-handler revert (the `None` branch of the dispatch match also returns `Err(Vec::new())`), which makes it easy to misattribute to the dispatcher. It is not. The handler is reached, the args are correct, and the decode fails.
+
+**Rule.** Inside a `dispatch_*` handler under a manual fallback, always use `SolCall::abi_decode_raw`. Reserve `abi_decode` for call sites where the input genuinely carries a selector (e.g. when the handler receives the raw calldata from another contract that did not strip it). None of the current handlers do.
+
+The fix is mechanical: every occurrence of `::abi_decode(args)` in `src/kipio_identity_content/src/endpoints/` was replaced by `::abi_decode_raw(args)`, 41 sites in total, verified by compiling, deploying to the devnode, and calling a representative set of functions with 0, 1, and 3 arguments.
+
+**Diagnosis recipe.** When a manual fallback misbehaves and the symptom is an empty revert, do not guess — instrument. Emit a revert payload that carries the raw slices. `cast call` prints the revert data; a small decoder reconstructs it. The approach used here was:
+
+1. Replace the production fallback with a debug version that packs `calldata`, `args`, `args_inner`, and the handler result into a binary blob and reverts with it.
+2. Call a representative set (0-arg, 1-arg, N-arg) and decode the payload with a Python script.
+3. Read off the exact slice shape at each stage. In this case, `args_inner` was correct at the fallback (`len=32`, correct bytes) but `handler_result` was `Err(0B)` — pointing the finger unambiguously at the decode step inside the handler.
+4. Replace the debug fallback with the production fallback, apply the fix, and re-verify.
+
+Events are not usable for this: `cast call` discards them, and any event emitted before a revert is rolled back with the rest of the state. The revert data is the only channel that survives.
+
 ### ABI export under `#[fallback]`
 
 `#[public]` auto-generates a `GenerateAbi` impl used by `cargo stylus export-abi`. With `#[fallback]`, the macro still emits an empty impl and the export prints `interface IKipioIdentityContent {}`. To restore the interface, `kipio_identity_content` defines a shadow type `KipioIdentityContentAbi` in `src/abi/export.rs` that carries a manual `GenerateAbi` implementation, and `bin/export_abi.rs` points `print_from_args` at it.
@@ -1190,13 +1325,13 @@ User-facing mutators require `msg_sender == runtime` and carry the effective use
 
 The identity anchor also exposes `applyAuthorizedRotation`, a runtime-only endpoint that applies an externally approved key rotation. The runtime reads the policy state from `kipio_recovery`, validates the approval, and then forwards the rotation call to `kipio_identity_content`. This replaces the older `rotateKeyFromPolicy` endpoint, which required `kipio_identity_content` to talk to the policy ledger directly.
 
-**Provider configuration.** The constructor takes three provider addresses: `storage_provider`, `query_provider`, and `access_provider`. These are stored in the contract's own storage, not in `protocol_config`. They can be updated later via the owner-gated setters `setStorageProvider`, `setQueryProvider`, and `setAccessProvider`, each of which emits a `ProviderUpdated` event. The constructor does not validate these against zero, so during early deployments placeholder non-zero addresses are used until real providers exist:
+**Provider configuration.** The constructor takes three provider addresses: `storage_provider`, `query_provider`, and `access_provider`. These are stored in the contract's own storage, not in `protocol_config`. They can be updated later via the owner-gated setters `setStorageProvider`, `setQueryProvider`, and `setAccessProvider`, each of which emits a `ProviderUpdated` event.
 
 | Slot | Intended provider | Current status |
 |---|---|---|
-| `storage_provider` | Irys | Placeholder (`0x01`) |
-| `query_provider` | SXT (Space and Time) | Placeholder (`0x02`); SXT is **cancelled** — see roadmap |
-| `access_provider` | TACo (Threshold Network) or LIT Protocol | Placeholder (`0x03`) |
+| `storage_provider` | Irys | **Real address set** on the devnode: `0x853758425e953739F5438fd6fd0Efe04A477b039`. On Sepolia, remains the constructor placeholder until the contract is redeployed with the fix and the setter re-applied. |
+| `query_provider` | SXT (Space and Time) | Placeholder (`0x02`); SXT is **cancelled** — see roadmap. |
+| `access_provider` | TACo (Threshold Network) or LIT Protocol | Placeholder (`0x03`); no approved provider yet. |
 
 `expected_workflow_id` is a `B256` used to gate CRE reports. It is `0x00..00` until the CRE workflow is deployed. Any endpoint that touches these slots will fail until the real addresses are set.
 
@@ -1286,78 +1421,47 @@ The codebase enforces operational constraints that support low-power mobile clie
 * **CEI ordering.** Every mutating handler mutates state before any cross-contract call. If the external call reverts, the whole transaction — including the local mutation — rolls back atomically.
 * **Defence in depth.** `code_size` checks reject EOAs and precompiles before they can be stored as config addresses. `Address::ZERO` is validated in every path that receives a target even when the upstream source is trusted.
 * **Caller gate.** User-facing mutators across `kipio_account`, `kipio_recovery`, and `kipio_economics` accept calls only from the immutable `runtime_address`. The contracts are pure executors; authorization is orchestrated upstream by Runtime.
-* **EIP-2771 for content and settlement.** `kipio_identity_content` and `kipio_economics` follow the trusted-forwarder pattern: the runtime passes the effective user as a 20-byte suffix appended to the calldata. The contracts resolve the effective user from the suffix and reject direct calls with `NotForwarded`. The runtime never falls back to `msg_sender` for the effective user, so there is no ambiguity about who is acting.
+* **EIP-2771 for content and settlement.** `kipio_identity_content` and `kipio_economics` follow the trusted-forwarder pattern: the runtime passes the effective user as a 20-byte suffix appended to the calldata. The contracts resolve the effective user from the suffix and reject direct calls with `NotForwarded`. The runtime never falls back to `msg.sender` for the effective user, so there is no ambiguity about who is acting.
 * **Recovery digests bound to chain and nonce.** Guardian approval digests include the `chain_id`, the Account address, the request ID, and the target hash. Cancel digests include the same plus the Account's current nonce, making them single-use.
 * **Reentrancy.** Stylus SDK 0.10.5+ disables reentrancy at the runtime level. The design does not rely on manual guards: every cross-call uses `RawCall` (not reentrant by construction), and every state mutation is completed before the cross-call as a matter of CEI discipline.
 
 ---
 
-## Production Roadmap
+## Troubleshooting
 
-### Phase 1: mitigating the `N+1` RPC latency problem
+A short index of the symptoms seen while developing against this workspace, and where to look.
 
-The system previously relied on a **normalised storage pattern** where asset arrays (`StorageVec<B256>`) returned arrays of plain hashes, forcing frontends to trigger sequential nested RPC calls to resolve each encrypted asset location. The registry has shifted to an **atomic batch retrieval pattern**. By wrapping fields inside a Stylus composite type, clients fetch indices and descriptors in a single round-trip:
+### Empty revert (`data: "0x"`) on every call with arguments
 
-```rust
-sol! {
-    struct EncryptedAssetRecord {
-        bytes32 contentHash;
-        string encryptedTxId;
-        uint64 version;
-        bool isPublic;
-    }
-}
+Most likely `SolCall::abi_decode` used on a selector-stripped slice inside a manual fallback handler. See **Manual fallback dispatch: the `abi_decode` contract**. The signature is: 0-arg calls work, 1+ arg calls revert with no data, no custom error selector, no log. Fix: use `SolCall::abi_decode_raw`.
 
-pub fn get_vault_paginated_full(
-    &self,
-    owner: Address,
-    offset: u32,
-    limit: u32,
-) -> Vec<EncryptedAssetRecord> {
-    // Structural pagination returning dense composite objects
-}
-```
+### `Unauthorized` on `cast send`, but the transaction succeeded from the Makefile
 
-### Phase 2: hybrid capability and ecosystem scaling
+The shell has a `PRIVATE_KEY` exported that differs from the one in `.env`. The Makefile `include`s `.env` and re-exports, so its commands use the right key; `cast send` invoked directly uses the shell's value. Fix: `set -a; source .env; set +a` before the `cast` invocation, or open a fresh shell.
 
-1. **Multichain wallets and alternative payment channels**: expanding verification hooks to settle access fees in arbitrary currencies (CCOP, CELO, USDG, etc.). The economic layer is provider-agnostic; adding a new funding source does not require changes to the content or identity layers.
-2. **Media-agnostic core anchors**: keeping metadata pointers fully abstract so image, video, document, and agent behaviour payloads can be parsed without core state upgrades.
-3. **Hybrid verification pipelines**: running dual-track fuzz testing with `stylus-test` for storage assertions and Forge network state forking for multi-contract integration flows.
-4. **Additional operational modules**: adding new modules (agents, ML inference adapters, alternative recovery policies) as new entries in the protocol config registry. Existing contracts inherit them without redeploying.
+### `stylus activations not allowed for this request`
 
-### Pending and blocked items
+The public RPC refuses to simulate activation. Not a contract bug. Either let `scripts/find-working-endpoint.sh` cycle to another endpoint, or switch to the devnode (see **Local Development with nitro-devnode**).
 
-The following items are intentionally not implemented in the current buildathon deployment. They are documented here so that the state of the codebase is unambiguous.
+### `cargo stylus check` fails on a fragmented contract with `execution reverted, data: "0x"`
 
-* **Space and Time (SXT)** — **cancelled.** The SXT ecosystem is not mature enough for production integration, and the onboarding process is bureaucratic. The `query_provider` slot in `kipio_identity_content` will stay as a placeholder. If SXT matures, the provider can be set via `setQueryProvider`. No contract changes are needed.
-* **Chainlink CRE** — **pending external approval.** The workflow is fully coded (`kipio_economics/on_report` is production-ready) but the deployment to a Chainlink DON requires an access approval that has been requested and is under review. Until then, the CRE settlement path is inert: the contract accepts `onReport` calls from the authorized forwarder, but no forwarder will call it because there is no workflow registered. Once approval lands, the workflow is deployed, its `workflowId` is computed and registered in `kipio_economics` via `updateCreWorkflowId`, and the settlement path activates.
-* **Chainlink without CRE + Uniswap v4** — **not evaluated.** An alternative settlement path that bypasses CRE entirely and uses Uniswap v4 hooks to source ETH on Arbitrum Sepolia from arbitrary testnet tokens has been mentioned but not designed or prototyped. This path would decouple the settlement flow from Chainlink's approval cycle, at the cost of tighter coupling to the Uniswap v4 hook system.
-* **Irys storage** — **pending real address.** The `storage_provider` slot in `kipio_identity_content` is a placeholder. Any call that requires resolving a storage quote will fail until the real Irys address is set. The `setStorageProvider` setter is ready; only the value is missing. See **Upgrade Procedures**, Case 1.
-* **TACo (Threshold Network)** — **currently paused.** The upstream project is inactive. The `access_provider` slot is a placeholder. LIT Protocol is the alternate candidate; the setter (`setAccessProvider`) accepts either. See **Upgrade Procedures**, Case 1.
-* **Real multisig ownership** — the deployed contracts use a single EOA as owner. Migration to a multisig (Safe) is a post-buildathon step: `transferOwnership` and `acceptOwnership` on each contract handle it.
-* **Contract-level test suite** — the scaffolding under `tests/` (`unit.rs`, `e2e.rs`, `fork.rs`, `common/mod.rs`) is empty. The plan is to build it in three layers: unit tests for pure Rust logic (codec, pack/unpack, status transitions), integration tests with `TestVM` for cross-contract flows, and fork tests against the deployed contracts on Sepolia.
-* **Fuzz testing** — no property-based tests are in place. The intent is to fuzz the codec and the state-transition logic against invariants derived from the DDD specification.
+The node is running ArbOS below 60. Fragmentation was enabled in ArbOS 60 and the compressed/uncompressed limits were raised in ArbOS 61. On a devnode, schedule the upgrade explicitly (see **Local Development with nitro-devnode**). On a public network, verify the ArbOS version before filing a bug against the contract.
 
----
+### `error: unexpected argument '--max-fee-per-gas-gwei' found` on `cast send`
 
-## Paths Not Explored
+`--max-fee-per-gas-gwei` is a `cargo stylus` flag. For `cast send`, the equivalent is `--gas-price <value>gwei`. The two CLIs are not interchangeable. See the note at the end of **Deployment Architecture**.
 
-Several alternative designs were considered and rejected during the initial architecture phase. Two categories follow: paths that were tried and reverted, and paths that were never attempted.
+### `Permission denied (os error 13)` on `make build` after a `make deploy`
 
-### Tried and reverted
+Docker wrote `target/` as `root`. Run `make fix-perms`. If the situation is beyond recovery, `make nuke` resets both `target/` and the cached `cargo-stylus-base` Docker image.
 
-* **`kipio_recovery` fused into `kipio_account`.** Fusion would have removed one cross-call per recovery request. Reverted: recovery is a shared service with its own request ledger, and separating the two keeps each WASM comfortably under the ArbOS uncompressed activation limit. The audit trail of a shared recovery singleton is also preferable.
+### `cargo check` fails with `unresolved import kipio_identity_content::abi::export`
 
-### Never attempted
+`cargo check` builds every target in the crate, including the `export-abi` bin, which requires the `export-abi` feature. Either run `cargo check --features export-abi`, or add `required-features = ["export-abi"]` to the `[[bin]]` section in the crate's `Cargo.toml`. The Makefile's `make abi` target always passes `--features export-abi`, so this only affects raw `cargo check`.
 
-* **`kipio_execution_gateway` decoupled from `kipio_account`.** Currently the Gateway embeds the root init code of `kipio_account` as a compile-time constant and deploys accounts via `RawDeploy` + CREATE2. An alternative would be to introduce a separate `kipio_account_factory` contract that owns the init code and exposes `predict(salt)`, `deploy(salt)`, and `is_ready(account)` to the Gateway. The Gateway would then only know the factory interface, not the account's bytecode. **This path was not explored.** It would move the coupling from the Gateway to the factory without eliminating it, and it would add a cross-call per bootstrap. The self-contained Gateway is arguably simpler and more auditable. Both designs are legitimate; the current one was chosen because the Gateway is the *only* contract that needs to be rebuilt when `kipio_account` changes, which is a natural upgrade boundary.
-* **A separate `kipio_account_factory` that also deploys fragments on demand.** This would fragment accounts per-user rather than sharing fragments across all accounts. It would multiply on-chain state by the number of users (3 fragments + 1 root per user instead of 1 root per user) with no functional benefit. Rejected on principle.
-* **Proxy-based upgradeability for the account.** Considered and rejected in favour of `protocol_config`-driven module resolution. Proxy patterns introduce delegatecall semantics, storage collision risk, and an additional trust assumption on the upgrade admin. The registry pattern keeps each module immutable at its address and centralises only the *resolution* logic.
-* **`cargo stylus get-initcode` for fragmented contracts.** Blocked upstream. The reverse-engineering path documented above was chosen instead.
+### `getOwner()` reverts on `kipio_identity_content`
 
-### Analysed and rejected for concrete reasons
-
-* **`kipio_execution_gateway` reading runtime/economics/recovery from `protocol_config` at bootstrap time instead of hardcoding them at compile time.** This was analysed and rejected. The Gateway is not a module like the others — it is a **version anchor**. Every account created by Gateway vN stores `(runtime_vN, recovery_vN)` in its own storage at construction time, and rejects calls from any other runtime. If the Gateway resolved runtime from `protocol_config` at bootstrap time, an account created with `runtime_vN` would reject calls from `runtime_vN+1` even though the frontend thinks it is using the latest runtime. Decoupling the Gateway would silently break the caller gate of every existing account. The hardcoding is therefore a **correctness requirement, not a convenience**. See **Versioning Model** for the full picture.
+`kipio_identity_content` has no `getOwner()` endpoint. Its ownership surface is limited to `transferOwnership`, `acceptOwnership`, and the owner-gated setters. To inspect the current owner from the CLI, look at the `OwnershipTransferStarted` / `OwnerUpdated` events, or read the storage slot directly. This is a difference from `kipio_protocol_config`, which does expose `getOwner()`.
 
 ---
 
@@ -1373,6 +1477,8 @@ Several alternative designs were considered and rejected during the initial arch
 * **Never forget `make fix-perms` after a deploy.** Docker runs as root and leaves `target/` unwritable.
 * **The frontend must never hardcode module addresses other than `protocol_config`'s.** All peers are resolved dynamically via the registry. Account addresses are version-coupled to the Gateway that created them; the frontend must persist them. See **Frontend Integration: Module Updates**.
 * **The local nitro-devnode boots at ArbOS 59 by default.** Running the ArbOS 61 upgrade before any contract check is mandatory for fragmented contracts. See **Local Development with nitro-devnode**.
+* **Manual fallback dispatch requires `abi_decode_raw`, not `abi_decode`.** The fallback strips the selector; `abi_decode` validates it and fails. See **Manual fallback dispatch: the `abi_decode` contract**.
+* **Shell `PRIVATE_KEY` overrides `.env` for direct `cast` invocations.** The Makefile's `include .env` protects the Makefile targets only. See **Troubleshooting**.
 
 ---
 
@@ -1396,6 +1502,8 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
   * [Docs.rs: stylus_sdk::call module source](https://docs.rs/stylus-sdk/latest/src/stylus_sdk/call/mod.rs.html)
 * **Raw call abstraction**: documentation for untyped low-level message-passing mechanisms used to delegate custom data layouts to alternative modules.
   * [Docs.rs: stylus_sdk::call::RawCall](https://docs.rs/stylus-sdk/latest/stylus_sdk/call/struct.RawCall.html)
+* **`SolCall::abi_decode` and `abi_decode_raw`**: the two decode entry points on the Alloy `SolCall` trait. The first validates the selector, the second does not.
+  * [Docs.rs: alloy_sol_types::SolCall](https://docs.rs/alloy-sol-types/latest/alloy_sol_types/trait.SolCall.html)
 * **RawDeploy**: low-level contract creation via the host EVM's `CREATE` / `CREATE2` opcodes. This is what the Gateway uses to deploy accounts.
   * [Docs.rs: stylus_sdk::deploy::RawDeploy](https://docs.rs/stylus-sdk/0.7.0/src/stylus_sdk/deploy/raw.rs.html)
 * **WASM binary size control & pipeline optimisation**: canonical compiler tuning mechanics (`opt-level = "z"`, `lto = true`, `panic = "abort"`) to respect host limits.
@@ -1456,6 +1564,8 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
   * [GitHub: ucan-wg/spec](https://github.com/ucan-wg/spec)
 * **Irys invariant storage pipelines**: permanent data tracking frameworks providing continuous accessibility bounds and immutable encrypted content indices. Cascade upgrade (August 2026) introduced tiered storage terms (`PERMANENT`, `30_DAYS`, `1_YEAR`, `CUSTOM`) with forward-only term extension, which the identity-content ledger models on-chain.
   * [Irys Network: Developer Documentation](https://docs.irys.xyz)
+  * [Irys Devnet Node](https://devnet.irys.xyz/)
+  * [Irys Mainnet Node](https://node1.irys.xyz/)
   * [GitHub: ArweaveTeam/arweave](https://github.com/ArweaveTeam/arweave)
 * **Threshold Network & coordination infrastructure**: decentralised node access management models guiding token incentives, slashing mechanisms, multi-party computation, and proxy coordination logic.
   * [GitHub: threshold-network](https://github.com/threshold-network)
