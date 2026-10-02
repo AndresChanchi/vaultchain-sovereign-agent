@@ -13,9 +13,9 @@ endif
 # CONFIGURATION
 # ============================================================
 
-ENDPOINT_SEPOLIA = https://sepolia-rollup.arbitrum.io/rpc
+ENDPOINT_SEPOLIA = https://arbitrum-sepolia-rpc.publicnode.com
 
-ENDPOINT_SEPOLIA_FALLBACKS = https://arbitrum-sepolia-rpc.publicnode.com https://arbitrum-sepolia.api.onfinality.io/public https://arbitrum-sepolia.gateway.tenderly.co https://arbitrum-sepolia.drpc.org https://arbitrum-sepolia.blockpi.network/v1/rpc/public
+ENDPOINT_SEPOLIA_FALLBACKS = https://arbitrum-sepolia-rpc.publicnode.com https://arbitrum-sepolia.api.onfinality.io/public https://arbitrum-sepolia.gateway.tenderly.co https://arbitrum-sepolia.drpc.org https://arbitrum-sepolia.blockpi.network/v1/rpc/public https://arb-sepolia.g.alchemy.com/v2/API http://localhost:8547
 
 ENDPOINT_SEPOLIA_ALL = $(ENDPOINT_SEPOLIA) $(ENDPOINT_SEPOLIA_FALLBACKS)
 
@@ -68,35 +68,51 @@ IDENTITY_ACCESS_PROVIDER  = 0x0000000000000000000000000000000000000003
 IDENTITY_EXPECTED_WORKFLOW_ID = 0x0000000000000000000000000000000000000000000000000000000000000000
 
 # ============================================================
-# SOURCE FILES FOR PROJECT HASH
-# ============================================================
-define source_files_for_hash
-$$(find src/$(1)/src -name '*.rs' -type f \
-    -not -path '*/tests/*' \
-    -not -path '*/examples/*' \
-    -not -path '*/benches/*' \
-    | sort | tr '\n' ' ') \
-src/$(1)/Cargo.toml \
-$(wildcard src/$(1)/build.rs) \
-$(wildcard src/$(1)/fragments.toml) \
-Cargo.lock
-endef
-
-# ============================================================
 # PER-CONTRACT CONSTRUCTOR ARGUMENTS
 # ============================================================
+#
+# Each entry resolves to the argv list that `cargo stylus deploy`
+# passes to `--constructor-args`.
+#
+# Resolution order: environment variable (usually .env) first, then
+# the placeholder constant defined above. This lets both
+# `make deploy contract=X` (standalone) and `make deploy-full`
+# (dynamic, address-resolved) work with the same variable.
+#
+# Contracts whose constructor references a not-yet-deployed peer
+# (runtime, recovery, economics) require the operator to either:
+#   - export CTOR_* from .env manually, or
+#   - use `make deploy-full` which resolves them in-phase.
+# Their fallback is intentionally empty so a standalone deploy
+# reverts with "invalid constructor" instead of silently passing
+# Address::ZERO to a constructor that expects a real address.
+# ------------------------------------------------------------
 
 CONSTRUCTOR_ARGS_kipio_protocol_config =
-CONSTRUCTOR_ARGS_kipio_runtime = $(CTOR_RUNTIME_PROTOCOL_CONFIG)
-CONSTRUCTOR_ARGS_kipio_recovery = $(CTOR_RECOVERY_RUNTIME)
-CONSTRUCTOR_ARGS_kipio_economics = $(CTOR_ECONOMICS_PROTOCOL_CONFIG) $(CTOR_ECONOMICS_CRE_FORWARDER) $(CTOR_ECONOMICS_CRE_WORKFLOW_ID)
-CONSTRUCTOR_ARGS_kipio_identity_content = $(CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER) $(CTOR_IDENTITY_CONTENT_QUERY_PROVIDER) $(CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER) $(CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID)
+
+CONSTRUCTOR_ARGS_kipio_runtime = \
+	$(or $(CTOR_RUNTIME_PROTOCOL_CONFIG),)
+
+CONSTRUCTOR_ARGS_kipio_recovery = \
+	$(or $(CTOR_RECOVERY_RUNTIME),)
+
+CONSTRUCTOR_ARGS_kipio_economics = \
+	$(or $(CTOR_ECONOMICS_PROTOCOL_CONFIG),) \
+	$(or $(CTOR_ECONOMICS_CRE_FORWARDER),$(CRE_FORWARDER_ARB_SEPOLIA)) \
+	$(or $(CTOR_ECONOMICS_CRE_WORKFLOW_ID),$(CRE_WORKFLOW_ID_PLACEHOLDER))
+
+CONSTRUCTOR_ARGS_kipio_identity_content = \
+	$(or $(CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER),$(IDENTITY_STORAGE_PROVIDER)) \
+	$(or $(CTOR_IDENTITY_CONTENT_QUERY_PROVIDER),$(IDENTITY_QUERY_PROVIDER)) \
+	$(or $(CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER),$(IDENTITY_ACCESS_PROVIDER)) \
+	$(or $(CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID),$(IDENTITY_EXPECTED_WORKFLOW_ID))
+
 CONSTRUCTOR_ARGS_kipio_execution_gateway =
-CONSTRUCTOR_ARGS_kipio_account = $(KIPIO_ACCOUNT_IDENTITY) $(KIPIO_ACCOUNT_RUNTIME) $(KIPIO_ACCOUNT_RECOVERY)
 
 KIPIO_ACCOUNT_IDENTITY ?= 0x0000000000000000000000000000000000000001
 KIPIO_ACCOUNT_RUNTIME  ?= 0x0000000000000000000000000000000000000002
 KIPIO_ACCOUNT_RECOVERY ?= 0x0000000000000000000000000000000000000003
+CONSTRUCTOR_ARGS_kipio_account = $(KIPIO_ACCOUNT_IDENTITY) $(KIPIO_ACCOUNT_RUNTIME) $(KIPIO_ACCOUNT_RECOVERY)
 
 CTOR_ARG_VARS := $(filter CONSTRUCTOR_ARGS_%,$(.VARIABLES))
 export $(CTOR_ARG_VARS)
@@ -135,29 +151,43 @@ endef
 # ============================================================
 # 1. DEVELOPMENT & COMPILATION
 # ============================================================
+#
+# NOTE ON --source-files-for-project-hash:
+#
+# This Makefile deliberately does NOT pass that flag to cargo
+# stylus. cargo-stylus resolves the paths against its internal
+# working directory inside the Docker container (the workspace
+# root), which makes any relative list we compute outside the
+# container ambiguous and, empirically, causes cargo-stylus to
+# silently fall back to "hash the entire workspace". That fallback
+# produces an IDENTICAL project_metadata_hash across every
+# contract, which defeats cargo-stylus's own build-cache
+# invalidation and can deploy stale WASM after a source change.
+#
+# The default behavior of cargo-stylus (no flag) hashes only the
+# contract's own directory tree plus rust-toolchain.toml. That is
+# exactly what we want, and it is what `make check` uses today.
+# ============================================================
 
 build:
 	$(guard_perms)
 ifdef contract
 	@echo "Building $(contract)"
-	@HASH_FILES="$(call source_files_for_hash,$(contract))"; \
-	FEATURES_FLAG="$(if $(FEATURES_$(contract)),--features $(FEATURES_$(contract)),)"; \
+	@FEATURES_FLAG="$(if $(FEATURES_$(contract)),--features $(FEATURES_$(contract)),)"; \
 	echo "  features: $(if $(FEATURES_$(contract)),$(FEATURES_$(contract)),<none>)"; \
 	cd src/$(contract) && \
-		cargo stylus build $$FEATURES_FLAG --source-files-for-project-hash "$$HASH_FILES"
+		cargo stylus build $$FEATURES_FLAG
 else
 	@set -e; \
 	for c in $(CONTRACTS); do \
 		echo ""; \
 		echo "Building $$c"; \
-		HASH_FILES="$(call source_files_for_hash,$$c)"; \
 		FEATURES_VAR="FEATURES_$$c"; \
 		FEATURES="$${!FEATURES_VAR}"; \
 		FEATURES_FLAG=""; \
 		if [ -n "$$FEATURES" ]; then FEATURES_FLAG="--features $$FEATURES"; fi; \
 		echo "  features: $${FEATURES:-<none>}"; \
-		( cd src/$$c && \
-			cargo stylus build $$FEATURES_FLAG --source-files-for-project-hash "$$HASH_FILES" ); \
+		( cd src/$$c && cargo stylus build $$FEATURES_FLAG ); \
 	done; \
 	echo ""; \
 	echo "All contracts built."
@@ -423,7 +453,7 @@ print-base-fee:
 	echo "============================================================"
 
 # ============================================================
-# check — Endpoint probe once, then cargo stylus check per contract
+# check
 # ============================================================
 
 check:
@@ -542,7 +572,6 @@ endif
 	LOG="$$DIR/$(contract).log"; \
 	ARGS="$(CONSTRUCTOR_ARGS_$(contract))"; \
 	read -ra CTOR_ARGS <<< "$$ARGS"; \
-	HASH_FILES="$(call source_files_for_hash,$(contract))"; \
 	FEATURES_FLAG="$(if $(FEATURES_$(contract)),--features $(FEATURES_$(contract)),)"; \
 	echo ""; \
 	echo "============================================================"; \
@@ -552,7 +581,6 @@ endif
 	printf "  %-22s %s\n" "Features:"        "$(if $(FEATURES_$(contract)),$(FEATURES_$(contract)),<none>)"; \
 	printf "  %-22s %s\n" "Constructor args:" "$${CTOR_ARGS[*]:-<none>}"; \
 	printf "  %-22s %s\n" "Args count:"       "$${#CTOR_ARGS[@]}"; \
-	printf "  %-22s %s\n" "Hash files:"      "$$(echo $$HASH_FILES | wc -w) entries"; \
 	printf "  %-22s %s\n" "Log file:"         "$$LOG"; \
 	echo "------------------------------------------------------------"; \
 	set -o pipefail; \
@@ -563,7 +591,6 @@ endif
 			--endpoint "$$WORKING_EP" \
 			--private-key $(PRIVATE_KEY) \
 			--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-			--source-files-for-project-hash "$$HASH_FILES" \
 			--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 	else \
 		( cd src/$(contract) && \
@@ -571,8 +598,7 @@ endif
 			$$FEATURES_FLAG \
 			--endpoint "$$WORKING_EP" \
 			--private-key $(PRIVATE_KEY) \
-			--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-			--source-files-for-project-hash "$$HASH_FILES" ) 2>&1 | tee "$$LOG"; \
+			--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) ) 2>&1 | tee "$$LOG"; \
 	fi; \
 	PIPE_RC=$${PIPESTATUS[0]}; \
 	if [ $$PIPE_RC -ne 0 ]; then \
@@ -615,11 +641,6 @@ endif
 # ============================================================
 # deploy-full — Fase 1 + Fase 2 + Fase 3 + Fase 4
 # ============================================================
-#
-# NOTE: cargo stylus deploy uses --max-fee-per-gas-gwei (cargo-stylus
-# specific flag). cast send uses --gas-price, which accepts a unit
-# suffix like '1gwei'. They are not interchangeable.
-# ------------------------------------------------------------
 
 deploy-full:
 	$(guard_perms)
@@ -677,14 +698,12 @@ deploy-full:
 			*) echo "  ERROR: no ARGS policy for $$c"; exit 1 ;; \
 		esac; \
 		read -ra CTOR_ARGS <<< "$$ARGS"; \
-		HASH_FILES="$(call source_files_for_hash,$$c)"; \
 		FEATURES_VAR="FEATURES_$$c"; \
 		FEATURES="$${!FEATURES_VAR}"; \
 		FEATURES_FLAG=""; \
 		if [ -n "$$FEATURES" ]; then FEATURES_FLAG="--features $$FEATURES"; fi; \
 		printf "  %-22s %s\n" "Features:"        "$${FEATURES:-<none>}"; \
 		printf "  %-22s %s\n" "Constructor args:" "$${CTOR_ARGS[*]:-<none>}"; \
-		printf "  %-22s %s\n" "Hash files:"      "$$(echo $$HASH_FILES | wc -w) entries"; \
 		echo "------------------------------------------------------------"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && \
@@ -693,7 +712,6 @@ deploy-full:
 				--endpoint "$$WORKING_EP" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-				--source-files-for-project-hash "$$HASH_FILES" \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && \
@@ -701,8 +719,7 @@ deploy-full:
 				$$FEATURES_FLAG \
 				--endpoint "$$WORKING_EP" \
 				--private-key $$PKEY \
-				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-				--source-files-for-project-hash "$$HASH_FILES" ) 2>&1 | tee "$$LOG"; \
+				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
 		if [ $$PIPE_RC -ne 0 ]; then \
@@ -760,22 +777,17 @@ deploy-full:
 	bash $(SCRIPTS_DIR)/inject-gateway-constants.sh "$$RUNTIME" "$$ECONOMICS" "$$RECOVERY" || exit 1; \
 	echo ""; \
 	echo "  [3.2] Rebuild del Gateway con production_build..."; \
-	HASH_FILES="$(call source_files_for_hash,$(GATEWAY_CONTRACT))"; \
-	FEATURES_FLAG="--features $(FEATURES_$(GATEWAY_CONTRACT))"; \
 	( cd src/$(GATEWAY_CONTRACT) && \
-		cargo stylus build \
-		$$FEATURES_FLAG \
-		--source-files-for-project-hash "$$HASH_FILES" ) || exit 1; \
+		cargo stylus build --features $(FEATURES_$(GATEWAY_CONTRACT)) ) || exit 1; \
 	echo ""; \
 	echo "  [3.3] Deploy del Gateway..."; \
 	GW_LOG="$$DIR/$(GATEWAY_CONTRACT).log"; \
 	( cd src/$(GATEWAY_CONTRACT) && \
 		cargo stylus deploy \
-		$$FEATURES_FLAG \
+		--features $(FEATURES_$(GATEWAY_CONTRACT)) \
 		--endpoint "$$WORKING_EP" \
 		--private-key $$PKEY \
-		--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-		--source-files-for-project-hash "$$HASH_FILES" ) 2>&1 | tee "$$GW_LOG"; \
+		--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) ) 2>&1 | tee "$$GW_LOG"; \
 	GW_PIPE_RC=$${PIPESTATUS[0]}; \
 	if [ $$GW_PIPE_RC -ne 0 ]; then \
 		echo "FAILED: $(GATEWAY_CONTRACT) (exit $$GW_PIPE_RC)"; \
@@ -875,22 +887,17 @@ deploy-gateway:
 	bash $(SCRIPTS_DIR)/inject-gateway-constants.sh "$$RUNTIME" "$$ECONOMICS" "$$RECOVERY" || exit 1; \
 	echo ""; \
 	echo "[2] Rebuilding..."; \
-	HASH_FILES="$(call source_files_for_hash,$(GATEWAY_CONTRACT))"; \
-	FEATURES_FLAG="--features $(FEATURES_$(GATEWAY_CONTRACT))"; \
 	( cd src/$(GATEWAY_CONTRACT) && \
-		cargo stylus build \
-		$$FEATURES_FLAG \
-		--source-files-for-project-hash "$$HASH_FILES" ) || exit 1; \
+		cargo stylus build --features $(FEATURES_$(GATEWAY_CONTRACT)) ) || exit 1; \
 	echo ""; \
 	echo "[3] Deploying..."; \
 	GW_LOG="$$DIR/$(GATEWAY_CONTRACT).log"; \
 	( cd src/$(GATEWAY_CONTRACT) && \
 		cargo stylus deploy \
-		$$FEATURES_FLAG \
+		--features $(FEATURES_$(GATEWAY_CONTRACT)) \
 		--endpoint "$$WORKING_EP" \
 		--private-key $$PKEY \
-		--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-		--source-files-for-project-hash "$$HASH_FILES" ) 2>&1 | tee "$$GW_LOG"; \
+		--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) ) 2>&1 | tee "$$GW_LOG"; \
 	GW_PIPE_RC=$${PIPESTATUS[0]}; \
 	if [ $$GW_PIPE_RC -ne 0 ]; then echo "FAILED: gateway (exit $$GW_PIPE_RC)"; exit 1; fi; \
 	bash $(SCRIPTS_DIR)/stylus-deploy-manifest.sh "$$GW_LOG" "$(PROJECT_NAME)" "$(GATEWAY_CONTRACT)" "$$DEPLOYER" "$$WORKING_EP" > "$$DIR/$(GATEWAY_CONTRACT).manifest.json"; \
@@ -941,22 +948,19 @@ deploy-resume:
 			kipio_identity_content) ARGS="$(IDENTITY_STORAGE_PROVIDER) $(IDENTITY_QUERY_PROVIDER) $(IDENTITY_ACCESS_PROVIDER) $(IDENTITY_EXPECTED_WORKFLOW_ID)" ;; \
 		esac; \
 		read -ra CTOR_ARGS <<< "$$ARGS"; \
-		HASH_FILES="$(call source_files_for_hash,$$c)"; \
 		if [ $${#CTOR_ARGS[@]} -gt 0 ]; then \
 			( cd src/$$c && \
 				cargo stylus deploy \
 				--endpoint "$$WORKING_EP" \
 				--private-key $$PKEY \
 				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-				--source-files-for-project-hash "$$HASH_FILES" \
 				--constructor-args "$${CTOR_ARGS[@]}" ) 2>&1 | tee "$$LOG"; \
 		else \
 			( cd src/$$c && \
 				cargo stylus deploy \
 				--endpoint "$$WORKING_EP" \
 				--private-key $$PKEY \
-				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) \
-				--source-files-for-project-hash "$$HASH_FILES" ) 2>&1 | tee "$$LOG"; \
+				--max-fee-per-gas-gwei=$(MAX_FEE_PER_GAS_GWEI) ) 2>&1 | tee "$$LOG"; \
 		fi; \
 		PIPE_RC=$${PIPESTATUS[0]}; \
 		if [ $$PIPE_RC -ne 0 ]; then echo "FAILED: $$c"; exit 1; fi; \
@@ -1174,19 +1178,15 @@ env-check:
 	@echo "  IDENTITY_QUERY_PROVIDER:      $(IDENTITY_QUERY_PROVIDER)"
 	@echo "  IDENTITY_ACCESS_PROVIDER:     $(IDENTITY_ACCESS_PROVIDER)"
 	@echo "  IDENTITY_EXPECTED_WORKFLOW_ID: $(IDENTITY_EXPECTED_WORKFLOW_ID)"
+	@echo "  --- resolved constructor args ---"
+	@for c in $(CONTRACTS); do \
+		args_var="CONSTRUCTOR_ARGS_$$c"; \
+		args="$${!args_var}"; \
+		if [ -n "$$args" ]; then echo "    $$c: $$args"; fi; \
+	done
 	@echo "  --- endpoint cache ---"
 	@echo "  WORKING_ENDPOINT_FILE:        $(WORKING_ENDPOINT_FILE)"
 	@echo "  Cached endpoint:              $$(cat $(WORKING_ENDPOINT_FILE) 2>/dev/null || echo '<none>')"
-	@echo "  --- legacy CTOR overrides (from .env) ---"
-	@echo "  CTOR_RUNTIME_PROTOCOL_CONFIG: $${CTOR_RUNTIME_PROTOCOL_CONFIG:-<unset>}"
-	@echo "  CTOR_RECOVERY_RUNTIME:        $${CTOR_RECOVERY_RUNTIME:-<unset>}"
-	@echo "  CTOR_ECONOMICS_PROTOCOL_CONFIG: $${CTOR_ECONOMICS_PROTOCOL_CONFIG:-<unset>}"
-	@echo "  CTOR_ECONOMICS_CRE_FORWARDER:   $${CTOR_ECONOMICS_CRE_FORWARDER:-<unset>}"
-	@echo "  CTOR_ECONOMICS_CRE_WORKFLOW_ID: $${CTOR_ECONOMICS_CRE_WORKFLOW_ID:-<unset>}"
-	@echo "  CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER: $${CTOR_IDENTITY_CONTENT_STORAGE_PROVIDER:-<unset>}"
-	@echo "  CTOR_IDENTITY_CONTENT_QUERY_PROVIDER:   $${CTOR_IDENTITY_CONTENT_QUERY_PROVIDER:-<unset>}"
-	@echo "  CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER:  $${CTOR_IDENTITY_CONTENT_ACCESS_PROVIDER:-<unset>}"
-	@echo "  CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID: $${CTOR_IDENTITY_CONTENT_EXPECTED_WORKFLOW_ID:-<unset>}"
 	@echo "  --- features ---"
 	@for c in $(CONTRACTS); do \
 		f_var="FEATURES_$$c"; \
@@ -1202,7 +1202,16 @@ ifndef contract
 	@echo "ERROR: print-constructor-args requires contract=<name>"; exit 1
 endif
 	@echo "Constructor args for $(contract):"
-	@echo "  Raw (space-separated): $(CONSTRUCTOR_ARGS_$(contract))"
+	@echo "  Resolved (space-separated): $(CONSTRUCTOR_ARGS_$(contract))"
+	@echo ""
+	@echo "Will expand to argv entries:"
+	@ARGS="$(CONSTRUCTOR_ARGS_$(contract))"; \
+	read -ra CTOR_ARGS <<< "$$ARGS"; \
+	i=0; \
+	for arg in "$${CTOR_ARGS[@]}"; do \
+		printf "    [%d] %s\n" "$$i" "$$arg"; \
+		i=$$((i+1)); \
+	done
 
 print-deploy-order:
 	@echo "Deploy order (phase 1 singletons):"
@@ -1223,18 +1232,6 @@ print-working-endpoint:
 	@echo "  Cached value: $$(cat $(WORKING_ENDPOINT_FILE) 2>/dev/null || echo '<not set>')"
 	@echo ""
 	@echo "To force a fresh probe: rm $(WORKING_ENDPOINT_FILE)"
-
-print-hash-files:
-ifndef contract
-	@echo "ERROR: print-hash-files requires contract=<name>"; exit 1
-endif
-	@echo "Source files in the project hash for $(contract):"
-	@echo ""
-	@HASH_FILES="$(call source_files_for_hash,$(contract))"; \
-	for f in $$HASH_FILES; do echo "  $$f"; done
-	@echo ""
-	@HASH_FILES="$(call source_files_for_hash,$(contract))"; \
-	echo "Total: $$(echo $$HASH_FILES | wc -w) files"
 
 # ============================================================
 # 8. PERMISSION RECOVERY
@@ -1296,7 +1293,7 @@ help:
 	@echo ""
 	@echo "WORKFLOW 1 — FIRST-TIME SETUP"
 	@echo "  probe-rpc                 Verify RPC endpoints are up"
-	@echo "  env-check                 Show loaded env + endpoint cache + features"
+	@echo "  env-check                 Show loaded env + resolved args + features"
 	@echo "  install-brotli            Install Brotli (apt or pip --user)"
 	@echo "  build                     Compile all Stylus WASM contracts"
 	@echo "  abi                       Export Solidity interfaces"
@@ -1306,6 +1303,8 @@ help:
 	@echo "  print-base-fee            Query current base fee across endpoints"
 	@echo "  print-deploy-order        Show phase-1 + phase-3 order"
 	@echo "  print-working-endpoint    Show cached endpoint + how to reset"
+	@echo "  print-constructor-args contract=<name>"
+	@echo "                            Show the resolved constructor argv"
 	@echo "  deploy-full               Fase 1 + Fase 2 + Fase 3 + Fase 4"
 	@echo "  deploy contract=<name>    Deploy a single contract"
 	@echo "  deploy-resume             Resume phase-1 after a failure"
@@ -1314,8 +1313,11 @@ help:
 	@echo "  verify contract=<name> tx=0x..."
 	@echo "                            Reproducible verification"
 	@echo ""
-	@echo "  IMPORTANT — cast send uses --gas-price, not --max-fee-per-gas-gwei."
-	@echo "  The latter is specific to cargo stylus deploy."
+	@echo "  NOTE ON HASHING: cargo stylus uses its own default source"
+	@echo "  hashing (contract directory + rust-toolchain.toml). The"
+	@echo "  --source-files-for-project-hash flag is deliberately not"
+	@echo "  passed, because it caused a stale-WASM bug when the paths"
+	@echo "  could not be resolved inside the Docker container."
 	@echo ""
 	@echo "WORKFLOW 3 — FRAGMENTED INITCODE (COMPLETED)"
 	@echo "  reverse-eng-deploy        Deploy kipio_account"
@@ -1354,7 +1356,7 @@ help:
 	@echo "  print-deploy-order        Show deploy order"
 	@echo "  print-working-endpoint    Show cached endpoint"
 	@echo "  print-constructor-args contract=<name>"
-	@echo "  print-hash-files contract=<name>"
+	@echo "                          Show resolved constructor args"
 	@echo ""
 	@echo "==================================================="
 
@@ -1367,6 +1369,6 @@ help:
         reverse-eng-addresses reverse-eng-summary reverse-eng-clean \
         cache-suggest cache-bid cache-status \
         print-private-key env-check print-constructor-args print-deploy-order \
-        print-working-endpoint print-hash-files \
+        print-working-endpoint \
         fix-perms nuke \
         clean clean-deployments clean-abi clean-endpoint-cache help
