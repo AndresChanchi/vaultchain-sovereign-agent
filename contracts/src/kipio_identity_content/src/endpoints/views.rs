@@ -65,7 +65,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = hasAccessCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = hasAccessCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let result = self
             .vaults
             .getter(call.owner)
@@ -83,7 +83,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getCommitmentCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getCommitmentCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let commitment = record.tx_commitment.get();
@@ -99,7 +99,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getMetadataCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getMetadataCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let packed = record.packed.get();
@@ -133,7 +133,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = isPublicCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = isPublicCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let packed = record.packed.get();
@@ -149,7 +149,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getStorageInfoCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getStorageInfoCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let packed = record.packed.get();
@@ -174,7 +174,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getExpiryStatusCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getExpiryStatusCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let packed = record.packed.get();
@@ -201,7 +201,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getAccessPolicyHashCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getAccessPolicyHashCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let hash = record.access_policy_hash.get();
@@ -217,7 +217,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getContentListCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getContentListCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let list = &vault.content_list;
 
@@ -241,7 +241,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getSharedPaginatedCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getSharedPaginatedCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let index = vault.access.grantee_index.getter(call.content_id);
 
@@ -278,7 +278,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = verifyContentOwnershipCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = verifyContentOwnershipCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         let vault = self.vaults.getter(call.owner);
         let record = vault.contents.getter(call.content_id);
         let stored = record.tx_commitment.get();

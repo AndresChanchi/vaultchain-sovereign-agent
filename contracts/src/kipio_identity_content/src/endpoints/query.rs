@@ -31,7 +31,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = requestQueryCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = requestQueryCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
@@ -89,7 +89,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = cancelStaleQueryCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = cancelStaleQueryCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         let ts = self.query_timestamps.getter(call.query_id).get();
         if ts == U256::ZERO {

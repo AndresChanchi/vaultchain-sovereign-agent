@@ -28,7 +28,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = extendStorageTermCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = extendStorageTermCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
         validate_storage_term(call.new_storage_term)?;

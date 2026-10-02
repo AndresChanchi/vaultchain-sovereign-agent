@@ -16,7 +16,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = grantAccessCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = grantAccessCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
         if call.grantee == Address::ZERO {
@@ -80,7 +80,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = revokeAccessCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = revokeAccessCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
         if call.grantee == Address::ZERO {

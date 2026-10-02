@@ -23,7 +23,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = registerContentCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = registerContentCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
@@ -211,7 +211,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = rotateContentCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = rotateContentCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
         if call.new_tx_commitment == B256::ZERO {
@@ -256,7 +256,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = rotateContentCasCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = rotateContentCasCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
         if call.new_tx_commitment == B256::ZERO {

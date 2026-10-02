@@ -29,7 +29,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = setVisibilityCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setVisibilityCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 
@@ -132,7 +132,7 @@ impl KipioIdentityContent {
         args: &[u8],
         user: Option<Address>,
     ) -> ArbResult {
-        let call = deleteContentCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = deleteContentCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_not_paused()?;
 

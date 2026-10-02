@@ -23,7 +23,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = transferOwnershipCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = transferOwnershipCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         if call.new_owner == Address::ZERO {
@@ -68,7 +68,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = setStorageProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setStorageProviderCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         if call.provider == Address::ZERO {
@@ -90,7 +90,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = setQueryProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setQueryProviderCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         if call.provider == Address::ZERO {
@@ -112,7 +112,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = setAccessProviderCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setAccessProviderCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         if call.provider == Address::ZERO {
@@ -134,7 +134,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = setZkVerifierCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setZkVerifierCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         let old = self.zk_verifier.get();
@@ -152,7 +152,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = setExpectedWorkflowIdCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = setExpectedWorkflowIdCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         let old = self.expected_workflow_id.get();
@@ -174,7 +174,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = pauseCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = pauseCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         self.require_owner()?;
         if self.paused.get() {

@@ -50,7 +50,7 @@ impl KipioIdentityContent {
     ) -> ArbResult {
         self.require_owner()?;
 
-        let call = initializeCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = initializeCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
 
         if call.protocol_config == Address::ZERO {
             return Err(ZeroAddressConfig {}.abi_encode());
@@ -650,7 +650,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getPubkeyCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getPubkeyCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         Ok((self.pubkeys.getter(call.user).get(),).abi_encode_params())
     }
 
@@ -662,7 +662,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getCurveCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getCurveCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         Ok((self.curves.getter(call.user).get(),).abi_encode_params())
     }
 
@@ -676,7 +676,7 @@ impl KipioIdentityContent {
         args: &[u8],
         _user: Option<Address>,
     ) -> ArbResult {
-        let call = getNonceCall::abi_decode(args).map_err(|_| Vec::new())?;
+        let call = getNonceCall::abi_decode_raw(args).map_err(|_| Vec::new())?;
         Ok((self.nonces.getter(call.user).get(),).abi_encode_params())
     }
 }

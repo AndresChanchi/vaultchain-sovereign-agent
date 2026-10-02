@@ -18,7 +18,7 @@ use super::*;
 ///      Six dynamic arrays; the heaviest decoder in the contract.
 #[inline(never)]
 pub(crate) fn decode_register_batch(args: &[u8]) -> Result<registerBatchCall, Vec<u8>> {
-    registerBatchCall::abi_decode(args).map_err(|_| Vec::new())
+    registerBatchCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `extendStorageTermBatch(bytes32[],uint8[],uint32[])`.
@@ -26,25 +26,25 @@ pub(crate) fn decode_register_batch(args: &[u8]) -> Result<registerBatchCall, Ve
 pub(crate) fn decode_extend_storage_term_batch(
     args: &[u8],
 ) -> Result<extendStorageTermBatchCall, Vec<u8>> {
-    extendStorageTermBatchCall::abi_decode(args).map_err(|_| Vec::new())
+    extendStorageTermBatchCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `setVisibilityBatch(bytes32[],bool[])`.
 #[inline(never)]
 pub(crate) fn decode_set_visibility_batch(args: &[u8]) -> Result<setVisibilityBatchCall, Vec<u8>> {
-    setVisibilityBatchCall::abi_decode(args).map_err(|_| Vec::new())
+    setVisibilityBatchCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `requestQueryZk(bytes32,bytes32,bytes32,bytes,bytes32[])`.
 #[inline(never)]
 pub(crate) fn decode_request_query_zk(args: &[u8]) -> Result<requestQueryZkCall, Vec<u8>> {
-    requestQueryZkCall::abi_decode(args).map_err(|_| Vec::new())
+    requestQueryZkCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `onReport(bytes,bytes)`.
 #[inline(never)]
 pub(crate) fn decode_on_report(args: &[u8]) -> Result<onReportCall, Vec<u8>> {
-    onReportCall::abi_decode(args).map_err(|_| Vec::new())
+    onReportCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes
@@ -53,25 +53,25 @@ pub(crate) fn decode_on_report(args: &[u8]) -> Result<onReportCall, Vec<u8>> {
 pub(crate) fn decode_verify_identity_authorization(
     args: &[u8],
 ) -> Result<verifyIdentityAuthorizationCall, Vec<u8>> {
-    verifyIdentityAuthorizationCall::abi_decode(args).map_err(|_| Vec::new())
+    verifyIdentityAuthorizationCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `rotateKey(bytes,bytes,uint256,bytes,uint256,uint256)`.
 #[inline(never)]
 pub(crate) fn decode_rotate_key(args: &[u8]) -> Result<rotateKeyCall, Vec<u8>> {
-    rotateKeyCall::abi_decode(args).map_err(|_| Vec::new())
+    rotateKeyCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `register(bytes,uint256)`.
 #[inline(never)]
 pub(crate) fn decode_register(args: &[u8]) -> Result<registerCall, Vec<u8>> {
-    registerCall::abi_decode(args).map_err(|_| Vec::new())
+    registerCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `verify(address,bytes32,bytes,bytes,uint256)`.
 #[inline(never)]
 pub(crate) fn decode_verify(args: &[u8]) -> Result<verifyCall, Vec<u8>> {
-    verifyCall::abi_decode(args).map_err(|_| Vec::new())
+    verifyCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
 
 /// @dev Decodes `applyAuthorizedRotation(bytes,uint256)`.
@@ -79,5 +79,5 @@ pub(crate) fn decode_verify(args: &[u8]) -> Result<verifyCall, Vec<u8>> {
 pub(crate) fn decode_apply_authorized_rotation(
     args: &[u8],
 ) -> Result<applyAuthorizedRotationCall, Vec<u8>> {
-    applyAuthorizedRotationCall::abi_decode(args).map_err(|_| Vec::new())
+    applyAuthorizedRotationCall::abi_decode_raw(args).map_err(|_| Vec::new())
 }
