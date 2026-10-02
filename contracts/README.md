@@ -66,6 +66,8 @@ Before starting, ensure you have the following installed:
 
 * **`curl`**: used by `make probe-rpc` to test RPC endpoints.
 
+* **Docker** and **`git`**: required only for the local nitro-devnode workflow (see **Local Development with nitro-devnode**).
+
 ---
 
 ## Workspace Layout
@@ -245,6 +247,137 @@ Every `deploy` and `deploy-full` invocation prints a closing note reminding you 
 
 ---
 
+## Local Development with nitro-devnode
+
+When public RPC endpoints reject Stylus activation simulations (`stylus activations not allowed for this request`, `execution reverted, data: "0x"`) or rate-limit aggressively, the fastest way to keep iterating is to run a local Arbitrum chain using **nitro-devnode**, the official Offchain Labs development node.
+
+`nitro-devnode` is a Docker-packaged Nitro node configured to run as a standalone chain. It uses the same ArbOS rules, the same Stylus VM, the same compression pipeline, the same precompiles, and the same opcode limits as the production chain. It is not a fork and not a mock: it is a real chain running locally.
+
+### What it provides
+
+* **Fast iteration.** `cargo stylus check` and `cargo stylus deploy` complete in seconds, not minutes.
+* **No rate limits, no API keys, no endpoint churn.** The node answers on `http://localhost:8547`.
+* **A pre-funded dev account** that is also the chain owner.
+* **Full ArbOS 61 support** (fragmentation, 96 KB compressed / 256 KB uncompressed limits) after the ArbOS upgrade step documented below.
+* **Ephemeral state.** Stopping the container resets the chain to genesis. Every restart is a clean environment — no migration debt, no stale state, no partial deployments to clean up.
+
+### Requirements
+
+* **Docker** — required to run the node image.
+* **`git`** — to clone the devnode repository.
+* **`cast`** (Foundry) — to interact with the node and schedule the ArbOS upgrade.
+* **`jq`** — used by the devnode's setup script.
+* **~500 MB of free disk** for the Docker image.
+
+### Installation
+
+```bash
+cd ~
+git clone https://github.com/OffchainLabs/nitro-devnode.git
+cd nitro-devnode
+```
+
+### Choosing a Nitro version
+
+The devnode respects the `NITRO_NODE_VERSION` environment variable. If omitted, it defaults to an older image that boots at ArbOS 40 (no fragmentation support). Always pin a modern version explicitly:
+
+```bash
+NITRO_NODE_VERSION=v3.12.1-70fa99a ./run-dev-node.sh
+```
+
+`v3.12.1` is the latest stable release recommended by Offchain Labs for all Arbitrum chain operators as of October 2026. `v3.11.5` is a supported alternative on the 3.11 maintenance branch. Both are compatible with Arbitrum Sepolia's Glamsterdam activation and with ArbOS 61.
+
+### CRITICAL: schedule the ArbOS 61 upgrade
+
+**The devnode boots at ArbOS 59 by default, even with a modern Nitro image.** ArbOS 60 is the minimum version that supports fragmented Stylus contracts (contracts whose compressed WASM exceeds 24 KB). Without the upgrade, `cargo stylus check` on `kipio_identity_content`, `kipio_account`, `kipio_runtime`, and `kipio_economics` will fail with `execution reverted, data: "0x"` — a revert with no message that does not obviously point at ArbOS.
+
+After the node reports `Nitro node is running!` and the setup script finishes, schedule the upgrade by calling the `ArbOwner` precompile at `0x...0070`:
+
+```bash
+cast send -r http://localhost:8547 \
+  --private-key 0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659 \
+  0x0000000000000000000000000000000000000070 \
+  'scheduleArbOSUpgrade(uint64,uint64)' 61 0
+```
+
+The first argument is the **ArbOS version number** (61), not the value returned by `ArbSys.arbOSVersion()`. Passing 115 (the encoded version) is silently ignored.
+
+Verify the upgrade landed:
+
+```bash
+cast call -r http://localhost:8547 \
+  0x0000000000000000000000000000000000000064 "arbOSVersion()" | cast --to-dec
+# Should print 116 (61 + 55) after the upgrade
+```
+
+Then run the check:
+
+```bash
+cd ~/projects/vaultchain-sovereign-agent/contracts
+make check
+```
+
+All seven contracts should pass.
+
+### The pre-funded dev account
+
+The devnode ships with a single account that holds unlimited ETH on the local chain. It also acts as chain owner, so it can call admin precompiles (`ArbOwner`, `ArbWasm`, `ArbInfo`) without additional setup.
+
+| Field | Value |
+|---|---|
+| Address | `0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E` |
+| Private key | `0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659` |
+
+These credentials are public and documented by Offchain Labs. **Never use them on a real network.** They are exclusive to the local devnode.
+
+### Configuring the Makefile to target the devnode
+
+The Makefile resolves every endpoint through `ENDPOINT_SEPOLIA` and `ENDPOINT_SEPOLIA_ALL`. To redirect all targets to the local node, export overrides in your shell session:
+
+```bash
+export ENDPOINT_SEPOLIA="http://localhost:8547"
+export ENDPOINT_SEPOLIA_ALL="http://localhost:8547"
+export PRIVATE_KEY="0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659"
+export MAX_FEE_PER_GAS_GWEI=10
+```
+
+Then every Makefile target — `make check`, `make deploy`, `make deploy-full`, `make register-modules`, `make deploy-gateway` — operates against the local chain without further changes. The endpoint cache in `.check-reports/.working-endpoint` is updated to `http://localhost:8547` on the first run.
+
+Alternatively, pass overrides inline:
+
+```bash
+make check ENDPOINT_SEPOLIA="http://localhost:8547" \
+           ENDPOINT_SEPOLIA_ALL="http://localhost:8547"
+```
+
+### Interaction with `fragments.toml`
+
+The Gateway embeds the fragment addresses of `kipio_account` as a compile-time constant (`src/kipio_execution_gateway/fragments.toml`). On the devnode, every `kipio_account` redeploy produces new fragment addresses, so `fragments.toml` must be updated before `make deploy-gateway` is run. The reverse-engineering tooling (`make reverse-eng-*`) works against the devnode unchanged.
+
+### When to use the devnode vs. Sepolia
+
+| Scenario | Use |
+|---|---|
+| Iterating on a contract change | **Devnode.** Seconds per deploy, no gas cost, no endpoint rejection. |
+| Testing before pushing to a public testnet | **Devnode.** Catch compilation and activation errors locally. |
+| Reproducible verification (`make verify`) | **Sepolia.** Reproducibility is only meaningful against a real network. |
+| Frontend integration testing | **Sepolia.** Public chain ID, persistent state, Arbiscan links. |
+| Debugging the P256 precompile path | **Devnode.** `0x100` is present in ArbOS 61+, and the devnode shares the ArbOS version. |
+| Multi-user flows with real accounts | **Sepolia.** The devnode has a single pre-funded account. |
+
+### Realism
+
+The devnode is not a mock: it is the same Nitro node binary, running the same ArbOS version, executing the same Stylus VM. Every check that passes locally corresponds to a check that would pass on Arbitrum Sepolia or Arbitrum One. The differences are:
+
+1. **Chain ID** — `412346` locally, `421614` on Arbitrum Sepolia.
+2. **Persistence** — none locally; the chain resets on restart.
+3. **Block production** — the devnode produces blocks on demand, so transaction confirmation is instant.
+4. **Accounts** — a single pre-funded dev account, no faucet.
+
+Because of (1), any contract that binds a domain separator or a chain ID at construction or first use will produce different values on the devnode than on Sepolia. The Kipio contracts derive most digests from `block.chainid`, so EIP-712 signatures must be re-signed when switching networks.
+
+---
+
 ## Known Tooling Bugs
 
 The following bugs are present in **Stylus SDK 0.10.9** and its `cargo stylus export-abi` subcommand. They affect **only** the Solidity interface output, never the WASM bytecode or on-chain behaviour. Each is patched by a post-processing script that runs automatically as part of `make abi`.
@@ -420,6 +553,8 @@ Overriding the whole list is possible via `ENDPOINT_SEPOLIA_ALL`:
 ```bash
 make check ENDPOINT_SEPOLIA_ALL='https://arb-sepolia.g.alchemy.com/v2/KEY'
 ```
+
+When public RPCs are unavailable or rejection is total, switch to the local devnode (see **Local Development with nitro-devnode**). The same environment variables apply.
 
 ### Phase 1 — Five singletons
 
@@ -1237,6 +1372,7 @@ Several alternative designs were considered and rejected during the initial arch
 * **Never redeploy phase 1 to update a single module.** Deploy the new module, register it via `cast send`, then `make deploy-gateway` to redeploy the Gateway with the new triple. See **Upgrade Procedures**, Case 3.
 * **Never forget `make fix-perms` after a deploy.** Docker runs as root and leaves `target/` unwritable.
 * **The frontend must never hardcode module addresses other than `protocol_config`'s.** All peers are resolved dynamically via the registry. Account addresses are version-coupled to the Gateway that created them; the frontend must persist them. See **Frontend Integration: Module Updates**.
+* **The local nitro-devnode boots at ArbOS 59 by default.** Running the ArbOS 61 upgrade before any contract check is mandatory for fragmented contracts. See **Local Development with nitro-devnode**.
 
 ---
 
@@ -1269,6 +1405,8 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
 * **`wasm32v1-none` target specification**: official Rust documentation explaining that `-Ctarget-cpu=mvp` is the only reliable way to disable all post-MVP WebAssembly proposals.
   * [Rust Platform Support: wasm32v1-none](https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html)
   * [Rust compiler-team issue #791: wasm32v1-none](https://github.com/rust-lang/compiler-team/issues/791)
+* **nitro-devnode**: official Offchain Labs development node. Runs a standalone Nitro chain locally with ArbOS support after an explicit upgrade step.
+  * [GitHub: OffchainLabs/nitro-devnode](https://github.com/OffchainLabs/nitro-devnode)
 
 ### 2. Trusted Forwarders & Relay Patterns
 
