@@ -62,6 +62,10 @@ Before starting, ensure you have the following installed:
 
 * **`jq`**: used by the `deploy-full` and `deploy-resume` targets to accumulate addresses and manifests. Install with your package manager (`apt install jq`, `brew install jq`).
 
+* **Python 3** with the `brotli` module (or the `brotli` CLI): required by the fragmented init code tooling under `scripts/`. `make install-brotli` attempts both `apt` and `pip --user` automatically.
+
+* **`curl`**: used by `make probe-rpc` to test RPC endpoints.
+
 ---
 
 ## Workspace Layout
@@ -75,7 +79,16 @@ contracts/
 │   └── config.toml         target-cpu=mvp for wasm32-unknown-unknown
 ├── Makefile                build / test / check / deploy orchestration
 ├── scripts/
-│   └── stylus-deploy-manifest.sh   parses deploy logs into structured JSON
+│   ├── fix-tuple-abi.sh                    ABI post-processor (bug 1)
+│   ├── fix-abi-structs.sh                  ABI post-processor (bug 2)
+│   ├── fix-abi-data-locations.sh           ABI post-processor (bug 3)
+│   ├── abi-structs-companion.sol           struct source for bug 2
+│   ├── stylus-deploy-manifest.sh           parses deploy logs into JSON
+│   ├── find-working-endpoint.sh            endpoint cache with fallback
+│   ├── inject-gateway-constants.sh         writes runtime/economics/recovery into constants.rs
+│   ├── decode_stylus_calldata.py           extracts init code from StylusDeployer calldata
+│   ├── decode_fragment_table.py            parses the 64-byte fragment table
+│   └── find_fragment_addresses.py          locates addresses inside a binary blob
 ├── src/
 │   ├── bridge/                     ABI ↔ Dafny translation layer (local crate)
 │   ├── kipio_protocol_config/      module directory + curve registry
@@ -85,6 +98,12 @@ contracts/
 │   ├── kipio_runtime/              orchestrator + Dafny evaluator
 │   ├── kipio_economics/            settlement + treasury + credit
 │   └── kipio_execution_gateway/    EIP-7702 + CREATE2 bootstrap
+│       ├── build.rs                assembles the fragmented root init code
+│       ├── fragments.toml          fragment addresses + decompressed size
+│       └── ...
+├── deployments/            per-run deployment records (addresses + manifests)
+├── .check-reports/         per-contract check logs, ABI reports, endpoint cache
+├── .reverse-engineering/   artifacts from the fragmented init code investigation
 └── tests/                  integration suite (unit / e2e / fork)
 ```
 
@@ -115,7 +134,7 @@ unsupported section type DataCountSection { count: N, range: ... }
 
 ## Quick Start
 
-The `Makefile` orchestrates the whole workspace. Every target supports both a workspace-wide mode (default) and a single-contract mode via `contract=<name>`.
+The `Makefile` orchestrates the whole workspace. Every target supports both a workspace-wide mode (default) and a single-contract mode via `contract=<name>`. Endpoint resolution, deployment phasing, and recovery are covered in **Deployment Architecture** below.
 
 ### 1. Regenerate the lockfile
 
@@ -132,7 +151,7 @@ make build                                # all contracts
 make build contract=kipio_identity_content
 ```
 
-Each contract is compiled to `wasm32-unknown-unknown`, optimised with `wasm-opt 132`, and then hashed to produce its `project metadata hash`.
+Each contract is compiled to `wasm32-unknown-unknown`, optimised with `wasm-opt 132`, and then hashed to produce its `project metadata hash`. Contracts with declared features (currently only `kipio_execution_gateway` with `production_build`) automatically receive the `--features` flag.
 
 ### 3. Export Solidity ABIs
 
@@ -142,6 +161,8 @@ make abi contract=kipio_identity_content  # single contract
 ```
 
 Interfaces land in `foundry/src/interfaces/IKipio<CamelCase>.sol`. The naming convention is derived automatically from the crate name.
+
+Three post-processing scripts run after each export, in order: `fix-tuple-abi.sh`, `fix-abi-structs.sh`, `fix-abi-data-locations.sh`. They patch three separate Stylus SDK 0.10.9 export bugs. See **Known Tooling Bugs** below.
 
 The ABI export is done through `cargo run --features export-abi --quiet -- abi --pragma "$(SOLIDITY_PRAGMA)"`, where `SOLIDITY_PRAGMA` is defined at the top of the `Makefile`. This is deliberate: Stylus SDK 0.10.9 hardcodes `DEFAULT_PRAGMA = "^0.8.23"`, which predates the current Solidity release line. The `--pragma` flag overrides it, and the pragma has no relationship to Stylus, ArbOS, or on-chain compatibility — it is a purely off-chain tooling concern.
 
@@ -163,24 +184,21 @@ make check
 make check contract=kipio_identity_content
 ```
 
-`make check` runs each contract with `--verbose` against the Sepolia RPC. The full trace (deployment hash inputs, project metadata hash, wasm-opt version and flags, compressed and uncompressed size, fragment count) is printed to the terminal and saved verbatim to `.check-reports/<contract>.log`. A summary table is printed at the end and persisted to `.check-reports/sizes.tsv`.
+`make check` first resolves a working endpoint (see **Endpoint Resolution**), then runs each contract with `--verbose` against it. The full trace (deployment hash inputs, project metadata hash, wasm-opt version and flags, compressed and uncompressed size, fragment count) is printed to the terminal and saved verbatim to `.check-reports/<contract>.log`. A summary table is printed at the end and persisted to `.check-reports/sizes.tsv`.
 
 Failures do not abort the loop. All failing contracts are collected and reported at the end, and the target exits non-zero.
 
 ### 6. Deploy
 
 ```bash
-make deploy                              # all contracts, in order
-make deploy contract=kipio_account       # single contract
-make deploy-full                         # deploy + persist addresses + manifest
-make deploy-resume                       # resume the last deploy-full
+make deploy contract=kipio_identity_content  # single contract
+make deploy-full                             # full 4-phase deploy
+make deploy-resume                           # resume a failed phase-1
+make register-modules                        # re-run phase 2 (idempotent)
+make deploy-gateway                          # re-run phase 3 + 4 (idempotent)
 ```
 
-`deploy` iterates the `CONTRACTS` list in dependency order. Each contract is deployed with `--max-fee-per-gas-gwei=1` to avoid the Sepolia base-fee race. Constructor arguments, when present, are resolved from `CONSTRUCTOR_ARGS_<name>` (space-separated values) and expanded as separate `argv` entries.
-
-`deploy-full` captures the resulting address, deployment transaction hash, activation transaction hash, fragment count, and project metadata hash into `deployments/<timestamp>/addresses.json` and `deployments/<timestamp>/manifest.json`. Per-contract logs are written to the same directory. The manifest is produced by `scripts/stylus-deploy-manifest.sh`, which strips ANSI escapes from the log, anchors each field to its exact log prefix, and emits structured JSON (`project_info`, `deployment_fingerprint`, `contract_details`, `activation_details`).
-
-`deploy-resume` reads the latest deployment directory, skips any contract already present in `addresses.json`, and continues with the remaining ones. Useful when the RPC drops mid-run.
+See **Deployment Architecture** for the phase breakdown and the rationale.
 
 ### 7. Verify a deployed contract
 
@@ -203,9 +221,11 @@ ArbOS maintains a contract cache (CacheManager at `0x0000...0070`). Cached contr
 ### 9. Maintenance
 
 ```bash
-make clean               # remove target/ and .check-reports/
-make clean-deployments   # remove all deployment records
-make clean-abi           # remove generated Solidity interfaces
+make clean                   # remove target/ and .check-reports/
+make clean-deployments       # remove all deployment records
+make clean-abi               # remove generated Solidity interfaces
+make clean-endpoint-cache    # force the next check/deploy to re-probe endpoints
+make reverse-eng-clean       # remove .reverse-engineering/
 ```
 
 ### 10. Recovery from Docker root-ownership
@@ -225,24 +245,261 @@ Every `deploy` and `deploy-full` invocation prints a closing note reminding you 
 
 ---
 
+## Known Tooling Bugs
+
+The following bugs are present in **Stylus SDK 0.10.9** and its `cargo stylus export-abi` subcommand. They affect **only** the Solidity interface output, never the WASM bytecode or on-chain behaviour. Each is patched by a post-processing script that runs automatically as part of `make abi`.
+
+### Bug 1 — Inline tuples in external function signatures
+
+**Symptom.** The exporter emits tuple parameters inline:
+
+```solidity
+function dispatch(
+    (address, address, uint256, bytes calldata) envelope
+) external;
+```
+
+Solidity rejects this with `Error (3546): Expected type name` or similar. Inline tuple syntax is not valid in Solidity function signatures.
+
+**Cause.** `cargo stylus export-abi` does not synthesise named struct declarations for tuple-typed parameters. It assumes the ABI consumer can infer the shape from the encoding, which is true at the ABI level but not at the Solidity source level.
+
+**Known upstream.** `stylus-sdk-rs` issue #368; OpenZeppelin audit finding M-17.
+
+**Fix.** `scripts/fix-tuple-abi.sh` rewrites each inline tuple into a named struct declaration at the top of the interface, and replaces the inline form in the function signature with the struct name.
+
+### Bug 2 — Missing input-only struct declarations
+
+**Symptom.** The exported interface refers to a struct type that is never declared:
+
+```solidity
+function registerTransitiveDelegation(
+    DelegationAbi delegation,
+    IdentityAbi[] identities
+) external;
+```
+
+`solc` rejects this with `Error (7920): Identifier not found or not unique`.
+
+**Cause.** The exporter only emits struct declarations for types that appear in **returns** or in **storage-backed** fields. A struct used only as an input parameter is silently dropped.
+
+**Fix.** `scripts/fix-abi-structs.sh` computes the transitive closure of all struct types referenced by the exported functions, resolves them against `scripts/abi-structs-companion.sol`, and injects the missing declarations in dependency order.
+
+### Bug 3 — Missing data locations on external parameters
+
+**Symptom.** The exported interface omits the `calldata` or `memory` keyword on singular reference types:
+
+```solidity
+function registerCredential(CredentialAbi credential) external;
+```
+
+`solc` rejects this with `Error (6651): Data location must be "calldata", "memory" or "storage" for parameter in function, but none was given`.
+
+**Cause.** The exporter correctly emits data locations on primitive arrays (`bytes[]`, `uint256[]`) but drops them on singular struct, `bytes`, and `string` parameters.
+
+**Fix.** `scripts/fix-abi-data-locations.sh` adds `calldata` to every reference-type parameter in an external function signature that is missing a data location.
+
+### Rule
+
+Never ship an exported `.sol` interface to a downstream consumer without running `forge build` on it first. The three scripts are idempotent and can be re-run safely.
+
+---
+
+## Fragmented Init Code
+
+This section documents a project-specific discovery that is **not** covered by any public Stylus SDK documentation. It is the result of an empirical reverse-engineering effort.
+
+### The problem
+
+Arbitrum Stylus fragments any contract whose compressed WASM exceeds **24 KB**. `kipio_account` compresses to ~57 KB → **3 fragments + 1 root contract**. `cargo stylus deploy` handles fragmentation automatically: it deploys the 3 fragments in separate transactions, then deploys a root contract that references them by address, then activates the root.
+
+The Execution Gateway needs the **root contract's init code** as a compile-time constant, for two purposes:
+
+1. Predict the CREATE2 address of a user's account (which is the hash of the init code).
+2. Deploy the account with `RawDeploy` (which needs the raw init code bytes).
+
+`cargo stylus get-initcode` cannot produce this artifact for fragmented contracts:
+
+```
+error: fragmented contracts not currently supported for initcode retrieval
+```
+
+The Gateway was therefore blocked. Without the init code, no account can be created. Several alternatives were considered:
+
+- **Reduce `kipio_account` to < 24 KB compressed** so it does not fragment. This would require restructuring the contract into modules or sub-contracts. It was rejected: `kipio_account` is already heavily optimised (57 KB is the floor for the current endpoint surface), and any structural change would break the Dafny-verified bridge.
+- **Reconstruct the init code manually**, i.e. replicate the prelude and compression pipeline byte-for-byte. Rejected: fragile, dependent on Brotli version, and irreproducible across toolchains.
+- **Delegate to the on-chain `StylusDeployer`**. Rejected: the `StylusDeployer` does not fragment either. It deploys a single bytecode blob, so it would only deploy the root without its fragments.
+- **Move the deployment client-side** (SDK calls `cargo stylus deploy`). Rejected: it defeats the whole point of the Gateway (single-transaction bootstrap for non-crypto users) and requires the user to sign multiple transactions.
+
+**None of these paths were explored.** The chosen path was to reverse-engineer the fragmented init code format.
+
+### The reverse-engineering experiment
+
+The experiment is fully scripted under `make reverse-eng-*`. Its steps:
+
+1. Deploy `kipio_account` to Sepolia via `make reverse-eng-deploy`.
+2. Fetch the root deployment transaction and ABI-decode its calldata with `scripts/decode_stylus_calldata.py`. The init code is not carried directly in the tx input: it is the first `bytes` parameter of the call to the `StylusDeployer` (`0xcEcba2F1DC234f70Dd89F2041029807F8D03A990`).
+3. Parse the resulting init code with `make reverse-eng-structure`. Dump the prelude, version byte, and Stylus header.
+4. Extract the payload (everything after the 4-byte header) with `make reverse-eng-extract-payload`.
+5. Parse the payload with `make reverse-eng-decode-payload`, which uses `scripts/decode_fragment_table.py`.
+
+### Confirmed layout
+
+Byte-for-byte verified against a real Sepolia deploy (2026-10-01):
+
+```
+[0..42)     EVM prelude (42 bytes)
+              ├─ 0x7f PUSH32
+              ├─ <runtime_len u32 BE, left-padded to 32 bytes>
+              ├─ 0x80 DUP1
+              ├─ 0x60 0x2b PUSH1 0x2b (CODECOPY src)
+              ├─ 0x60 0x00 PUSH1 0x00 (CODECOPY dst)
+              ├─ 0x39 CODECOPY
+              ├─ 0x60 0x00 PUSH1 0x00 (RETURN offset)
+              └─ 0xf3 RETURN
+[42]        Stylus init code version byte (0x00, independent of fragmentation)
+[43..47)    Stylus header: 0xEF 0xF0 0x02 0x00 (fragmented)
+[47..51)    decompressed WASM size (u32 big-endian)
+[51..71)    fragment 0 address (20 bytes raw)
+[71..91)    fragment 1 address (20 bytes raw)
+[91..111)   fragment 2 address (20 bytes raw)
+```
+
+The **runtime length** field in the prelude (the `0x44` at byte 28..32) equals `4 + 4 + N × 20 = 68` for 3 fragments — it is the length of the runtime code that the EVM will `RETURN`, not of the whole init code.
+
+The init code is 111 bytes for `kipio_account`. The actual WASM code lives inside the 3 fragment contracts, referenced by address from the root. **The root is a tiny manifest contract.**
+
+### The solution
+
+`src/kipio_execution_gateway/build.rs` assembles the root init code at compile time from a fixed template plus the fragment addresses:
+
+1. Read `fragments.toml` (a sibling config file) for the decompressed size and the 3 fragment addresses.
+2. Build the prelude, the version byte, the header, the size, and the addresses into a single 111-byte buffer.
+3. Write the buffer to `$OUT_DIR/kipio_account_init.bin`.
+
+`src/internal/deploy.rs` reads the buffer via `include_bytes!` under the `production_build` feature. `RawDeploy::deploy` and the CREATE2 prediction both consume it directly. **No changes to `deploy.rs` or `bootstrap.rs` were required** beyond the compile-time constant that was already there.
+
+The `production_build` feature is auto-enabled for `kipio_execution_gateway` by the Makefile (see `FEATURES_kipio_execution_gateway`). It is off by default, so unit tests build without the WASM and without a real deployment.
+
+The `fragments.toml` file is committed to the repository. It contains the on-chain fragment addresses and the decompressed size for the current version of `kipio_account`. It must be regenerated after every `kipio_account` redeploy. `build.rs` is included in the project hash, so a change to `fragments.toml` invalidates the reproducibility hash, and any divergence is caught by `cargo stylus verify`.
+
+### Regenerating after a `kipio_account` redeploy
+
+1. Deploy the new `kipio_account` with `cargo stylus deploy` (fragmented automatically).
+2. From the deploy log or Arbiscan, take the 3 fragment creation transaction hashes and the decompressed size (`wasm size: NNNN bytes`).
+3. Update `fragments.toml` with the new values.
+4. Run `make build contract=kipio_execution_gateway`. The Gateway now embeds the new init code.
+5. Run `make deploy-gateway` to deploy the new Gateway and register it in `protocol_config`.
+
+### When to keep the same Gateway
+
+The Gateway's init code depends on `kipio_account`'s bytecode. If `kipio_account` does not change, the Gateway does not need to change. If it changes, the Gateway must be redeployed to produce accounts with the new bytecode. Existing accounts keep their original bytecode and their original address; the new Gateway produces new addresses for new users.
+
+---
+
+## Deployment Architecture
+
+The deployment is structured in **four phases**, with an endpoint resolution step that runs once per invocation.
+
+### Endpoint resolution
+
+Public Sepolia RPCs frequently reject Stylus activation simulations with:
+
+```
+stylus activations not allowed for this request
+```
+
+This is a rate-limiter / feature-flag policy, not a contract bug. `scripts/find-working-endpoint.sh` probes the endpoint list in order and caches the first one that accepts the simulation in `.check-reports/.working-endpoint`. Subsequent invocations try the cached endpoint first and only re-probe when it stops working.
+
+```bash
+make print-working-endpoint    # show the cached endpoint
+make clean-endpoint-cache      # force a fresh probe
+```
+
+Overriding the whole list is possible via `ENDPOINT_SEPOLIA_ALL`:
+
+```bash
+make check ENDPOINT_SEPOLIA_ALL='https://arb-sepolia.g.alchemy.com/v2/KEY'
+```
+
+### Phase 1 — Five singletons
+
+Deployed in dependency order:
+
+| # | Contract | Constructor args |
+|---|---|---|
+| 1 | `kipio_protocol_config` | none |
+| 2 | `kipio_runtime` | protocol_config address |
+| 3 | `kipio_recovery` | runtime address |
+| 4 | `kipio_economics` | protocol_config + CRE forwarder + CRE workflow id |
+| 5 | `kipio_identity_content` | storage + query + access providers + expected workflow id |
+
+Each phase-1 deploy appends its address to `deployments/<ts>/addresses.json` and its manifest to `deployments/<ts>/manifest.json`. If the run fails partway, `make deploy-resume` continues from the last incomplete contract.
+
+### Phase 2 — Module registration
+
+The five addresses are registered in `kipio_protocol_config` via four `cast send` calls (`setRuntimeAddress`, `setRecoveryAddress`, `setEconomicsAddress`, `setIdentityContentAddress`). Each emits a `ModuleAddressUpdated` event with the module id in `topic[1]`:
+
+| module_id | Contract |
+|---|---|
+| 0 | runtime |
+| 1 | economics |
+| 2 | identity_content |
+| 3 | recovery |
+| 4 | execution_gateway |
+
+This phase is idempotent. `make register-modules` re-runs it against the latest deployment.
+
+### Phase 3 — Gateway inject + rebuild + deploy
+
+The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants (see **Protocol configuration** below for the rationale). The pipeline is:
+
+1. `scripts/inject-gateway-constants.sh` reads the three addresses from the latest `addresses.json` and rewrites them in `src/kipio_execution_gateway/src/config/constants.rs`.
+2. `cargo stylus build --features production_build` recompiles the Gateway. The `build.rs` regenerates the init code from `fragments.toml` in the same step.
+3. `cargo stylus deploy` deploys the Gateway.
+
+`constants.rs` is committed to the repository with placeholder zeros (`Address::new([0u8; 20])`). It is **not** committed with real addresses: the injection happens at deploy time, per network. This keeps the source tree network-agnostic.
+
+### Phase 4 — Gateway registration
+
+The Gateway address is registered in `kipio_protocol_config` via `setExecutionGatewayAddress`.
+
+### Recovery targets
+
+If any phase fails, the recovery path is granular:
+
+```bash
+make deploy-resume     # resume phase 1 (idempotent per-contract)
+make register-modules  # re-run phase 2 (idempotent)
+make deploy-gateway    # re-run phase 3 + 4 (idempotent)
+```
+
+`deploy-full` runs all four phases in a single invocation. It is the recommended entry point for a clean deployment.
+
+### A note on `cast send` vs `cargo stylus deploy` flags
+
+These are two different CLIs with two different flag names for the same concept:
+
+| CLI | Flag for max fee per gas |
+|---|---|
+| `cargo stylus deploy` | `--max-fee-per-gas-gwei=1` |
+| `cast send` | `--gas-price 1gwei` |
+
+They are not interchangeable. Passing `--max-fee-per-gas-gwei` to `cast send` fails with `error: unexpected argument '--max-fee-per-gas-gwei' found`.
+
+---
+
 ## Foundry Interface Validation (mandatory after `make abi`)
 
-The exported Solidity interfaces must **always** be validated against a real `solc` before being used by any consumer. `make abi` produces syntactically valid Solidity, but the exporter has known limitations that only surface when a proper compiler reads the file:
+The exported Solidity interfaces must **always** be validated against a real `solc` before being used by any consumer:
 
 ```bash
 cd foundry
 forge build
 ```
 
-**Known exporter limitations (as of Stylus SDK 0.10.9):**
-
-1. **Missing struct declarations.** When an external function references a struct type that is only used as an input (never as a return, never in a storage-backed field), the exporter may omit the struct declaration while still referring to it in the function signature. Example: `IKipioAccount.sol` refers to `IdentityAbi[]` in `registerTransitiveDelegation` but does not emit `struct IdentityAbi`. `solc` rejects this with `Error (7920): Identifier not found or not unique`.
-
-2. **Declaration order.** The exporter emits functions before structs. Solidity requires forward declarations, so any function signature that references a struct emits a warning or error depending on the compiler.
+The three export bugs listed under **Known Tooling Bugs** are patched automatically by the Makefile, but `forge build` remains the final gate. Any new variant of the same family of bugs will surface there first.
 
 Because these are tooling-side issues in the SDK and not defects in the contract ABI, they are worked around at the Foundry layer (patched interfaces) rather than at the contract layer. The on-chain surface is unaffected: the selectors and calldata layout in the WASM are identical regardless of what the exported `.sol` says.
-
-**Rule:** never ship a `.sol` interface to a downstream consumer without `forge build` passing on it first.
 
 ---
 
@@ -314,6 +571,8 @@ cargo test -p kipio_tests --test fork -- --ignored
 
 The bridge tests are the semantic safety net. They exercise the conversion layer byte-for-byte and must remain green under every optimisation change. Any modification to `src/bridge/src/lib.rs` or to the generated crate requires re-running them.
 
+The contract test suite (`unit`, `e2e`, `fork`) is **not yet populated**. The scaffolding is in place, and the intended flow is documented in the roadmap section below.
+
 ---
 
 ## Technical Architecture
@@ -384,6 +643,8 @@ The `AuthorizationState` shape and its transition rules are verified in Dafny. T
 
 Account mutators accept calls only from the immutable `runtime_address` set in the constructor. Direct calls — including from the identity itself — are rejected with `UnauthorizedCaller`. The Account is a pure executor; authorization is orchestrated upstream by Runtime.
 
+Account also exposes `execute_recovery`, which cross-calls `kipio_recovery.consume_recovery`. This is the one documented exception to the "Runtime is the only cross-caller" rule; it is justified by the CEI ordering of the recovery flow.
+
 ### 3. Recovery (`kipio_recovery`)
 
 The guardian-driven recovery singleton. Versioned guardian sets, policy requests with threshold approvals, challenge-period execution, and P-256 / secp256k1 signature verification via native precompiles. Recovery transitions are gated by `runtime_address`.
@@ -408,6 +669,16 @@ User-facing mutators require `msg_sender == runtime` and carry the effective use
 
 The identity anchor also exposes `applyAuthorizedRotation`, a runtime-only endpoint that applies an externally approved key rotation. The runtime reads the policy state from `kipio_recovery`, validates the approval, and then forwards the rotation call to `kipio_identity_content`. This replaces the older `rotateKeyFromPolicy` endpoint, which required `kipio_identity_content` to talk to the policy ledger directly.
 
+**Provider configuration.** The constructor takes three provider addresses: `storage_provider`, `query_provider`, and `access_provider`. These are stored in the contract's own storage, not in `protocol_config`. They can be updated later via the owner-gated setters `setStorageProvider`, `setQueryProvider`, and `setAccessProvider`, each of which emits a `ProviderUpdated` event. The constructor does not validate these against zero, so during early deployments placeholder non-zero addresses are used until real providers exist:
+
+| Slot | Intended provider | Current status |
+|---|---|---|
+| `storage_provider` | Irys | Placeholder (`0x01`) |
+| `query_provider` | SXT (Space and Time) | Placeholder (`0x02`); SXT is **cancelled** — see roadmap |
+| `access_provider` | TACo (Threshold Network) or LIT Protocol | Placeholder (`0x03`) |
+
+`expected_workflow_id` is a `B256` used to gate CRE reports. It is `0x00..00` until the CRE workflow is deployed. Any endpoint that touches these slots will fail until the real addresses are set.
+
 ### 5. Economics (`kipio_economics`)
 
 The economic coordination layer. It performs the settlement of every operation: pays the storage provider, applies the protocol fee to the treasury, refunds excess through a pull-based refund balance, and coordinates sponsorships, credit, grants, and bootstrap campaigns.
@@ -416,17 +687,28 @@ The economic obligation is settled through `settleEconomicObligation(funder, pla
 
 Bootstrap funding for account activation is exposed through `fundBootstrap(identity)` and consumed by the Execution Gateway. The flow is pull-based: `fundBootstrap` credits the Gateway's refund balance, `withdrawRefund` transfers the credited ETH to the Gateway.
 
+**CRE integration.** Economics accepts Chainlink Runtime Environment (CRE) reports via `onReport(metadata, report)`. The caller must be the authorized CRE forwarder (a compile-time constant set at construction). The report's `workflowId` is extracted from bytes 0..32 of the metadata, which the KeystoneForwarder signs on-chain. The contract validates the workflow id against `expected_workflow_id`, the nonce, and the deposit. **The CRE workflow itself is not yet deployed** — approval by Chainlink is pending. Until it is, the CRE path is inert: `onReport` will reject every call because `cre_forwarder` is a placeholder.
+
 ### 6. Execution Gateway (`kipio_execution_gateway`)
 
 The entry point for EIP-7702 and CREATE2-based account bootstrap. It resolves the identity of the caller, predicts the deterministic account address, deploys and activates the Account contract if needed, and forwards the original payload to the Runtime. Bootstrap funding is sourced from `kipio_economics` when available, and falls back to the caller's `msg.value` otherwise.
 
 The Gateway is immutable by design. Under EIP-7702, the delegated code runs in the EOA's context, so the Gateway detects the context and performs a self-call to `selfDeploy` to guarantee that CREATE2 uses the Gateway as the deployer. This keeps the deterministic account address stable across direct calls and delegated calls.
 
+The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants in `src/config/constants.rs`. See **Protocol configuration** for the rationale, and **Paths Not Explored** for the decoupling alternative.
+
 ### 7. Protocol configuration (`kipio_protocol_config`)
 
 The discovery hub. Holds the currently authorized addresses of every operational module, the per-curve verifier mapping, and the whitelist of authorized policy ledgers. Contracts that need to reach a peer module query this contract instead of hard-coding addresses.
 
-The pattern is **on-chain address registry**, not UUPS or delegatecall. Each module is immutable at its address; upgrades are performed by writing a new address into the registry. Existing contracts that read through the registry resolve the new module on the next call, without a redeploy. The Gateway is the one exception — it hard-codes the runtime and economics addresses, because its CREATE2 derivation would otherwise change if the runtime moved, invalidating every existing account.
+The pattern is **on-chain address registry**, not UUPS or delegatecall. Each module is immutable at its address; upgrades are performed by writing a new address into the registry. Existing contracts that read through the registry resolve the new module on the next call, without a redeploy. The Gateway is the one exception — it hard-codes the runtime, economics, and recovery addresses. The reason is subtle:
+
+* The Gateway's CREATE2 derivation depends on `keccak(ACCOUNT_INIT_CODE)`.
+* `ACCOUNT_INIT_CODE` contains the runtime, economics, and recovery addresses (see **Fragmented Init Code**).
+* If those three were read from `protocol_config` at runtime, the Gateway could deploy an account with `runtime=A` while activating against `runtime=B`, producing an inconsistent account.
+* Hardcoding them at compile time makes the Gateway self-contained and auditable: once deployed, its behaviour with respect to those three modules is fixed.
+
+**Consequence.** Any change to `runtime`, `economics`, or `recovery` requires redeploying the Gateway (new `constants.rs`, new `ACCOUNT_INIT_CODE`, new account addresses) and registering it in `protocol_config` with `setExecutionGatewayAddress`. During the transition, old accounts keep working against the old modules; new accounts use the new Gateway. See **Paths Not Explored** for an alternative that avoids this coupling.
 
 ---
 
@@ -518,15 +800,47 @@ pub fn get_vault_paginated_full(
 3. **Hybrid verification pipelines**: running dual-track fuzz testing with `stylus-test` for storage assertions and Forge network state forking for multi-contract integration flows.
 4. **Additional operational modules**: adding new modules (agents, ML inference adapters, alternative recovery policies) as new entries in the protocol config registry. Existing contracts inherit them without redeploying.
 
+### Pending and blocked items
+
+The following items are intentionally not implemented in the current buildathon deployment. They are documented here so that the state of the codebase is unambiguous.
+
+* **Space and Time (SXT)** — **cancelled.** The SXT ecosystem is not mature enough for production integration, and the onboarding process is bureaucratic. The `query_provider` slot in `kipio_identity_content` will stay as a placeholder. If SXT matures, the provider can be set via `setQueryProvider`. No contract changes are needed.
+* **Chainlink CRE** — **pending external approval.** The workflow is fully coded (`kipio_economics/on_report` is production-ready) but the deployment to a Chainlink DON requires an access approval that has been requested and is under review. Until then, the CRE settlement path is inert: the contract accepts `onReport` calls from the authorized forwarder, but no forwarder will call it because there is no workflow registered. Once approval lands, the workflow is deployed, its `workflowId` is computed and registered in `kipio_economics` via `updateCreWorkflowId`, and the settlement path activates.
+* **Chainlink without CRE + Uniswap v4** — **not evaluated.** An alternative settlement path that bypasses CRE entirely and uses Uniswap v4 hooks to source ETH on Arbitrum Sepolia from arbitrary testnet tokens has been mentioned but not designed or prototyped. This path would decouple the settlement flow from Chainlink's approval cycle, at the cost of tighter coupling to the Uniswap v4 hook system.
+* **Irys storage** — **pending real address.** The `storage_provider` slot in `kipio_identity_content` is a placeholder. Any call that requires resolving a storage quote will fail until the real Irys address is set. The `setStorageProvider` setter is ready; only the value is missing.
+* **TACo (Threshold Network)** — **currently paused.** The upstream project is inactive. The `access_provider` slot is a placeholder. LIT Protocol is the alternate candidate; the setter (`setAccessProvider`) accepts either.
+* **Real multisig ownership** — the deployed contracts use a single EOA as owner. Migration to a multisig (Safe) is a post-buildathon step: `transferOwnership` and `acceptOwnership` on each contract handle it.
+* **Contract-level test suite** — the scaffolding under `tests/` (`unit.rs`, `e2e.rs`, `fork.rs`, `common/mod.rs`) is empty. The plan is to build it in three layers: unit tests for pure Rust logic (codec, pack/unpack, status transitions), integration tests with `TestVM` for cross-contract flows, and fork tests against the deployed contracts on Sepolia.
+* **Fuzz testing** — no property-based tests are in place. The intent is to fuzz the codec and the state-transition logic against invariants derived from the DDD specification.
+
+---
+
+## Paths Not Explored
+
+Several alternative designs were considered and rejected during the initial architecture phase. Two categories follow: paths that were tried and reverted, and paths that were never attempted.
+
+### Tried and reverted
+
+* **`kipio_recovery` fused into `kipio_account`.** Fusion would have removed one cross-call per recovery request. Reverted: recovery is a shared service with its own request ledger, and separating the two keeps each WASM comfortably under the ArbOS uncompressed activation limit. The audit trail of a shared recovery singleton is also preferable.
+
+### Never attempted
+
+* **`kipio_execution_gateway` decoupled from `kipio_account`.** Currently the Gateway embeds the root init code of `kipio_account` as a compile-time constant and deploys accounts via `RawDeploy` + CREATE2. An alternative would be to introduce a separate `kipio_account_factory` contract that owns the init code and exposes `predict(salt)`, `deploy(salt)`, and `is_ready(account)` to the Gateway. The Gateway would then only know the factory interface, not the account's bytecode. **This path was not explored.** It would move the coupling from the Gateway to the factory without eliminating it, and it would add a cross-call per bootstrap. The self-contained Gateway is arguably simpler and more auditable. Both designs are legitimate; the current one was chosen because the Gateway is the *only* contract that needs to be rebuilt when `kipio_account` changes, which is a natural upgrade boundary.
+* **`kipio_execution_gateway` reading runtime/economics/recovery from `protocol_config` instead of hardcoding them.** This would remove the "Gateway must be redeployed when runtime changes" coupling, at the cost of making the Gateway's bootstrap behaviour depend on mutable on-chain state. The current design favours determinism: the account address derived from `keccak(ACCOUNT_INIT_CODE)` embeds the addresses of runtime/economics/recovery, so hardcoding them makes the address derivation fully self-contained. **This path was not explored.** Both designs are defensible; the current one treats the Gateway as a bootstrap primitive whose inputs are frozen at deployment time, which matches the "one signature, one transaction, no surprises" objective.
+* **A separate `kipio_account_factory` that also deploys fragments on demand.** This would fragment accounts per-user rather than sharing fragments across all accounts. It would multiply on-chain state by the number of users (3 fragments + 1 root per user instead of 1 root per user) with no functional benefit. Rejected on principle.
+* **Proxy-based upgradeability for the account.** Considered and rejected in favour of `protocol_config`-driven module resolution. Proxy patterns introduce delegatecall semantics, storage collision risk, and an additional trust assumption on the upgrade admin. The registry pattern keeps each module immutable at its address and centralises only the *resolution* logic.
+* **`cargo stylus get-initcode` for fragmented contracts.** Blocked upstream. The reverse-engineering path documented above was chosen instead.
+
 ---
 
 ## Notes
 
-* Contracts are deployed on **Arbitrum Sepolia**.
+* Contracts are deployed on **Arbitrum Sepolia**. Deployment records live under `deployments/<timestamp>/` and are committed to the repository (except for `.log` files, which are gitignored).
 * The frontend repository expects ABI sync with the latest Stylus compilation (`make abi`).
 * The exported Solidity interfaces must pass `forge build` inside `foundry/` before being consumed by any downstream project. See the **Foundry Interface Validation** section.
-* Makefile targets must be followed in order (`lock → build → check → test → deploy`) for consistent results.
+* Makefile targets should be followed in order for consistent results. `deploy-full` handles the ordering internally; `make build` and `make check` are safe to run in any order.
 * After any `make deploy` or `make deploy-full`, run `make fix-perms` before the next local build, ABI export, or test run. See the **Recovery from Docker root-ownership** section.
+* `src/kipio_execution_gateway/src/config/constants.rs` is committed with placeholder zeros. Real addresses are injected at deploy time by `scripts/inject-gateway-constants.sh` and never committed. This keeps the source tree network-agnostic.
 
 ---
 
@@ -550,6 +864,8 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
   * [Docs.rs: stylus_sdk::call module source](https://docs.rs/stylus-sdk/latest/src/stylus_sdk/call/mod.rs.html)
 * **Raw call abstraction**: documentation for untyped low-level message-passing mechanisms used to delegate custom data layouts to alternative modules.
   * [Docs.rs: stylus_sdk::call::RawCall](https://docs.rs/stylus-sdk/latest/stylus_sdk/call/struct.RawCall.html)
+* **RawDeploy**: low-level contract creation via the host EVM's `CREATE` / `CREATE2` opcodes. This is what the Gateway uses to deploy accounts.
+  * [Docs.rs: stylus_sdk::deploy::RawDeploy](https://docs.rs/stylus-sdk/0.7.0/src/stylus_sdk/deploy/raw.rs.html)
 * **WASM binary size control & pipeline optimisation**: canonical compiler tuning mechanics (`opt-level = "z"`, `lto = true`, `panic = "abort"`) to respect host limits.
   * [Arbitrum Docs: Optimizing Stylus Binaries](https://docs.arbitrum.io/stylus/how-tos/optimizing-binaries)
   * [Arbitrum Docs: Stylus Contract Fundamentals & Static Calling](https://docs.arbitrum.io/stylus/fundamentals/contracts)
@@ -565,7 +881,16 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
 * **OpenZeppelin ERC2771Context**: canonical implementation of the trusted forwarder pattern in Solidity, used as the reference for the equivalent runtime/contract split in this workspace.
   * [GitHub: OpenZeppelin ERC2771Context](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/metatx/ERC2771Context.sol)
 
-### 3. Passkey Authentication & Low-Level Curve Precompiles
+### 3. Chainlink Runtime Environment (CRE)
+
+* **CRE Overview**: the orchestration layer used by `kipio_economics` for cross-chain settlement. Reports are delivered to the on-chain consumer via the KeystoneForwarder.
+  * [Chainlink Docs: CRE Overview](https://docs.chain.link/cre)
+* **KeystoneForwarder reference**: the on-chain forwarder address registry (production and simulation endpoints on Arbitrum Sepolia and One).
+  * [Chainlink Docs: Forwarder Directory](https://docs.chain.link/cre/guides/workflow/using-evm-client/forwarder-directory)
+* **`onReport` metadata layout**: the 62-byte metadata encoding (`workflowId`, hashed `workflowName`, `workflowOwner`) that `kipio_economics` validates on every CRE report.
+  * [Chainlink Docs: Report Encoding](https://docs.chain.link/cre/reference/sdk/overview-ts)
+
+### 4. Passkey Authentication & Low-Level Curve Precompiles
 
 * **EIP-7951**: the authoritative successor to RIP-7212 governing the native `0x100` execution context and big-endian inputs for `secp256r1` biometric verifications.
   * [Ethereum Improvement Proposals: EIP-7951](https://eips.ethereum.org/EIPS/eip-7951)
@@ -574,7 +899,7 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
   * [EIP.tools: RIP-7212 Rollup Blueprint](https://eip.tools/rip/7212)
   * [Alchemy Ledger: Deep Dive into RIP-7212 Rollup Primitives](https://www.alchemy.com/blog/what-is-rip-7212)
 
-### 4. Proxy Re-Encryption (PRE) & Mathematical Tooling
+### 5. Proxy Re-Encryption (PRE) & Mathematical Tooling
 
 * **The Umbral scheme**: threshold proxy re-encryption framework defining cryptographic key routing delegation, `kfrags`, `cfrags`, and split-capsule tokens.
   * [NuCypher Network: Umbral Cryptographic Whitepaper](https://github.com/nucypher/umbral-doc/blob/master/umbral-doc.pdf)
@@ -589,7 +914,7 @@ This infrastructure is built upon cryptographic auditing, low-level runtime spec
   * [crates.io: k256](https://crates.io/crates/k256)
   * [crates.io: p256](https://crates.io/crates/p256)
 
-### 5. Distributed Architecture & Encrypted Storage Integrations
+### 6. Distributed Architecture & Encrypted Storage Integrations
 
 * **WNFS (Web Native File System)**: modular structure layout addressing secure private capability graphs, self-sovereign cryptographic trees, and nested index trees.
   * [GitHub: wnfs-wg/rs-wnfs](https://github.com/wnfs-wg/rs-wnfs)
