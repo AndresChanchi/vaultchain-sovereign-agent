@@ -451,7 +451,7 @@ This phase is idempotent. `make register-modules` re-runs it against the latest 
 
 ### Phase 3 — Gateway inject + rebuild + deploy
 
-The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants (see **Protocol configuration** below for the rationale). The pipeline is:
+The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants (see **Versioning Model** for the full rationale). The pipeline is:
 
 1. `scripts/inject-gateway-constants.sh` reads the three addresses from the latest `addresses.json` and rewrites them in `src/kipio_execution_gateway/src/config/constants.rs`.
 2. `cargo stylus build --features production_build` recompiles the Gateway. The `build.rs` regenerates the init code from `fragments.toml` in the same step.
@@ -485,6 +485,392 @@ These are two different CLIs with two different flag names for the same concept:
 | `cast send` | `--gas-price 1gwei` |
 
 They are not interchangeable. Passing `--max-fee-per-gas-gwei` to `cast send` fails with `error: unexpected argument '--max-fee-per-gas-gwei' found`.
+
+---
+
+## Versioning Model
+
+The protocol has a **two-layer versioning scheme**: an on-chain registry that resolves the *current* version of each module, and a set of immutable contracts whose coupling is determined at deployment time. This section documents how the two layers relate and what they imply for upgrades.
+
+### The registry
+
+`kipio_protocol_config` is the on-chain registry. It holds the current address of every operational module and emits a `ModuleAddressUpdated` event on every change. The module ids are documented in **Phase 2 — Module registration** above.
+
+The registry is a **directory**, not a proxy. It has no delegatecall, no storage collision risk, and no admin surface beyond the owner-gated setters. Contracts that read through it resolve the current address on each call, so a registry update reaches them without a redeploy.
+
+### The Gateway exception
+
+The Execution Gateway is **not** a consumer of the registry. It hardcodes `KIPIO_RUNTIME`, `KIPIO_ECONOMICS`, and `KIPIO_RECOVERY` as compile-time constants in `src/config/constants.rs`. This is a correctness requirement, not a convenience:
+
+- Every account created by Gateway vN stores `(runtime_vN, recovery_vN)` in its own storage at construction time.
+- Account mutators reject calls from any address other than the stored `runtime_vN`.
+- If the Gateway resolved `runtime` from the registry at bootstrap time, an account created with `runtime_vN+1` would be unusable until `runtime_vN+1` is deployed, and an account created with `runtime_vN` would reject calls from `runtime_vN+1` even though the registry says `runtime_vN+1` is current.
+- Hardcoding freezes the coupling at deployment time. The Gateway is a bootstrap primitive whose inputs are fixed for its lifetime, matching the "one signature, one transaction, no surprises" objective.
+
+### The version diagram
+
+```
+      ┌─────────────────────────────────────────────────────┐
+      │         kipio_protocol_config (immutable)           │
+      │                                                     │
+      │  slot[0] runtime_vN     slot[3] recovery_vN         │
+      │  slot[1] economics_vN   slot[4] gateway_vN          │
+      │  slot[2] identity_vN                                │
+      └─────────────────────────────────────────────────────┘
+                          ▲
+                          │ set_execution_gateway_address(GW_vN+1)
+                          │ → ModuleAddressUpdated(4, GW_vN, GW_vN+1)
+                          │
+          ┌───────────────┴───────────────┐
+          │                               │
+   ┌──────┴──────┐                 ┌──────┴──────┐
+   │ Gateway vN  │                 │Gateway vN+1 │
+   │             │                 │             │
+   │ hardcodes:  │                 │ hardcodes:  │
+   │  runtime_vN │                 │runtime_vN+1 │
+   │  econ_vN    │                 │ econ_vN+1   │
+   │  recovery_vN│                 │recovery_vN+1│
+   └──────┬──────┘                 └──────┬──────┘
+          │ CREATE2(salt, init_code_vN)   │ CREATE2(salt, init_code_vN+1)
+          │                               │
+          ▼                               ▼
+   ┌─────────────┐                 ┌─────────────┐
+   │ Account_vN  │                 │Account_vN+1 │
+   │ storage:    │                 │ storage:    │
+   │  runtime_vN │                 │runtime_vN+1 │
+   │  recovery_vN│                 │recovery_vN+1│
+   └─────────────┘                 └─────────────┘
+   (existing users)                (new users)
+```
+
+### Rules
+
+1. **Every Gateway version is coupled to a triple** `(runtime, economics, recovery)`. This triple is fixed at compile time.
+2. **Every Account embeds the same triple** (or at least the runtime and recovery it will accept calls from) in its own storage at construction time.
+3. **`protocol_config` can point to `Gateway_vN+1` while `Gateway_vN` remains live.** The registry update is a soft deprecation of the old Gateway for new users; it does not invalidate existing accounts.
+4. **Existing accounts continue to accept calls from `runtime_vN`** (which stays deployed) regardless of what the registry says.
+5. **New accounts accept calls from `runtime_vN+1`.**
+6. **Changing any of the three requires: deploy new module, deploy new Gateway, register Gateway in `protocol_config`.** See **Upgrade Procedures** below.
+7. **`kipio_account` has no version field.** The version is implicit in which Gateway created the account.
+8. **`kipio_identity_content` providers are not part of the versioning model.** They live in the contract's own storage and can be updated in place via the owner-gated setters. See **Upgrade Procedures**.
+
+### What is versioned vs. what is a parameter
+
+| Concept | Lives in | Updated by | Redeploy needed |
+|---|---|---|---|
+| `runtime`, `economics`, `recovery` addresses | Gateway `constants.rs` (compile-time) | Redeploy Gateway + `set_execution_gateway_address` | Yes (Gateway only) |
+| `identity_content` address | Registry | `set_identity_content_address` | No |
+| Gateway address | Registry | `set_execution_gateway_address` | No (for the registry) |
+| `kipio_account` bytecode | Gateway `fragments.toml` (compile-time) | Redeploy Gateway with new fragments | Yes (Gateway only) |
+| `kipio_identity_content` provider addresses | Contract storage | Owner-gated setters | No |
+| `kipio_economics` CRE workflow id | Contract storage | `updateCreWorkflowId` | No |
+
+---
+
+## Upgrade Procedures
+
+This section documents the concrete steps for each type of upgrade. All commands are run from the workspace root.
+
+### Case 1 — Only `kipio_identity_content` providers change
+
+The provider slots (`storage_provider`, `query_provider`, `access_provider`, `zk_verifier`) live in `kipio_identity_content`'s own storage. They are not part of the versioning model and can be updated in place.
+
+**Scenario:** Irys is live and you want to set the real `storage_provider`. Or LIT Protocol replaces TACo in the `access_provider` slot.
+
+**Steps:**
+
+```bash
+IDENTITY=<address from deployments/latest/addresses.json>
+NEW_PROVIDER=0x...
+
+# Pick the right setter for the slot
+cast send $IDENTITY "setStorageProvider(address)" $NEW_PROVIDER \
+  --rpc-url https://arbitrum-sepolia-rpc.publicnode.com \
+  --private-key $PRIVATE_KEY \
+  --gas-price 1gwei
+# Or: setQueryProvider, setAccessProvider, setZkVerifier, setExpectedWorkflowId
+```
+
+**Events emitted:** `ProviderUpdated(providerType, oldProvider, newProvider)` for the three provider slots, `ZkVerifierUpdated` for the verifier, `WorkflowIdUpdated` for the workflow id.
+
+**Cost:** ~50k gas per call. No redeploys, no Gateway change, no `protocol_config` change.
+
+### Case 2 — Only the CRE workflow id changes
+
+The `expected_workflow_id` lives in `kipio_economics`'s own storage.
+
+**Scenario:** Chainlink CRE is approved, you deploy the workflow, and you get a real `workflowId`. You want `kipio_economics` to accept reports from it.
+
+**Steps:**
+
+```bash
+ECONOMICS=<address from deployments/latest/addresses.json>
+NEW_WORKFLOW_ID=0x...  # 32-byte hex from `cre workflow hash`
+
+cast send $ECONOMICS "updateCreWorkflowId(bytes32)" $NEW_WORKFLOW_ID \
+  --rpc-url https://arbitrum-sepolia-rpc.publicnode.com \
+  --private-key $PRIVATE_KEY \
+  --gas-price 1gwei
+```
+
+**Events emitted:** `CreWorkflowUpdated(oldWorkflowId, newWorkflowId)`.
+
+**Cost:** ~50k gas. No redeploys.
+
+### Case 3 — `runtime`, `economics`, or `recovery` changes
+
+Deploy the new module, then redeploy the Gateway with the new triple, then register the new Gateway.
+
+**Scenario:** You fixed a bug in `runtime`, or you upgraded `economics` with new features.
+
+**Steps:**
+
+1. Deploy the new module:
+
+   ```bash
+   make deploy contract=kipio_runtime  # or kipio_economics / kipio_recovery
+   ```
+
+   The new address lands in a new `deployments/<ts>/` folder.
+
+2. Register the new module in the registry:
+
+   ```bash
+   PROTOCOL_CONFIG=<from deployments/latest/addresses.json>
+   NEW_MODULE=0x...
+
+   cast send $PROTOCOL_CONFIG "setRuntimeAddress(address)" $NEW_MODULE \
+     --rpc-url https://arbitrum-sepolia-rpc.publicnode.com \
+     --private-key $PRIVATE_KEY \
+     --gas-price 1gwei
+   # Or setEconomicsAddress / setRecoveryAddress
+   ```
+
+   Emits `ModuleAddressUpdated(moduleId, oldAddress, newAddress)`.
+
+3. Redeploy the Gateway with the new triple:
+
+   ```bash
+   make deploy-gateway
+   ```
+
+   This reads the current `deployments/latest/addresses.json`, injects the new triple into `constants.rs`, rebuilds, deploys the new Gateway, and calls `setExecutionGatewayAddress(new_gateway)`.
+
+4. Confirm the registry is consistent:
+
+   ```bash
+   cast call $PROTOCOL_CONFIG "getRuntimeAddress()" --rpc-url ...
+   cast call $PROTOCOL_CONFIG "getExecutionGatewayAddress()" --rpc-url ...
+   ```
+
+**Events emitted:** `ModuleAddressUpdated` with `moduleId` in {0, 1, 3} for the module change, and `moduleId = 4` for the Gateway change.
+
+**Cost:** Deployment gas for the new module + deployment gas for the new Gateway + 4 `cast send` calls.
+
+**Consequence:** Existing accounts remain bound to the old triple. They continue to accept calls from the old `runtime`. New accounts use the new triple. Both sets of accounts coexist indefinitely.
+
+### Case 4 — `kipio_account` changes
+
+More involved: the account bytecode changes → fragment addresses change → Gateway init code changes.
+
+**Scenario:** You fixed a bug in `kipio_account`, or the Dafny-verified bridge changed.
+
+**Steps:**
+
+1. Deploy the new `kipio_account`:
+
+   ```bash
+   make deploy contract=kipio_account
+   ```
+
+   The contract fragments automatically. The deploy log shows the fragment creation tx hashes and `wasm size: NNNN bytes`.
+
+2. Update `src/kipio_execution_gateway/fragments.toml`:
+
+   - Change `decompressed_size` to the value from the deploy log.
+   - Change the three `fragment_N` addresses to the new fragment creation addresses.
+
+   To find the fragment addresses, use Arbiscan on the deployer address and filter for the three contract creation transactions immediately preceding the root deploy. Alternatively, use the reverse-engineering tooling documented in **Fragmented Init Code**.
+
+3. Redeploy the Gateway:
+
+   ```bash
+   make deploy-gateway
+   ```
+
+   The `build.rs` regenerates the init code from the updated `fragments.toml`, the Gateway rebuilds with the new init code, deploys, and registers.
+
+4. Confirm:
+
+   ```bash
+   cat src/kipio_execution_gateway/fragments.toml
+   # Inspect the built init code
+   BUILT=$(find target -name kipio_account_init.bin -path '*kipio_execution_gateway*' | head -1)
+   xxd "$BUILT"
+   ```
+
+**Consequence:** Existing accounts keep their old bytecode. New accounts use the new bytecode, and **their addresses will differ** because `keccak(init_code)` changed. This is the most disruptive upgrade type.
+
+### Case 5 — `protocol_config` itself needs to change
+
+`kipio_protocol_config` is immutable, but it can be replaced by deploying a new instance. Doing so requires redeploying every consumer.
+
+**Current state:** Runtime, Recovery, Economics, and IdentityContent each store the `protocol_config` address in their own storage. Runtime and Economics take it via constructor; IdentityContent takes it via the one-time `initialize`. None of them exposes a setter for it. To migrate to a new `protocol_config`, all of them must be redeployed.
+
+**Consequence:** A `protocol_config` change is equivalent to a full protocol redeploy. This is a deliberate design constraint of the current buildathon deployment. A future version could expose a setter on each consumer, but that would introduce a mutable pointer to the root of the registry, weakening the audit trail. It is documented here so that any future attempt to replace `protocol_config` starts from the correct expectation.
+
+### Operational checklist
+
+Before every upgrade, verify:
+
+- [ ] The Gateway's `constants.rs` reflects the intended triple for the *current* deployment.
+- [ ] `fragments.toml` matches the deployed `kipio_account` version.
+- [ ] `deployments/latest/addresses.json` contains all seven addresses (protocol_config, runtime, recovery, economics, identity_content, execution_gateway, and account if applicable).
+- [ ] `make check` passes.
+- [ ] The frontend has been notified of the pending change (see **Frontend Integration: Module Updates**).
+
+After every upgrade:
+
+- [ ] `make fix-perms` (deploy runs in Docker as root).
+- [ ] Re-run `make check` to confirm the new version compiles and activates.
+- [ ] Verify the `ModuleAddressUpdated` events landed on-chain and the frontend has picked them up.
+
+---
+
+## Frontend Integration: Module Updates
+
+The frontend needs to track the *current* version of each module and react to changes. The only address the frontend should hardcode is `PROTOCOL_CONFIG_ADDRESS` (the registry itself). Everything else must be resolved dynamically.
+
+### Subscribing to `ModuleAddressUpdated`
+
+All three fields of the event are `indexed`:
+
+```solidity
+event ModuleAddressUpdated(
+    uint8 indexed moduleId,
+    address indexed oldAddress,
+    address indexed newAddress
+);
+```
+
+In viem:
+
+```ts
+import { parseAbiItem, createPublicClient, http } from 'viem';
+import { arbitrumSepolia } from 'viem/chains';
+
+const client = createPublicClient({ chain: arbitrumSepolia, transport: http() });
+
+const PROTOCOL_CONFIG_ADDRESS = '0x1e08d50c7bb524ea03371804d5c223e9557e926c';
+
+client.watchContractEvent({
+  address: PROTOCOL_CONFIG_ADDRESS,
+  event: parseAbiItem(
+    'event ModuleAddressUpdated(uint8 indexed moduleId, address indexed oldAddress, address indexed newAddress)'
+  ),
+  onLogs: (logs) => {
+    for (const log of logs) {
+      const { moduleId, oldAddress, newAddress } = log.args;
+      console.log(`Module ${moduleId}: ${oldAddress} → ${newAddress}`);
+    }
+  },
+});
+```
+
+Because all three fields are indexed, filtered queries are cheap:
+
+```ts
+// Only runtime updates
+const runtimeUpdates = await client.getLogs({
+  address: PROTOCOL_CONFIG_ADDRESS,
+  event: parseAbiItem(
+    'event ModuleAddressUpdated(uint8 indexed moduleId, address indexed oldAddress, address indexed newAddress)'
+  ),
+  args: { moduleId: 0n },
+  fromBlock: 0n,
+});
+```
+
+### Building a version history
+
+```ts
+const MODULE_NAMES = {
+  0n: 'runtime',
+  1n: 'economics',
+  2n: 'identity_content',
+  3n: 'recovery',
+  4n: 'execution_gateway',
+} as const;
+
+async function getModuleHistory(moduleId: bigint) {
+  const logs = await client.getLogs({
+    address: PROTOCOL_CONFIG_ADDRESS,
+    event: parseAbiItem(
+      'event ModuleAddressUpdated(uint8 indexed moduleId, address indexed oldAddress, address indexed newAddress)'
+    ),
+    args: { moduleId },
+    fromBlock: 0n,
+  });
+
+  return logs.map((log, i) => ({
+    version: i + 1,
+    address: log.args.newAddress,
+    previousAddress: log.args.oldAddress,
+    blockNumber: log.blockNumber,
+    txHash: log.transactionHash,
+  }));
+}
+```
+
+### Recommended frontend behaviour
+
+1. **Resolve the current module set at startup:**
+
+   ```ts
+   const [runtime, economics, recovery, identity, gateway] = await Promise.all([
+     client.readContract({ address: PROTOCOL_CONFIG_ADDRESS, abi, functionName: 'getRuntimeAddress' }),
+     client.readContract({ address: PROTOCOL_CONFIG_ADDRESS, abi, functionName: 'getEconomicsAddress' }),
+     client.readContract({ address: PROTOCOL_CONFIG_ADDRESS, abi, functionName: 'getRecoveryAddress' }),
+     client.readContract({ address: PROTOCOL_CONFIG_ADDRESS, abi, functionName: 'getIdentityContentAddress' }),
+     client.readContract({ address: PROTOCOL_CONFIG_ADDRESS, abi, functionName: 'getExecutionGatewayAddress' }),
+   ]);
+   ```
+
+2. **Subscribe to `ModuleAddressUpdated`.** When a module changes, invalidate the cache, re-resolve, and notify the user.
+
+3. **Never hardcode module addresses in the frontend.** Only `PROTOCOL_CONFIG_ADDRESS` is fixed.
+
+4. **Maintain an audit whitelist (optional but recommended).** Keep a list of audited module addresses. If `ModuleAddressUpdated` announces an address not in the whitelist, warn the user before they interact with it. The registry's purpose is to make upgrades visible; the frontend's purpose is to make them understandable.
+
+5. **Account addresses are version-coupled.** When a user's account is created by Gateway vN, the account address depends on that Gateway's init code. The frontend must remember which Gateway created each account and continue to use that Gateway for operations on that account. Resolving the "current" Gateway is not the same as resolving "the Gateway that created this account".
+
+   ```ts
+   // Store this at account creation time
+   type AccountRecord = {
+     address: `0x${string}`;
+     createdByGateway: `0x${string}`;
+     identity: `0x${string}`;
+   };
+   ```
+
+   When the user later signs an intent for their account, use `createdByGateway`, not the current Gateway from the registry. The current Gateway is only for creating *new* accounts.
+
+6. **Never assume account addresses are deterministic across Gateway versions.** If the Gateway changes (`kipio_account` upgrade), the CREATE2 derivation changes. The frontend must persist the address of each account as it was created; it must not try to re-derive it.
+
+### Events the frontend should listen to
+
+| Event | Emitted by | Purpose |
+|---|---|---|
+| `ModuleAddressUpdated(uint8, address, address)` | `protocol_config` | Registry slot changed |
+| `ProviderUpdated(uint8, address, address)` | `identity_content` | Provider slot changed |
+| `ZkVerifierUpdated(address, address)` | `identity_content` | ZK verifier changed |
+| `WorkflowIdUpdated(bytes32, bytes32)` | `identity_content` | Expected workflow id changed |
+| `CreWorkflowUpdated(bytes32, bytes32)` | `economics` | CRE workflow id changed |
+| `OwnershipTransferStarted(address, address)` | any | Two-step ownership in flight |
+| `OwnershipTransferred(address, address)` | any | Ownership completed |
+| `Paused(address, bytes32)` / `Unpaused(address)` | any | Circuit breaker |
+
+The frontend should index these events, keep a persistent store of the current state, and surface changes to the user in plain language.
 
 ---
 
@@ -679,6 +1065,8 @@ The identity anchor also exposes `applyAuthorizedRotation`, a runtime-only endpo
 
 `expected_workflow_id` is a `B256` used to gate CRE reports. It is `0x00..00` until the CRE workflow is deployed. Any endpoint that touches these slots will fail until the real addresses are set.
 
+**Updating providers does not require redeploying anything.** See **Upgrade Procedures** for the exact commands.
+
 ### 5. Economics (`kipio_economics`)
 
 The economic coordination layer. It performs the settlement of every operation: pays the storage provider, applies the protocol fee to the treasury, refunds excess through a pull-based refund balance, and coordinates sponsorships, credit, grants, and bootstrap campaigns.
@@ -689,13 +1077,15 @@ Bootstrap funding for account activation is exposed through `fundBootstrap(ident
 
 **CRE integration.** Economics accepts Chainlink Runtime Environment (CRE) reports via `onReport(metadata, report)`. The caller must be the authorized CRE forwarder (a compile-time constant set at construction). The report's `workflowId` is extracted from bytes 0..32 of the metadata, which the KeystoneForwarder signs on-chain. The contract validates the workflow id against `expected_workflow_id`, the nonce, and the deposit. **The CRE workflow itself is not yet deployed** — approval by Chainlink is pending. Until it is, the CRE path is inert: `onReport` will reject every call because `cre_forwarder` is a placeholder.
 
+**Updating the CRE workflow id does not require redeploying anything.** See **Upgrade Procedures**.
+
 ### 6. Execution Gateway (`kipio_execution_gateway`)
 
 The entry point for EIP-7702 and CREATE2-based account bootstrap. It resolves the identity of the caller, predicts the deterministic account address, deploys and activates the Account contract if needed, and forwards the original payload to the Runtime. Bootstrap funding is sourced from `kipio_economics` when available, and falls back to the caller's `msg.value` otherwise.
 
 The Gateway is immutable by design. Under EIP-7702, the delegated code runs in the EOA's context, so the Gateway detects the context and performs a self-call to `selfDeploy` to guarantee that CREATE2 uses the Gateway as the deployer. This keeps the deterministic account address stable across direct calls and delegated calls.
 
-The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants in `src/config/constants.rs`. See **Protocol configuration** for the rationale, and **Paths Not Explored** for the decoupling alternative.
+The Gateway hardcodes the runtime, economics, and recovery addresses as compile-time constants in `src/config/constants.rs`. See **Versioning Model** for the full rationale.
 
 ### 7. Protocol configuration (`kipio_protocol_config`)
 
@@ -708,7 +1098,7 @@ The pattern is **on-chain address registry**, not UUPS or delegatecall. Each mod
 * If those three were read from `protocol_config` at runtime, the Gateway could deploy an account with `runtime=A` while activating against `runtime=B`, producing an inconsistent account.
 * Hardcoding them at compile time makes the Gateway self-contained and auditable: once deployed, its behaviour with respect to those three modules is fixed.
 
-**Consequence.** Any change to `runtime`, `economics`, or `recovery` requires redeploying the Gateway (new `constants.rs`, new `ACCOUNT_INIT_CODE`, new account addresses) and registering it in `protocol_config` with `setExecutionGatewayAddress`. During the transition, old accounts keep working against the old modules; new accounts use the new Gateway. See **Paths Not Explored** for an alternative that avoids this coupling.
+**Consequence.** Any change to `runtime`, `economics`, or `recovery` requires redeploying the Gateway (new `constants.rs`, new `ACCOUNT_INIT_CODE`, new account addresses) and registering it in `protocol_config` with `setExecutionGatewayAddress`. During the transition, old accounts keep working against the old modules; new accounts use the new Gateway. See **Versioning Model** and **Upgrade Procedures** for the full picture.
 
 ---
 
@@ -756,7 +1146,7 @@ The codebase enforces operational constraints that support low-power mobile clie
 
 * **No plaintext on-chain.** All credential identifiers are `keccak256` hashes of the raw material. The contract never sees the credential; only its 32-byte fingerprint is persisted as `B256`.
 * **Zero debug leaks.** Tracking and debug logs are omitted or reduced to anonymised `B256` hashes.
-* **Indexed events for mobile bridges.** Event signatures use NatSpec index patterns (`address indexed user`, `bytes32 indexed contentHash`) so mobile bridges can query state deltas without stalling WebViews.
+* **Indexed events for mobile bridges.** Event signatures use NatSpec index patterns (`address indexed user`, `bytes32 indexed contentHash`) so mobile bridges can query state deltas without stalling WebViews. `ModuleAddressUpdated` indexes all three fields, which makes the registry's upgrade history queryable without scanning.
 * **Swap-and-pop deletion.** Storage arrays avoid the "ghost entry" pattern: removing entries triggers structural index cleanups, bounding long-term RPC pagination costs.
 * **CEI ordering.** Every mutating handler mutates state before any cross-contract call. If the external call reverts, the whole transaction — including the local mutation — rolls back atomically.
 * **Defence in depth.** `code_size` checks reject EOAs and precompiles before they can be stored as config addresses. `Address::ZERO` is validated in every path that receives a target even when the upstream source is trusted.
@@ -807,8 +1197,8 @@ The following items are intentionally not implemented in the current buildathon 
 * **Space and Time (SXT)** — **cancelled.** The SXT ecosystem is not mature enough for production integration, and the onboarding process is bureaucratic. The `query_provider` slot in `kipio_identity_content` will stay as a placeholder. If SXT matures, the provider can be set via `setQueryProvider`. No contract changes are needed.
 * **Chainlink CRE** — **pending external approval.** The workflow is fully coded (`kipio_economics/on_report` is production-ready) but the deployment to a Chainlink DON requires an access approval that has been requested and is under review. Until then, the CRE settlement path is inert: the contract accepts `onReport` calls from the authorized forwarder, but no forwarder will call it because there is no workflow registered. Once approval lands, the workflow is deployed, its `workflowId` is computed and registered in `kipio_economics` via `updateCreWorkflowId`, and the settlement path activates.
 * **Chainlink without CRE + Uniswap v4** — **not evaluated.** An alternative settlement path that bypasses CRE entirely and uses Uniswap v4 hooks to source ETH on Arbitrum Sepolia from arbitrary testnet tokens has been mentioned but not designed or prototyped. This path would decouple the settlement flow from Chainlink's approval cycle, at the cost of tighter coupling to the Uniswap v4 hook system.
-* **Irys storage** — **pending real address.** The `storage_provider` slot in `kipio_identity_content` is a placeholder. Any call that requires resolving a storage quote will fail until the real Irys address is set. The `setStorageProvider` setter is ready; only the value is missing.
-* **TACo (Threshold Network)** — **currently paused.** The upstream project is inactive. The `access_provider` slot is a placeholder. LIT Protocol is the alternate candidate; the setter (`setAccessProvider`) accepts either.
+* **Irys storage** — **pending real address.** The `storage_provider` slot in `kipio_identity_content` is a placeholder. Any call that requires resolving a storage quote will fail until the real Irys address is set. The `setStorageProvider` setter is ready; only the value is missing. See **Upgrade Procedures**, Case 1.
+* **TACo (Threshold Network)** — **currently paused.** The upstream project is inactive. The `access_provider` slot is a placeholder. LIT Protocol is the alternate candidate; the setter (`setAccessProvider`) accepts either. See **Upgrade Procedures**, Case 1.
 * **Real multisig ownership** — the deployed contracts use a single EOA as owner. Migration to a multisig (Safe) is a post-buildathon step: `transferOwnership` and `acceptOwnership` on each contract handle it.
 * **Contract-level test suite** — the scaffolding under `tests/` (`unit.rs`, `e2e.rs`, `fork.rs`, `common/mod.rs`) is empty. The plan is to build it in three layers: unit tests for pure Rust logic (codec, pack/unpack, status transitions), integration tests with `TestVM` for cross-contract flows, and fork tests against the deployed contracts on Sepolia.
 * **Fuzz testing** — no property-based tests are in place. The intent is to fuzz the codec and the state-transition logic against invariants derived from the DDD specification.
@@ -826,10 +1216,13 @@ Several alternative designs were considered and rejected during the initial arch
 ### Never attempted
 
 * **`kipio_execution_gateway` decoupled from `kipio_account`.** Currently the Gateway embeds the root init code of `kipio_account` as a compile-time constant and deploys accounts via `RawDeploy` + CREATE2. An alternative would be to introduce a separate `kipio_account_factory` contract that owns the init code and exposes `predict(salt)`, `deploy(salt)`, and `is_ready(account)` to the Gateway. The Gateway would then only know the factory interface, not the account's bytecode. **This path was not explored.** It would move the coupling from the Gateway to the factory without eliminating it, and it would add a cross-call per bootstrap. The self-contained Gateway is arguably simpler and more auditable. Both designs are legitimate; the current one was chosen because the Gateway is the *only* contract that needs to be rebuilt when `kipio_account` changes, which is a natural upgrade boundary.
-* **`kipio_execution_gateway` reading runtime/economics/recovery from `protocol_config` instead of hardcoding them.** This would remove the "Gateway must be redeployed when runtime changes" coupling, at the cost of making the Gateway's bootstrap behaviour depend on mutable on-chain state. The current design favours determinism: the account address derived from `keccak(ACCOUNT_INIT_CODE)` embeds the addresses of runtime/economics/recovery, so hardcoding them makes the address derivation fully self-contained. **This path was not explored.** Both designs are defensible; the current one treats the Gateway as a bootstrap primitive whose inputs are frozen at deployment time, which matches the "one signature, one transaction, no surprises" objective.
 * **A separate `kipio_account_factory` that also deploys fragments on demand.** This would fragment accounts per-user rather than sharing fragments across all accounts. It would multiply on-chain state by the number of users (3 fragments + 1 root per user instead of 1 root per user) with no functional benefit. Rejected on principle.
 * **Proxy-based upgradeability for the account.** Considered and rejected in favour of `protocol_config`-driven module resolution. Proxy patterns introduce delegatecall semantics, storage collision risk, and an additional trust assumption on the upgrade admin. The registry pattern keeps each module immutable at its address and centralises only the *resolution* logic.
 * **`cargo stylus get-initcode` for fragmented contracts.** Blocked upstream. The reverse-engineering path documented above was chosen instead.
+
+### Analysed and rejected for concrete reasons
+
+* **`kipio_execution_gateway` reading runtime/economics/recovery from `protocol_config` at bootstrap time instead of hardcoding them at compile time.** This was analysed and rejected. The Gateway is not a module like the others — it is a **version anchor**. Every account created by Gateway vN stores `(runtime_vN, recovery_vN)` in its own storage at construction time, and rejects calls from any other runtime. If the Gateway resolved runtime from `protocol_config` at bootstrap time, an account created with `runtime_vN` would reject calls from `runtime_vN+1` even though the frontend thinks it is using the latest runtime. Decoupling the Gateway would silently break the caller gate of every existing account. The hardcoding is therefore a **correctness requirement, not a convenience**. See **Versioning Model** for the full picture.
 
 ---
 
@@ -841,6 +1234,9 @@ Several alternative designs were considered and rejected during the initial arch
 * Makefile targets should be followed in order for consistent results. `deploy-full` handles the ordering internally; `make build` and `make check` are safe to run in any order.
 * After any `make deploy` or `make deploy-full`, run `make fix-perms` before the next local build, ABI export, or test run. See the **Recovery from Docker root-ownership** section.
 * `src/kipio_execution_gateway/src/config/constants.rs` is committed with placeholder zeros. Real addresses are injected at deploy time by `scripts/inject-gateway-constants.sh` and never committed. This keeps the source tree network-agnostic.
+* **Never redeploy phase 1 to update a single module.** Deploy the new module, register it via `cast send`, then `make deploy-gateway` to redeploy the Gateway with the new triple. See **Upgrade Procedures**, Case 3.
+* **Never forget `make fix-perms` after a deploy.** Docker runs as root and leaves `target/` unwritable.
+* **The frontend must never hardcode module addresses other than `protocol_config`'s.** All peers are resolved dynamically via the registry. Account addresses are version-coupled to the Gateway that created them; the frontend must persist them. See **Frontend Integration: Module Updates**.
 
 ---
 
