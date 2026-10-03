@@ -13,6 +13,7 @@
 
 # ==========================================
 # Foundry
+# ==========================================
 **/dependencies
 **/cache
 
@@ -76,3 +77,5 @@ contracts/.reverse-engineering/
 **/.check-reports/
 **/deployments/**/*.log
 
+# Upstream Ledger Ethereum app source (regenerable, see README)
+app-ethereum/
