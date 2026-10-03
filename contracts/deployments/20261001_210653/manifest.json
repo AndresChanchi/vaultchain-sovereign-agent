@@ -1,0 +1,173 @@
+{
+  "project_info": {
+    "name": "kipio-protocol",
+    "compiler": "Cargo Stylus (Rust)",
+    "timestamp": "2026-10-02T02:06:53Z",
+    "network": "Arbitrum Sepolia (Testnet)",
+    "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+  },
+  "contracts": {
+    "kipio_protocol_config": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T02:22:14Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "b2d2d799544193eee584836d01a7e3cd0b7d49c40de7d841295e4e4760c97684",
+        "compressed_bytes": 9687,
+        "uncompressed_bytes": 0,
+        "fragments": 1,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_protocol_config",
+        "contract_address": "0x1e08d50c7bb524ea03371804d5c223e9557e926c",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0xc8c57a30527d1b97ee69f9589ea69420887c155159dd02bde4c29283a17307fb"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000082",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0x1e08d50c7bb524ea03371804d5c223e9557e926c"
+      }
+    },
+    "kipio_runtime": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T02:26:21Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "b2d2d799544193eee584836d01a7e3cd0b7d49c40de7d841295e4e4760c97684",
+        "compressed_bytes": 58199,
+        "uncompressed_bytes": 0,
+        "fragments": 3,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_runtime",
+        "contract_address": "0x387e5745e49de0fb0cfc49b39a437d6fe1339dab",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0x0d81a5567a0bf08e85d044df86a112974132ab34d62a8bf2cc94432d3758d553"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000347",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0x387e5745e49de0fb0cfc49b39a437d6fe1339dab"
+      }
+    },
+    "kipio_recovery": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T02:29:59Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "b2d2d799544193eee584836d01a7e3cd0b7d49c40de7d841295e4e4760c97684",
+        "compressed_bytes": 19521,
+        "uncompressed_bytes": 0,
+        "fragments": 1,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_recovery",
+        "contract_address": "0x31f2253b1a95b936e2b4adb59a456125cb3e2b08",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0x6145b4d4c9e0e0ef698e8ad050c77752e50640a7b0040a9cc78f591116183ba4"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000112",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0x31f2253b1a95b936e2b4adb59a456125cb3e2b08"
+      }
+    },
+    "kipio_economics": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T02:39:49Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "b2d2d799544193eee584836d01a7e3cd0b7d49c40de7d841295e4e4760c97684",
+        "compressed_bytes": 28469,
+        "uncompressed_bytes": 0,
+        "fragments": 2,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_economics",
+        "contract_address": "0x47b765294efc205a1e95bc865215f2d71f83f558",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0x5ac77ded2b8be4e3bf2025efed869145c35f9d7de93b5acabd1ebc6ac51b1642"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000139",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0x47b765294efc205a1e95bc865215f2d71f83f558"
+      }
+    },
+    "kipio_identity_content": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T02:43:21Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "b2d2d799544193eee584836d01a7e3cd0b7d49c40de7d841295e4e4760c97684",
+        "compressed_bytes": 43067,
+        "uncompressed_bytes": 0,
+        "fragments": 2,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_identity_content",
+        "contract_address": "0x0d203d8169b37deb2f77da1c116febc841b0d907",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0x14bdcbce26a615bfa64a891ee5c1bd69143b5a4eea7d7a4dd8e3b041e6ee60b9"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000187",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0x0d203d8169b37deb2f77da1c116febc841b0d907"
+      }
+    },
+    "kipio_execution_gateway": {
+      "project_info": {
+        "name": "kipio-protocol",
+        "compiler": "Cargo Stylus (Rust)",
+        "timestamp": "2026-10-02T03:14:37Z",
+        "network": "Arbitrum Sepolia (Testnet)",
+        "rpc_endpoint": "https://arbitrum-sepolia-rpc.publicnode.com"
+      },
+      "deployment_fingerprint": {
+        "project_metadata_hash": "d61585a327e98729a368cefc8be15a23f599d6cfa55ca7daa146c0dc4c861de8",
+        "compressed_bytes": 14265,
+        "uncompressed_bytes": 0,
+        "fragments": 1,
+        "wasm_opt_version": "132"
+      },
+      "contract_details": {
+        "contract_name": "kipio_execution_gateway",
+        "contract_address": "0xe2fac8809593159824e29c5d63b25cb0c93b6cdb",
+        "deployer_address": "0xeEc6Cb366B536c41D0d869E4BFc60723566deBb9",
+        "deployment_tx_hash": "0x8d62b3f10abd2056ddd8eeb4a1fa90f04263b09fdf9c52ed54daac8b26b426ba"
+      },
+      "activation_details": {
+        "activation_tx_hash": "",
+        "wasm_data_fee_eth": "0.000094",
+        "explorer_url": "https://sepolia.arbiscan.io/address/0xe2fac8809593159824e29c5d63b25cb0c93b6cdb"
+      }
+    }
+  }
+}

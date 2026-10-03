@@ -1,0 +1,8 @@
+{
+  "kipio_protocol_config": "0x1e08d50c7bb524ea03371804d5c223e9557e926c",
+  "kipio_runtime": "0x387e5745e49de0fb0cfc49b39a437d6fe1339dab",
+  "kipio_recovery": "0x31f2253b1a95b936e2b4adb59a456125cb3e2b08",
+  "kipio_economics": "0x47b765294efc205a1e95bc865215f2d71f83f558",
+  "kipio_identity_content": "0x0d203d8169b37deb2f77da1c116febc841b0d907",
+  "kipio_execution_gateway": "0xe2fac8809593159824e29c5d63b25cb0c93b6cdb"
+}

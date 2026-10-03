@@ -1,0 +1,16 @@
+[package]
+name = "kipio_integration_tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+kipio_account_bridge = { path = "../bridge" }
+kipio_account = { path = "../kipio_account" }
+kipio_runtime = { path = "../kipio_runtime" }
+
+[dev-dependencies]
+stylus-sdk = { workspace = true, features = ["stylus-test"] }
+stylus-test = "0.10.9"
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }

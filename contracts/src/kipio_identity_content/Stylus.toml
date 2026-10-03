@@ -1,0 +1,4 @@
+[contract]
+name = "kipio_identity_content"
+
+[wasm-opt]

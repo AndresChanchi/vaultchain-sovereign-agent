@@ -1,13 +1,26 @@
 [workspace]
-# Enables multi-contract management if the architecture scales beyond a single crate
-members = ["."]
+members = [
+  "src/kipio_account",
+  "src/kipio_recovery",
+  "src/kipio_economics",
+  "src/kipio_identity_content",
+  "src/kipio_execution_gateway",
+  "src/kipio_protocol_config"
+]
 
 [workspace.networks]
 sepolia = { endpoint = "https://sepolia-rollup.arbitrum.io/rpc", chain_id = 421614 }
 mainnet = { endpoint = "https://arb1.arbitrum.io/rpc", chain_id = 42161 }
 
-[contract]
-# Contract identification and compilation optimization strategy
-# Note: "speed" optimization is chosen to balance execution gas costs and code size
-name = "vaultchain-contract"
-optimization = "speed"
+[wasm-opt]
+version = "132"
+flags = [
+  "-Oz",
+  "--converge",
+  "--closed-world",
+  "--enable-nontrapping-float-to-int",
+  "--strip-debug",
+  "--strip-dwarf",
+  "--strip-producers",
+  "--strip-target-features",
+]

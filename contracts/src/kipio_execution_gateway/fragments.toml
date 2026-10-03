@@ -1,0 +1,44 @@
+# Kipio Account — fragmented deployment manifest.
+#
+# `kipio_account` compresses to ~57 KB, exceeding the 24 KB single-fragment
+# limit of Arbitrum Stylus. `cargo stylus deploy` splits it into 3 fragment
+# contracts plus a small root contract that references them by address.
+# This file records those 3 addresses so the Execution Gateway can
+# reconstruct the root init code at build time (see `build.rs`).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# `cargo stylus get-initcode` cannot produce the init code of a fragmented
+# contract. The Gateway needs that init code as a `const &[u8]` to:
+#   - predict the CREATE2 address of a user's account
+#   - deploy that account with RawDeploy
+# So the fragment addresses are captured here and the init code is
+# reconstructed deterministically by `build.rs`.
+#
+# HOW TO REGENERATE (after deploying new kipio_account fragments)
+# ---------------------------------------------------------------
+#   1. cd src/kipio_account && cargo stylus deploy --endpoint ... --private-key ...
+#   2. From the deploy log or block explorer, take the 3 contract creation
+#      addresses (they appear right before the root contract in the tx list).
+#   3. Update `decompressed_size` and the 3 addresses below.
+#   4. make build contract=kipio_execution_gateway
+#
+# `decompressed_size` is the raw size of the concatenated WASM fragments,
+# printed by cargo stylus as `wasm size: NNNN bytes`. It is also the first
+# 4 bytes (big-endian) of the fragment table embedded in the root init code.
+#
+# CURRENT VALUES (Sepolia, 2026-10-01)
+# ------------------------------------
+# Root deployment tx:
+#   0x4eaeaa59413a9beffb4a092c28083e7c4fa06e22e77f2e1c33c7bc3f8a6cc5e5
+# Fragment creation txs (block, hash):
+#   314722548  0x83ec87aef4e963c249b7c17453198f411d31aebe3db9d7071da34e0f0b57cc55
+#   314722551  0x10c3467981e5b4c17b40d6d629886d2bf8230719e849040e771c5036154aba38
+#   314722554  0x766364de87c2c12230751ef4017dfc0c24c3c5c429560f3a6df2ae9cb62f00a7
+
+decompressed_size = 232341
+
+[addresses]
+fragment_0 = "0xb193053de0d0fba0c91be4c3f81a5e011d4c738e"
+fragment_1 = "0x8fd5f1da68c7604434c2d7ad7bd00a61f509f277"
+fragment_2 = "0x117a83f36f806d37156c7832b66e579ea7a4ecd0"
