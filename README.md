@@ -1,172 +1,196 @@
-# Kipio: Autonomous Sovereign Digital Property
+# Kipio: Sovereign Digital Property
 
-Kipio is an agent-native digital sovereignty architecture(in the future) that integrates **Arbitrum Stylus (WASM)** and **Irys L1 Datachain**. It evolves the "Cloud Storage" model into a "Digital Property" paradigm, eliminating recurring subscription fees and centralized censorship.
+Kipio is a decentralized protocol and consumer application for permanent, private ownership of digital content. It replaces the rental model of cloud storage with something closer to digital property: users encrypt their files before they ever leave the device, the encrypted payload is written to Irys for permanent availability, and an on-chain registry on Arbitrum keeps the ownership record in the user's own hands. No recurring subscription, no centralized custodian, no silent deletion.
 
-Built for the 2026 ecosystem, Kipio leverages Rust-powered smart contracts to manage permanent data pointers with near-native execution speed.
+I have been building Kipio for about six months. It is not a weekend prototype. I use it myself. My own gigabytes of family photos and personal archives are already encrypted and stored this way. **The goal now is to make that same capability available to anyone who wants it, not just to me.**
+
+Kipio is built for two audiences at once. For people who have never touched a crypto wallet, it works like a private photo album: nothing extra to install, no seed phrase to write down, sign in the way you already sign in to everything else, and your files stay yours. For crypto-native users, it adds something the ecosystem has been missing for years: a sovereign account model where every authorization is verified on-chain, every state transition is atomic, and no admin key can move someone else's data. Both audiences get the same protocol. The difference is only which door they walk through.
+
+The protocol itself never sees who you are. The smart contracts only see cryptographic commitments and signatures. How a user authenticates to the app is a frontend concern, and the contracts do not care. This means Kipio can be accessed through Google login, an email magic link, a passkey, a hardware wallet, a seed phrase, or anything else a frontend chooses to support. The contract layer stays the same. Adding a new credential type, or moving to zero-knowledge proofs for identity later, does not require touching the on-chain protocol.
 
 ---
 
-## 🏆 ETHOnline 2026
+## 🏆 Arbitrum Open House Singapore 2026
 
-This project is submitted to [ETHOnline 2026](https://ethglobal.com/events/ethonline2026), the annual online hackathon organized by ETHGlobal.
+Kipio is submitted to the [Arbitrum Open House Singapore](https://www.hackquest.io/projects/Kipio) Buildathon. The submission is a working project with an existing on-chain history, not a from-scratch demo.
 
-The submission targets the **Ledger — Continuity** track, which rewards integrations that extend an existing, functional product with a new capability. Kipio already runs end-to-end on Arbitrum Sepolia (upload, encryption, Irys storage, Stylus registry) with browser wallets. The hackathon work adds hardware-backed signing via the Ledger Device Management Kit (DMK) without touching the smart contracts.
+The previous six months produced a functional MVP on Arbitrum Sepolia, a formal domain model written and verified in Dafny, and a modular multi-crate Stylus workspace. The Buildathon work focused on taking that foundation further: adapting the verified domain model to Rust, building the cross-chain settlement foundations, and documenting the architectural reasoning behind the registry pattern and the immutable contract design.
 
-The integration supports two signing paths that share the same DMK signer:
+The full technical documentation lives in [contracts/README.md](contracts/README.md). It covers the deployment phases, the formal verification pipeline, the fragmented init code reverse-engineering, and the diagnosis of a real bug found during testing.
 
-- **Physical Ledger devices** connected over WebHID.
-- **Speculos emulator** deployed on Oracle Cloud, exposed over HTTPS through a Cloudflare Tunnel, so reviewers can experience the full signing flow without owning hardware.
+### ⚠️ Current network condition: Stylus activation pause
 
-> **Note on the deeper engineering**: The [develop](https://github.com/AndresChanchi/vaultchain-sovereign-agent/blob/develop/contracts/README.md#-research--references) branch contains a substantially more advanced version of the protocol, including formal methods work (Dafny → Rust transpilation), a modular multi-crate Stylus workspace, and TACo-aligned threshold cryptography. It is under active development and diverges significantly from `main`. Anyone interested in the research direction should read it directly.
+On October 2, 2026, the Arbitrum Security Council executed an emergency action that temporarily paused new Stylus contract activations on Arbitrum One and Arbitrum Nova. The reason was a security concern: AI-assisted tooling has made it easier to craft hand-written WASM programs that bypass the standard Stylus compiler and can degrade chain performance for everyone else. No user funds were ever at risk. The full report is on the Arbitrum governance forum: [Security Council Emergency Action – 2/10/2026](https://forum.arbitrum.foundation/t/security-council-emergency-action-2-10-2026/31530). The Arbitrum Foundation has also published a builder-facing summary in the [Arbitrum Docs notice](https://docs.arbitrum.io/notices/stylus-activation-pause-notice).
 
-`With the caveat that only the documentation is outdated as of May 2026 😅. I have the rest stored in my local Git repo, which is about to burst with all the up-to-date information... `
+What this means for Kipio:
 
-### 🔐 Ledger Integration Overview
+- **Existing, active Stylus contracts continue to run normally.** Calls remain permissionless. Contracts can be renewed before expiry through the keepalive mechanism.
+- **New activations are paused.** Deploying a new version of a Stylus contract, including a fixed version of an existing one, requires activation, and activation is what the Security Council paused.
+- **Solidity and EVM contract deployment are unaffected.**
 
-The dApp exposes two Ledger connectors through Wagmi v3. Both share the same signing pipeline based on the Ledger Device Management Kit; only the transport differs.
+Kipio already had a complete deployment on Sepolia before the pause. That deployment remains live. The newer modular protocol, fully developed and tested on a local Nitro devnode, is ready for activation as soon as the pause is lifted. The Arbitrum Foundation has stated it is working with the ArbitrumDAO on a path to reopen activations in a way that preserves legitimate Stylus use while restricting hand-crafted WASM programs. I do not expect that process to stretch into 2027, and I am preparing the deployment so it can go out the moment the network reopens.
+
+I am not waiting for that to be resolved in order to keep building. The work continues on the frontend, on the formal model, and on the parts of the protocol that do not require new activations.
+
+---
+
+## 🗺️ How the pieces fit together
+
+The protocol is split into small, single-purpose contracts. This diagram shows the runtime picture: what a user action flows through, and which contract owns which part of the decision.
+
+```
+                          User intent
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │  Execution Gateway   │   entry point
+                    │  (immutable)         │   CREATE2 bootstrap
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │  Runtime             │   orchestrator
+                    │  (stateless)         │   single atomic tx
+                    └──────────┬───────────┘
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        │                      │                      │
+        ▼                      ▼                      ▼
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│   Account    │      │  Economics   │      │  Identity &  │
+│  (per user)  │      │  settlement  │      │   Content    │
+│  CREATE2     │      │  treasury    │      │   anchor     │
+└──────┬───────┘      └──────────────┘      └──────────────┘
+       │
+       ▼
+┌──────────────┐      ┌──────────────────────────────────┐
+│  Recovery    │      │  Protocol Config (registry)      │
+│  guardians   │      │  resolves every module address   │
+└──────────────┘      └──────────────────────────────────┘
+```
+
+Two contracts deserve special attention for anyone evaluating the design:
+
+**`kipio_runtime`** is the only contract in the system that initiates cross-contract calls during a user flow. It reads the user's account state, runs the authorization pipeline in memory, settles the economic obligation, and forwards the target call, all inside a single transaction. If any step fails, the entire flow reverts and the user pays nothing. That atomicity guarantee is the reason the account, the settlement layer, and the content layer never talk to each other directly.
+
+**`kipio_account`** is deployed once per user through CREATE2, and its address is derived from the user's identity. It stores the authorization state that decides what the user has allowed and what they have revoked, and it accepts calls only from the runtime address recorded at construction time. There is no admin key that can move a user's state, no upgrade slot that can rewrite the account's behavior, and no delegatecall that hides who is acting. The account is a sovereign kernel, and it stays one.
+
+---
+
+## ✨ What Kipio does
+
+- **Client-side encryption.** Every file is encrypted before it leaves the browser. The keys stay with the user.
+- **Permanent decentralized storage.** Encrypted payloads are written to Irys, a datachain designed for permanent data. The user pays once for storage, not monthly.
+- **On-chain ownership.** An Arbitrum Stylus registry anchors the content metadata on-chain. The contract stores pointers and commitments, never the files themselves.
+- **Sovereign access control.** The owner decides who can see what. Visibility is a user-controlled toggle, not a platform policy.
+- **Atomic multi-contract flows.** Every user action that spans more than one contract executes as a single transaction. Either everything succeeds or nothing does.
+- **Hardware-backed signing.** The dApp supports Ledger devices through the Device Management Kit. Both physical devices over WebHID and the Speculos emulator are supported.
+- **Credential-agnostic identity.** The contract only sees pseudonymous commitments and signatures, never a real-world identity. Any frontend can authenticate users however it wants — Google login, email, passkeys, hardware wallets, social recovery — without touching the protocol. Curve support is pluggable through the verifier registry in `kipio_protocol_config`. `secp256r1` (passkeys, FaceID, TouchID) is supported today through the EIP-7951 precompile; other curves can be added later without redeploying anything.
+
+## 🛠 Tech stack
+
+- **Smart contracts:** Rust (Stylus SDK 0.10.9), Solidity (Foundry).
+- **Formal verification:** Dafny 4.11.0, with a translation pipeline that produces the Rust crate used by the bridge.
+- **Storage:** Irys L1 Datachain.
+- **Frontend:** Next.js 16, React 19, viem, wagmi v3, TypeScript 7.
+- **Runtime:** Bun v1.4.x.
+
+## 📦 Repository layout
+
+```
+.
+├── contracts/                    # Stylus workspace, Foundry interfaces, deployment tooling
+├── domain/                       # Dafny formal model: account domain, laws, adversarial proofs
+├── emulator-ledger-backend/      # Speculos Docker setup and compiled Ethereum app ELF
+├── frontend/                     # Next.js dApp: upload, encryption, sharing, Ledger signing
+└── docs/                         # Domain reference notes
+```
+
+Each folder has its own README with setup instructions and architecture details for that layer.
+
+## ✅ Current status
+
+### The MVP on Arbitrum Sepolia
+
+The MVP runs end-to-end with browser wallets on Arbitrum Sepolia and Irys devnet. Upload, client-side encryption, permanent storage, and sharing all work. The contract that powers it is:
+
+| Contract | Address | Network |
+|---|---|---|
+| `KipioEconomics` (MVP) | [`0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452`](https://sepolia.arbiscan.io/address/0xfe76a53e5cc1cc5136b7da6b6fcf6c593c767452) | Arbitrum Sepolia |
+
+This contract was deployed several months ago and remains fully functional. It is the version currently integrated with the frontend.
+
+### The modular protocol
+
+The contracts workspace was rewritten as a multi-crate Stylus project with a clear separation of concerns. Every contract is immutable. Upgrades happen through `kipio_protocol_config`, an on-chain registry that resolves the current address of each module. There is no proxy, no delegatecall, no upgrade admin with the power to swap implementation under a user's feet. When a module changes, a new instance is deployed and the registry is updated. The old version stays at its address forever, callable and inspectable.
+
+The seven contracts are:
+
+| Contract | Sepolia address | Status |
+|---|---|---|
+| `kipio_protocol_config` | [`0x1e08d50c7bb524ea03371804d5c223e9557e926c`](https://sepolia.arbiscan.io/address/0x1e08d50c7bb524ea03371804d5c223e9557e926c) | Deployed |
+| `kipio_runtime` | [`0x387e5745e49de0fb0cfc49b39a437d6fe1339dab`](https://sepolia.arbiscan.io/address/0x387e5745e49de0fb0cfc49b39a437d6fe1339dab) | Deployed |
+| `kipio_recovery` | [`0x31f2253b1a95b936e2b4adb59a456125cb3e2b08`](https://sepolia.arbiscan.io/address/0x31f2253b1a95b936e2b4adb59a456125cb3e2b08) | Deployed |
+| `kipio_economics` | [`0x47b765294efc205a1e95bc865215f2d71f83f558`](https://sepolia.arbiscan.io/address/0x47b765294efc205a1e95bc865215f2d71f83f558) | Deployed |
+| `kipio_identity_content` | [`0x0d203d8169b37deb2f77da1c116febc841b0d907`](https://sepolia.arbiscan.io/address/0x0d203d8169b37deb2f77da1c116febc841b0d907) | Bugged, fix ready |
+| `kipio_execution_gateway` | [`0xe2fac8809593159824e29c5d63b25cb0c93b6cdb`](https://sepolia.arbiscan.io/address/0xe2fac8809593159824e29c5d63b25cb0c93b6cdb) | Deployed |
+| `kipio_account` | Created per user via CREATE2 | Not a singleton |
+
+The `kipio_identity_content` contract has a bug. The first deployment used a manual `#[fallback]` dispatcher and called `SolCall::abi_decode` on argument slices that no longer contained a selector. Alloy's `abi_decode` validates the selector before decoding, so every call with one or more arguments reverted with empty data. The fix is a mechanical replacement with `abi_decode_raw`, which decodes arguments without expecting a selector. The corrected version was verified on a local Nitro devnode with a full set of 0-argument, 1-argument, and 3-argument calls. It has not yet been redeployed to Sepolia because the Stylus activation pause makes it impossible to activate a new contract right now. The full diagnosis is in [contracts/README.md](contracts/README.md) under **Manual fallback dispatch: the `abi_decode` contract**.
+
+The frontend will switch to the fixed contract as soon as the pause is lifted. The registry update is a single `setIdentityContentAddress` call, and the provider slots are re-applied on the new instance.
+
+### 🔐 Ledger integration
+
+The dApp exposes two Ledger connectors through Wagmi v3. Both share the same signing pipeline, built on the Ledger Device Management Kit. Only the transport differs.
 
 | Connector | Transport | Use case |
 |---|---|---|
 | `ledger-physical` | WebHID | Users with a physical Ledger device connected over USB |
-| `ledger-speculos` | HTTP (HTTPS via Cloudflare Tunnel) | Reviewers and demos, backed by an emulated Ledger Nano S Plus |
+| `ledger-speculos` | HTTP | Reviewers and demos, backed by an emulated Ledger Nano S Plus |
 
-#### Architecture
+The Speculos emulator runs the official Ledger Ethereum app in a Docker container and serves its screen through a web UI. During the hackathon it was deployed on Oracle Cloud and exposed over HTTPS through a Cloudflare Tunnel so that reviewers could experience the full signing flow without owning hardware. That deployment has since been taken down. The `emulator-ledger-backend/` folder contains the Docker command and the precompiled ELF if anyone wants to reproduce it locally.
 
-```
-             ┌───────────────────────┐
-             │     Wagmi connector   │
-             │   (custom, DMK-based) │
-             └───────────┬───────────┘
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-       ┌──────▼──────┐      ┌───────▼────────┐
-       │   WebHID    │      │    Speculos    │
-       │  transport  │      │    transport   │
-       └──────┬──────┘      └───────┬────────┘
-              │                     │
-       ┌──────▼──────┐      ┌───────▼────────┐
-       │  Physical   │      │  Speculos VM   │
-       │  Ledger     │      │  (Docker +     │
-       │             │      │   Oracle Cloud)│
-       └──────┬──────┘      └───────┬────────┘
-              └──────────┬──────────┘
-                         │
-                ┌────────▼────────┐
-                │  SignerEth      │
-                │  (DMK)          │
-                └────────┬────────┘
-                         │
-                ┌────────▼────────┐
-                │   viem / dApp   │
-                └─────────────────┘
-```
+Read-only RPC methods are proxied to a public client built on the chain's HTTP transport. Signing methods (`personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`, `eth_signTransaction`) are routed to the DMK signer.
 
-#### Signing flow
+Two limitations are worth noting. Without a Ledger `originToken` issued through the partner program, the device displays only the transaction hash instead of decoded call details. And on physical devices, Arbitrum Sepolia requires Developer Mode enabled in Ledger Wallet.
 
-The connector routes EIP-1193 signing methods to the DMK signer:
+## 🔮 Roadmap
 
-- `personal_sign` → EIP-191 message signature
-- `eth_signTypedData_v4` → EIP-712 typed-data signature
-- `eth_sendTransaction` → prepares, signs, and broadcasts a transaction
-- `eth_signTransaction` → prepares and signs without broadcasting
+### Immediate, pending the Stylus activation pause
 
-Read-only RPC methods are proxied to a public client built on the chain's HTTP transport.
+- Redeploy `kipio_identity_content` with the `abi_decode_raw` fix.
+- Update `kipio_protocol_config` to point to the fixed contract.
+- Re-apply the Irys storage provider address on the new instance.
+- Switch the frontend to the corrected contract and verify the full upload and retrieval flow.
 
-#### Speculos emulator
+### Frontend, in progress
 
-Speculos runs the official Ledger Ethereum app in a Docker container and serves its screen through a web UI. Reviewers open the emulator in a browser, approve operations with on-screen buttons, and the dApp receives the signature through the connector.
+The frontend is under active development. The current priorities are:
 
-The emulator is deployed on Oracle Cloud Always Free and exposed over HTTPS through a Cloudflare Tunnel. The `emulator-ledger-backend/` folder contains the Docker command, the precompiled ELF, and the deployment notes.
+- **Session management.** An inactivity timer and a manual "Lock Vault" button so the cryptographic session can be closed without closing the tab.
+- **Error handling.** Clear feedback for failed actions, especially rejected signatures.
+- **Mobile edge cases.** Some image uploads fail on mobile devices, likely because of price fluctuations during the upload window. The fix is a more robust retry and quoting flow.
+- **Sharing.** Private invite links and a public sharing option for files the user chooses to disclose.
+- **Content beyond photos.** Documents, development files, and arbitrary data, not just images.
+- **Onboarding paths for non-crypto users.** Google login, email magic links, and other familiar sign-in flows that hide the cryptographic machinery behind the scenes. The protocol already supports this because it only sees commitments and signatures; the work is entirely on the frontend.
 
-#### Known limitations
+### Post-Buildathon, funded or not
 
-- **Blind signing**: without a Ledger `originToken` issued by the partner program, the device only displays the transaction hash instead of the decoded call details. The integration ships with a placeholder token. Clear Signing requires an official token and is out of scope for the hackathon.
-- **Arbitrum Sepolia on physical devices**: testnet networks require Developer Mode enabled in Ledger Wallet. Users connecting a physical device should enable it before testing.
+- **Multichain settlement.** Expanding the verification hooks so that access fees can be settled in arbitrary currencies and on networks beyond Arbitrum.
+- **0G.ai integration.** 0G is a decentralized AI operating system built around four modular layers: an AI-first EVM L1 chain, a scalable data availability network, a modular storage system, and a verifiable compute layer. Its stated goal is to become the trust layer for AI, where inference and agent actions can be verified and audited. The long-term direction for Kipio is to let users run verifiable AI over their own encrypted content, so that the intelligence built on someone's memories belongs to them as much as the memories do. This is not a feature I can ship this month. It is the direction Kipio is pointed at. I am documenting it now so the reasoning is visible.
+- **Agentic commerce.** Autonomous treasury management for self-funding data availability, so that a user's content can pay for its own continuation without a monthly invoice. This is post-Buildathon work. The economic primitives are already in `kipio_economics`; the agent layer on top is not.
+- **Private metadata layer.** Kipio anchors encrypted content on Arbitrum. The metadata that describes that content, the albums, the memories, the labels, the relationships between items, must also stay private. Exposing it to indexers would leak context even if the payloads remain encrypted. I am exploring Aztec's private execution environment as an encrypted note store, readable only by the owner. Nothing has been built yet. It is a direction, not a claim.
+- **Zero-knowledge identity.** The contract already operates on pseudonymous commitments. The next step is to let a user prove a property about themselves, or about their content, without revealing anything else. This opens the door to compliance-friendly flows, private sharing with verifiable conditions, and delegated access that never leaks who is behind an action.
+- **Chainlink CRE.** The `kipio_economics` contract is production-ready for CRE reports. The workflow itself is written but not yet deployed because Chainlink approval is pending. Once approved, the settlement path activates without any contract change.
+- **Threshold access providers.** The `access_provider` slot in `kipio_identity_content` is a placeholder. TACo is paused and LIT Protocol is the alternative candidate. The setter is ready; the value is not yet set.
 
----
+### What Kipio is not
 
-## 🌀 System Architecture
+Kipio is not trying to be a faster dropbox. The goal is a general-purpose, permanent, user-owned storage layer. The initial use case is personal memories, because that is where the problem is most acute and most personal. But the same protocol applies to any content that someone wants to keep without asking permission and without paying rent.
 
-![Architecture](https://kroki.io/mermaid/svg/eNqNVntPIzcQ_59PYeV0FUiAEkg4SKVWOV6HLlBKKFXPOlVe7-zGysaObC-wRffdO37sI4GTCGg9tmd-87adFeqJz5m25P5si-Dv40cys1UB5AwyIYUVShq_wQtmDC4SK2wBgYerQunxh36_v5spafeeQORzO05Uke4aq9UC9p5Eaufjg9Xzr1s1_rm0uiK3SkhLmEzJVQoSQSsyZRVozzWzaNL2th92dsje3m9kBgVwS8OAVn0PjH7qGSalnU9VLvjLXwY0mcIjFL__CFpNmeSareaByakhtDfYJ1-qRItNC3oB2v0aTNRAejfqUXDoBW0TOuFclejDJEFfWceo15K3WgWxWwziAip6w6x4hHo6Jgb46mB0pActQgs18aKfS5kWoGkcW8YI4pn-hsRplrQm3sCLADGqxqDdV2e0oVqJGmOd02-DTDcie6GxAnAZXeWOVeYY4oN9MlWcFaSzun2rxSPjFbkQ2tidTrQbFcEVpRfobhg6Rvm55_DQX5iZ06DEkS1js-t5zyAtV4XgzKXpxS_DszDWYIm87dCVrsx0cMYswwYREr053PeLZDoYO4eQbblkCfbBzCrNcui4sqYuFk-ogOdh_-CWVdSNmLpqiaXXysXdEPEyWQo7pWHEgk7zbiDitmd1Zj1c0zCMCVYmhpKE-jt_Bl6uF2fgCwVZJoUw8ymNRFSDDoJeMonG1d51Ci7KeIBvX_-d_Tml374SHMiVTDGsMv_-k6BOctdpvG7B4X698qr1Am7oNcdyr0WOhlE_IXHW6bcOjxe618BMqauXmiDXTKIbLt4_GrFm06UID5Ns7wK7Ax0IybqDhBVMcgjpsopcMkMuAMipko-gzVpYG24ve1EALM4xmNRTxJEtb7Prec_vTo_7_SG9BAmaWXDlpTKC_xvZex1RdxKX5kbgcYsBHe3HBfILmegEV8sl8Zu9n-Tvc1ks7iCnbkQPcuwJXbW80bKY6gfQIqtoGFrbMO0L8sfKiqX4D9I3jpzG2uuysMLFkPbct01Jx7xwRnmrQh_YS62e7JzGQiRhui5Q2-YlTtVyhSbRU2Xs2M9KjCmutDIukK_MrDUFtUu8fB4YGkw9STzdIkQlG7wtVrMUK4krLJiK1kTozo2sutu3khyTd1ood1puvX2Y_AMmFOhsrp6o-2AyMHNN521od6DUfeKu0-HrTqbb2_gZEx89AamrvBVoW-3sNCZNVq12LEnj7v7wKPBk51LNRFGMP8AgG2UQXwD4PBiMPp0krx4Eu-3roYP1xjUSQLNBdgwnDejh4dHJAN4JunmUR8QsO4R-gwhHo0G__07EtXMswnEYAm_gjo_7MMzeCddt4oh2CKNs1KAN2WB4zN-J1jRZ4yf-GqhPI_dXQ6V4EzKtGb5BRmTUwfvpxv_nhCKo)
+The long-term vision includes B2C and B2B use. An organization could integrate with the open protocol or subsidize access for its users. Protocol-level fees provide sustainable infrastructure economics without turning the user into a subscriber. But that is the destination, not today's state.
 
-[Architecture in spanish](https://kroki.io/mermaid/svg/eNqNVetOIzcU_s9TWFltBRKgBBIWUqlVNlw22kApoVTqqEIez5mJm4kd2R5gdrUP1B_7ax9gpc2L9diecQYCFQNS7HP5zvG5ZooupuT6eIPg9_YtOYaUC8748psgCRDQhudSkwVVlEBODDwYaRmWqIs4UzSV2imznGqN6sRwk8PElDkQJnOp-m_a7fZ2KoXZuQeeTU0_lnmyrY2SM9i554mZ9vcWDz9v1D6MrAOSlGRIF9QaGyUgDE9oQj4sv8YKT050Yqgym5tefGuL7Oz8QiaQAzOe7Y6OOijMdCwzzj7_-H7B7_AhiPqHLqji8tcv3rB_DQbDCdMSVNTq7P6PD62_nZ79Aj5aI60LeUeNbHnLg2jAmCyEIYMYn0yZ4VK8pHmpKrVLjOUMyuiCGnS3vvaJBrbY6x2ozgphBTVwqu8LkeSgArnSdbw_IbYGxbpypUV-CjJVOLVGf0e-PkAkT2J1qjCtSEbHmRUVWdTa2yX-SuccYybJWDKak81Lxe8oK8kpV9psNaIXjHgfpZo13PdXx3E4H6ieBmagOP4xJMUi54xiOQjMtGOUWLcPXBvAPD__hpEq9bhzTA1lU8pF1NrfdTQy7vTJIJ9TBqJ-Cj4MleY0zqHxgEeGqxLweXzotvcuaRkkq7uPbRHPuRmvwuDvjmft35xH_qdPTv4BVoSmHC-_YcG4qsTaAi1XnngFX0JFnHM9HUfVgYwhyUCtPwnUnAo8wgqm1nVAf328nfw-fiF4g8y2Bav6pVv1yyBb_mvJzR7xML4prNK14lnWSHST6KSuFVBdqPJzfSDnVNAM5ij3JagFpg07Fq7E-UUF49XzfBquIKY5UiEaSnEHSrtQ2mQQSs6oJqfQeH2QdrqnOcDsBEMX-IHi-CdXw8N2uxudgQBFlS0RmRL8P3nApK26fT12dkYW-oLjIIxavd3qji04UDESizlxvNYLeXlf5LMryAKzcqTK2Q0onpaR_7kNvtyOxOz2t4Xhc_4JkmemSPDuvMgNx9hErTO7BaraQ0LDHz85nBu-pM2Zkvdm-kig9sVJDOV8gS5gHrSRfXctDE5XMVuh2kit-VVDY3gqDG9xjjvghqKvK8lAqnLPJKa8fJwEXDNDDkoBrpkJFwznGP9EXYttPN_Sk-VXX0yTqbyPzqUd5gqTbGdLaJ4ntielYJ6OB18tItncPOWib-tkwcEuFBceNJXQra3g3aCyXsXdbVLQ9oibNLHbMZYqAb97tdu2YXGRlOd5_w100l4K1aLFLdzpvTuK1_bu9mpJN7DWB3sFmnbSQzgKoPv7B0cdeCXok0lbI6bpPrQDIhz0Ou32KxGb46eGY9AFFuAOD9vQTV8J1-jIGm0femkvoHVpp3vIXolWd9DqnfgFqHc9-1dDJbirqFIUd3yP9Bp4_wFVE_s4)
+Today the project is a working MVP on testnet, a verified domain model, and a modular protocol waiting for a network pause to lift. It has been developed by one person, bootstrapped, without external funding. The priority for any future funding would be to turn it from a one-person effort into a capable team: product and frontend design, growth, and additional protocol engineering.
 
-## ✨ Key Features (2026 Standards)
-
-* **Arbitrum Stylus (Rust):** High-performance WASM execution for cryptographic verification and batch processing of metadata.
-* **Agentic Commerce (x402):** Autonomous treasury management for self-funding data availability without monthly fees.
-* **Native Passkey Support:** Secure signing using hardware-bound `secp256r1` keys (FaceID/TouchID).
-* **Irys L1 Integration:** Direct settlement of permanent storage pointers on the Irys Datachain.
-* **Ledger Hardware Signing:** WebHID transport for physical devices and Speculos transport for emulated ones, both routed through the Ledger Device Management Kit.
-
-## 🛠 Tech Stack
-
-* **Smart Contracts:** Rust (Stylus SDK), Solidity (Foundry).
-* **Storage:** Irys L1 Datachain.
-* **Compute:** Fleek Network (Off-chain Agent execution).
-* **Runtime:** Bun v1.4.x.
-
-## 📦 Repository Layout
-
-```
-.
-├── contracts/                    # Stylus + Foundry contracts and formal methods work
-├── emulator-ledger-backend/      # Speculos Docker setup + compiled Ethereum app ELF
-└── frontend/                     # Next.js dApp (upload, encryption, Ledger signing)
-```
-
-Each folder contains its own README with setup and architecture details for that layer.
-
-## ✅ Current Status (MVP)
-
-* Fully functional on **desktop environments**
-* Supports users familiar with crypto wallets (Arbitrum Sepolia, Irys devnet)
-* Core upload, encryption, and sharing flows operational on testnet
-* Hardware-backed signing available via Ledger (physical or emulated through Speculos)
-
-⚠️ **Known Issues (Mobile)**
-
-* Some image uploads may fail in edge cases on mobile devices
-* Likely caused by **price fluctuations during upload execution**
-* This issue does not typically occur on desktop
-* Improvements are planned to handle volatility more reliably
-
-## 🔮 Roadmap (Post-MVP)
-
-### 🔐 Security & Session Management
-
-* **Inactivity Timer** — Automatically lock sessions after inactivity
-* **"Lock Vault" Button** — Manually close the cryptographic session without closing the tab
-
-### ⚠️ Error Handling
-
-* **Global Error Handling (Toasts)** — Clear feedback for failed actions (e.g. rejected signatures)
-
-### 👤 User Experience & Onboarding
-
-* **Account Abstraction (AA)** — Social login, smart accounts instead of traditional wallets
-* **Paymaster Integration** — Gasless or sponsored transactions
-* **Privacy-Respecting Options** — Reduce reliance on centralized providers
-
-### 🔗 Sharing & Privacy
-
-* **Private Sharing (Invite Links)** — Share securely with selected users
-* **Public Sharing Option** — Share files publicly without encryption when desired
-* **ZK-based Hybrid Model (Exploration)** — Flexible sharing modes combining privacy and usability
-
-### 🖼️ Media & Upload Improvements
-
-* Improve handling of small images, edge-case upload failures, and volatility during upload
-
-### 🧩 Content Expansion (Beyond Photos)
-
-* Private "Google Photos"-like experience, but decentralized
-* Support for documents, development files, and arbitrary data uploads
-
-> Goal: a general-purpose, permanent, user-owned storage layer — not just a photo app.
-
-### 🔬 Research
-
-* **Asymmetric Encryption** — Continued improvements in secure key management and data sharing
-
+**Your photos are yours. The intelligence built on them is yours too.**
