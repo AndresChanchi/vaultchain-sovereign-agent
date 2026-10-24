@@ -1,58 +1,267 @@
 @import "tailwindcss";
 
-/* ───────────────────────────────
-    🎨 1. Design Tokens: Midnight Emerald
-    ─────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   Theme
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="system"] { color-scheme: light dark; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Design tokens — Midnight Emerald
+   @theme (not @theme inline) so utilities keep referencing the CSS
+   variables and light-dark() stays live at runtime.
+   ═══════════════════════════════════════════════════════════════════════ */
+
 @theme {
-  /* Kipio Core Palette */
-  --color-primary: #10b981;    /* emerald-500: main actions & success */
-  --color-secondary: #0f172a;  /* slate-900: headers & deep depth */
-  --color-tertiary: #1e293b;   /* slate-800: dashboard backgrounds */
-  --color-background: #020617; /* slate-950: global background */
-  --color-surface: #1e293b;    /* slate-800: cards and components */
-  --color-accent: #8b5cf6;     /* violet-500: unique highlights */
-  --color-highlight: #334155;  /* slate-700: subtle contrast */
-  --color-text-main: #f1f5f9;  /* slate-100: general text */
-  --color-on-primary: #020617; /* contrast text on primary */
+  /* Fonts — CSS variables injected by next/font in layout.tsx */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-serif: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+
+  /* Colors */
+  --color-bg: light-dark(oklch(0.98 0.006 250), oklch(0.12 0.02 250));
+  --color-card: light-dark(oklch(1 0 0), oklch(0.16 0.02 250));
+  --color-elevated: light-dark(oklch(0.95 0.01 250), oklch(0.20 0.02 250));
+  --color-ink: light-dark(oklch(0.20 0.02 250), oklch(0.95 0.01 250));
+  --color-muted: light-dark(oklch(0.45 0.02 250), oklch(0.65 0.02 250));
+  --color-hairline: light-dark(rgb(12 19 36 / 0.10), rgb(255 255 255 / 0.08));
+  --color-emerald: oklch(0.70 0.15 160);
+  --color-emerald-text: light-dark(oklch(0.50 0.13 160), oklch(0.78 0.15 160));
+  --color-violet: oklch(0.65 0.18 290);
+  --color-violet-text: light-dark(oklch(0.48 0.18 290), oklch(0.78 0.13 290));
+  --color-glass: light-dark(rgb(255 255 255 / 0.62), rgb(22 30 50 / 0.55));
+  --color-on-emerald: #04130d;
+  --color-amber: light-dark(oklch(0.60 0.15 70), oklch(0.75 0.15 70));
+  --color-danger: light-dark(oklch(0.55 0.20 25), oklch(0.60 0.20 25));
+  --color-danger-text: light-dark(oklch(0.50 0.20 25), oklch(0.75 0.15 25));
+
+  /* Radii */
+  --radius-input: 12px;
+  --radius-button: 14px;
+  --radius-tile: 14px;
+  --radius-card: 20px;
+  --radius-sidebar: 22px;
+  --radius-panel: 28px;
+  --radius-stage: 26px;
+
+  /* Type scale tokens */
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.12em;
+
+  /* Motion */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --animate-rise: rise 0.9s var(--ease-out) both;
+  --animate-bob: bob 6s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2.6s infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-scan: scan 2.6s linear infinite;
+  --animate-spin-slow: spin 1s linear infinite;
+
+  /* Text glint used by the landing H1 (mockup `.shn`). */
+  --animate-shn: shn 7s ease-in-out infinite;
+
+  /* Atmospheric orbs (mockup `.orb.o1`, `.orb.o2`). */
+  --animate-orb-drift-1: orb-drift-1 18s ease-in-out infinite alternate;
+  --animate-orb-drift-2: orb-drift-2 22s ease-in-out infinite alternate;
+
+  /* 3D stage tilt (mockup `.st2` `fl2`). The parent's transform; do not
+     apply to children, they own their own transforms. */
+  --animate-stage-tilt: stage-tilt 14s ease-in-out infinite alternate;
+
+  /* Chip pulse (mockup `.sg`). Applied by `@utility chip-pulse` below.
+     The base chip pulses its border to `--chip-color`, lifts 3px, and
+     emits a 5px halo over the same color. `--chip-i` staggers the loop
+     across a row of chips (0.55s per index, matching the mockup's
+     `animation-delay: calc(var(--i) * .55s)`). */
+  --animate-chip-pulse: chip-pulse 7s infinite;
+
+  /* Bar grow-in for allocation breakdown (mockup `.grow`). One-shot at
+     mount; ends at the element's inline width. Used by Economy's three
+     allocation bars and the subsidy pool progress bar. `both` matches
+     the mockup exactly — no visible effect here since there is no
+     delay, but it keeps the intent explicit. */
+  --animate-grow: grow 1.4s var(--ease-out) both;
+
+  @keyframes rise {
+    from { translate: 0 16px; }
+  }
+  @keyframes bob {
+    50% { translate: 0 -3px; }
+  }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 oklch(0.70 0.15 160 / 0.5); }
+    70%, 100% { box-shadow: 0 0 0 18px transparent; }
+  }
+  @keyframes shimmer {
+    from { translate: -100% 0; }
+    to   { translate: 100% 0; }
+  }
+  @keyframes scan {
+    from { translate: 0 -60px; }
+    to   { translate: 0 230px; }
+  }
+  @keyframes shn {
+    0%, 15%   { background-position: 100% 0; }
+    60%, 100% { background-position: 0 0; }
+  }
+  @keyframes orb-drift-1 {
+    to { translate: 120px 80px; }
+  }
+  @keyframes orb-drift-2 {
+    to { translate: -140px -60px; }
+  }
+  @keyframes stage-tilt {
+    from { transform: rotateX(8deg) rotateY(-7deg); }
+    to   { transform: rotateX(4deg) rotateY(6deg); }
+  }
+  @keyframes chip-pulse {
+    0%, 100% {
+      border-color: var(--color-hairline);
+      transform: none;
+      box-shadow: none;
+    }
+    6%, 14% {
+      border-color: var(--chip-color, var(--color-emerald));
+      transform: translateY(-3px);
+      box-shadow: 0 0 0 5px color-mix(
+        in oklch,
+        var(--chip-color, var(--color-emerald)) 18%,
+        transparent
+      );
+    }
+    22% {
+      border-color: var(--color-hairline);
+      transform: none;
+      box-shadow: none;
+    }
+  }
+  @keyframes grow {
+    from { width: 0; }
+  }
 }
 
-/* ───────────────────────────────
-    🧩 2. Custom Utilities (Logic Preserved)
-    ─────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   Reduced motion
+   ═══════════════════════════════════════════════════════════════════════ */
 
-@utility bg-primary {
-  background-color: var(--color-primary);
-}
-@utility bg-secondary {
-  background-color: var(--color-secondary);
-}
-@utility bg-tertiary {
-  background-color: var(--color-tertiary);
-}
-@utility bg-surface {
-  background-color: var(--color-surface);
-}
-@utility bg-background {
-  background-color: var(--color-background);
-}
-
-@utility text-main {
-  color: var(--color-text-main);
-}
-@utility text-primary {
-  color: var(--color-primary);
-}
-@utility text-accent {
-  color: var(--color-accent);
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --animate-rise: none;
+    --animate-bob: none;
+    --animate-pulse-ring: none;
+    --animate-shimmer: none;
+    --animate-scan: none;
+    --animate-spin-slow: none;
+    --animate-shn: none;
+    --animate-orb-drift-1: none;
+    --animate-orb-drift-2: none;
+    --animate-stage-tilt: none;
+    --animate-chip-pulse: none;
+    --animate-grow: none;
+  }
 }
 
-@utility border-primary {
-  border-color: var(--color-primary);
+/* ═══════════════════════════════════════════════════════════════════════
+   Custom utilities
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Glass — sidebar, dock, slide-overs, popovers, selection bar, upload toast */
+@utility glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--color-hairline);
 }
-@utility border-secondary {
-  border-color: var(--color-secondary);
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--color-card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
+/* Mono eyebrow label */
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Text glint. */
+@utility shn-shine {
+  background: linear-gradient(
+    100deg,
+    var(--color-ink) 42%,
+    var(--color-emerald-text) 50%,
+    var(--color-ink) 58%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shn);
+}
+
+/* Chip with staggered pulse — mockup `.sg`.
+   Used by AnyDevice (5 chips, emerald) and SignIn (10 chips across
+   two rows, emerald + violet; the second row sets
+   `--chip-color: var(--color-violet)` per-chip). Base style + pulse;
+   per-chip overrides via inline `--chip-i` and `--chip-color`. See
+   `--animate-chip-pulse` in @theme for the keyframe and the
+   reduced-motion override. */
+@utility chip-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 9999px;
+  background: var(--color-card);
+  border: 1px solid var(--color-hairline);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-ink);
+  animation: var(--animate-chip-pulse);
+  animation-delay: calc(var(--chip-i, 0) * 0.55s);
+}
+
+/* Bar grow-in — mockup `.grow`. Consumed by Economy (three allocation
+   bars + the subsidy pool bar). The bar's final width is set inline
+   (`style={{ width: "N%" }}`); the animation interpolates from 0 to
+   that width. Under reduced motion, `--animate-grow: none` makes the
+   bar render at its final width immediately. */
+@utility grow-bar {
+  animation: var(--animate-grow);
+}
+
+/* Ambient page background — legacy approximation, superseded on the
+   landing page by `<PageBackground />`. Preserved for pre-migration
+   pages. */
+@utility amb-bg {
+  background:
+    radial-gradient(900px 520px at 12% -8%, oklch(0.70 0.15 160 / 0.14), transparent 60%),
+    radial-gradient(700px 520px at 100% 25%, oklch(0.65 0.18 290 / 0.11), transparent 60%),
+    var(--color-bg);
+}
+
+/* Photo tile name gradient overlay */
+@utility tile-name {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 26px 10px 8px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.62));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Legacy responsive container */
 @utility container-responsive {
   width: 100%;
   margin-left: auto;
@@ -60,72 +269,342 @@
   padding-left: 1rem;
   padding-right: 1rem;
 
-  @media (min-width: 768px) {
-    max-width: 768px;
+  @media (min-width: 768px)  { max-width: 768px; }
+  @media (min-width: 1024px) { max-width: 1024px; }
+  @media (min-width: 1280px) { max-width: 1280px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Count-up helper
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@property --n {
+  syntax: "<integer>";
+  initial-value: 0;
+  inherits: false;
+}
+
+@layer components {
+  @keyframes count-up {
+    from { --n: 0; }
   }
-  @media (min-width: 1024px) {
-    max-width: 1024px;
+  .count-up {
+    animation: count-up 2.4s var(--ease-out) both;
+    counter-reset: n var(--n);
   }
-  @media (min-width: 1280px) {
-    max-width: 1280px;
+  .count-up::after {
+    content: counter(n);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .count-up { animation: none; }
   }
 }
 
-/* ───────────────────────────────
-    💡 3. Universal Icons
-    ─────────────────────────────── */
-.icon-wrapper {
-  @apply bg-slate-800 rounded-full flex items-center justify-center border border-slate-700;
-  width: 40px;
-  height: 40px;
-  color: var(--color-primary);
-  padding: 6px;
+/* ═══════════════════════════════════════════════════════════════════════
+   Page glow parallax
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  @keyframes page-glow-par {
+    to { transform: translateY(100px); }
+  }
+
+  @supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .page-glow {
+        animation: page-glow-par linear both;
+        animation-timeline: scroll(root);
+        animation-range: 0 700px;
+      }
+    }
+  }
 }
 
-.icon-svg {
-  width: 24px;
-  height: 24px;
+/* ═══════════════════════════════════════════════════════════════════════
+   Journey micro-animations & progress bars
+
+   All slides animate continuously (mockup behavior: every slide's
+   inner content keeps moving regardless of whether it is the active
+   step). There is NO `[data-active="true"]` gate: every `journey-*`
+   class runs its animation on its own infinite cycle from page load
+   until unload. The `data-active` attribute remains on the slide for
+   `aria-hidden` semantics only.
+
+   Cross-component use
+     `.journey-line` is NOT exclusive to the JourneyStage. It is also
+     rendered by `components/landing/network-viz.tsx` for the eight
+     dashed radiating lines in the "Not on our servers" panel, and will
+     be reused by `sign-in.tsx` for the connector SVG. Keeping all three
+     on the same class ensures the dash style (3 / 7 at 2.2s linear) and
+     opacity (0.7) stay in lockstep. If the class is ever moved or
+     renamed, update those files in the same change. The `network-node`
+     class (see the section below) is the companion only used by that
+     panel; the journey slide uses `journey-node` instead because it
+     animates scale, not opacity.
+
+   Cycle durations
+     Chosen so each animation loops 1–3 times within a 5s carousel
+     step, giving continuous visual liveliness without looking frantic.
+     The mockup uses a 20s master cycle; using shorter self-contained
+     loops here avoids the phase-misalignment problem that a global
+     20s cycle would have with our 5s-per-step autoplay (each slide
+     would be at a different phase when it becomes active, making the
+     animations look stale or out of sync with the step).
+
+   Stagger on `.journey-bar`
+     The three bars live in separate parent `<div>`s, so `:nth-of-type`
+     does not work (each is `:nth-of-type(1)` of its parent). Each bar
+     reads `--journey-bar-delay` from its inline style (0.3s / 0.5s /
+     0.7s, set in journey-stage.tsx). Missing variable → 0s.
+
+   Stagger on `.journey-node`
+     Same mechanism via `--journey-node-delay` (0.12s per satellite,
+     matching the mockup's `.pp` stagger).
+
+   Reduced motion
+     Every `journey-*` animation is disabled. Base states are chosen so
+     the visuals still read correctly: bars at full width, sweep at 0,
+     beacon at scale 1, lines at opacity 0.7, nodes at scale 1, chips
+     at opacity 1, progress bars fully filled.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* ── Progress bars ─────────────────────────────────────────────── */
+  @keyframes journey-progress-fill {
+    from { background-size: 0% 100%; }
+    to   { background-size: 100% 100%; }
+  }
+
+  .journey-progress {
+    background-color: var(--color-hairline);
+    background-image: linear-gradient(
+      to right,
+      var(--color-emerald) 0,
+      var(--color-emerald) 100%
+    );
+    background-repeat: no-repeat;
+    background-size: 0% 100%;
+    animation: journey-progress-fill var(--journey-progress-duration, 5000ms) linear forwards;
+    animation-play-state: var(--journey-progress-play-state, running);
+  }
+
+  /* ── Optimize slide: two bars breathing (100% → 50% → 100%) ──── */
+  .journey-shrink {
+    animation: journey-shrink 3s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  }
+  @keyframes journey-shrink {
+    0%, 100% { width: 100%; }
+    40%, 60% { width: 50%; }
+  }
+
+  /* ── Lock slide: sweep loops 0% → 100% → 0% ───────────────────── */
+  .journey-sweep {
+    animation: journey-sweep 4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  }
+  @keyframes journey-sweep {
+    0%        { width: 0%; }
+    40%, 60%  { width: 100%; }
+    100%      { width: 0%; }
+  }
+
+  /* ── Notary slide: beacon subtly pulses (scale + opacity) ────── */
+  .journey-beacon {
+    animation: journey-beacon 2s cubic-bezier(0.34, 1.4, 0.5, 1) infinite;
+  }
+  @keyframes journey-beacon {
+    0%, 100% { transform: scale(0.85); opacity: 0.7; }
+    50%      { transform: scale(1);    opacity: 1;   }
+  }
+
+  /* ── Notary slide: three bars grow → hold → shrink, staggered ─ */
+  .journey-bar {
+    animation: journey-bar 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+    animation-delay: var(--journey-bar-delay, 0s);
+  }
+  @keyframes journey-bar {
+    0%, 20%   { width: 0; }
+    40%, 70%  { width: 110px; }
+    90%, 100% { width: 0; }
+  }
+
+  /* ── Network slide: dashed lines always visible + dash motion ──
+     Shared with `components/landing/network-viz.tsx` and
+     `components/landing/sign-in.tsx` (see the section header note). */
+  .journey-line {
+    stroke-dasharray: 3 7;
+    stroke-dashoffset: 0;
+    opacity: 0.7;
+    animation: journey-line-dash 2.2s linear infinite;
+  }
+  @keyframes journey-line-dash {
+    to { stroke-dashoffset: -20; }
+  }
+
+  /* ── Network slide: satellites subtly pulse (scale 0.92 → 1) ── */
+  .journey-node {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: journey-node 3s ease-in-out infinite;
+    animation-delay: var(--journey-node-delay, 0s);
+  }
+  @keyframes journey-node {
+    0%, 100% { transform: scale(0.92); }
+    50%      { transform: scale(1); }
+  }
+
+  /* ── Floating chips: static (informational, not decorative) ──── */
+
+  /* Reduced motion: all journey micro-animations off. */
+  @media (prefers-reduced-motion: reduce) {
+    .journey-shrink,
+    .journey-sweep,
+    .journey-beacon,
+    .journey-bar,
+    .journey-line,
+    .journey-node,
+    .journey-progress {
+      animation: none;
+    }
+    .journey-line { stroke-dashoffset: 0; }
+    .journey-progress { background-size: 100% 100%; }
+  }
+
+  /* Journey stage — position variables and tilt toggle.
+
+     X/Z/rotation per slot live here (not in JSX) so desktop and mobile
+     can use different offsets without duplicating the component. The
+     slide's inline transform composes them:
+
+       translate(-50%, -50%)
+       translate3d(var(--pos-<slot>-x), 0, var(--pos-<slot>-z))
+       rotateY(var(--pos-<slot>-ry))
+
+     The `translate(-50%, -50%)` centers the slide based on its own
+     responsive width/height, so this file's vars are pure offsets.
+
+     Mobile overrides use smaller X so adjacent slides visibly peek from
+     the viewport edges instead of being pushed off-screen. Z and
+     rotation are reduced proportionally so foreshortening stays
+     visually similar. Do NOT restore desktop X values on mobile — the
+     slides would disappear past the viewport. */
+  .journey-stage {
+    --pos-a-x: 0px;     --pos-a-z: 0px;     --pos-a-ry: 0deg;
+    --pos-n1-x: 540px;  --pos-n1-z: -270px; --pos-n1-ry: -34deg;
+    --pos-n2-x: 820px;  --pos-n2-z: -420px; --pos-n2-ry: -42deg;
+    --pos-n3-x: 1000px; --pos-n3-z: -580px; --pos-n3-ry: -48deg;
+    --pos-p1-x: -540px; --pos-p1-z: -270px; --pos-p1-ry: 34deg;
+    --pos-p2-x: -900px; --pos-p2-z: -440px; --pos-p2-ry: 46deg;
+  }
+
+  @media (max-width: 767px) {
+    .journey-stage {
+      --pos-n1-x: 240px;  --pos-n1-z: -140px; --pos-n1-ry: -30deg;
+      --pos-n2-x: 380px;  --pos-n2-z: -280px; --pos-n2-ry: -38deg;
+      --pos-n3-x: 520px;  --pos-n3-z: -420px; --pos-n3-ry: -46deg;
+      --pos-p1-x: -240px; --pos-p1-z: -140px; --pos-p1-ry: 30deg;
+      --pos-p2-x: -380px; --pos-p2-z: -280px; --pos-p2-ry: 38deg;
+    }
+  }
+
+  /* Stage tilt — the 3D drift on the parent layer.
+
+     Applied only at ≥ md: where the render budget comfortably absorbs
+     the continuous keyframe. On mobile the tilt competes with the
+     compositor budget and re-introduces the sharp→blurry swap this
+     component spent multiple iterations fixing. If a future change
+     wants tilt on mobile, test with a full refresh + devtools
+     performance panel first; do not simply remove the media query. */
+  @media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
+    .journey-tilt {
+      animation: stage-tilt 14s ease-in-out infinite alternate;
+    }
+  }
 }
 
-/* ───────────────────────────────
-    ✨ 4. Typography & Global Base
-    ─────────────────────────────── */
-html {
-  color-scheme: dark;
-  background-color: var(--color-background);
+/* ═══════════════════════════════════════════════════════════════════════
+   Network viz — ambient dot pulse
+
+   Companion to the panel in `components/landing/network-viz.tsx`. The
+   eight dashed lines that radiate from the lock reuse `.journey-line`
+   (defined above). Only the eighteen ambient dots are new: each carries
+   `.network-node` with a per-element `--network-node-delay` inline
+   style (i * 0.1s, i = 0..17) so the pulse travels around the
+   composition in a wave.
+
+   Duration 3s: with an 18-step stagger at 0.1s the wave spans 1.7s of
+   delay, so a 3s cycle means two waves can be visible at once before
+   wrapping — matches the mockup's `nd` keyframe (also 3s).
+
+   Reduced motion
+     Base state is `opacity: 1`, so the dots stay fully visible when
+     the animation is disabled. No content is lost.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  .network-node {
+    animation: network-node 3s ease-in-out infinite;
+    animation-delay: var(--network-node-delay, 0s);
+  }
+  @keyframes network-node {
+    50% { opacity: 0.25; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .network-node { animation: none; }
+  }
 }
 
-body {
-  @apply bg-background text-main;
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
-  margin: 0;
-  padding: 0;
+/* ═══════════════════════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+
+    /* Horizontal overflow guard. See journey-stage.tsx header: the
+       stage wrapper clips at the viewport (w-screen), this is the
+       outer safety net for 3D-transformed descendants that Chromium
+       does not always clip at the local boundary. `clip` (unlike
+       `hidden`) does not create a scroll container — sticky navbar
+       keeps working. */
+    overflow-x: clip;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
+  [id] { scroll-margin-top: 5rem; }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-emerald);
+    outline-offset: 2px;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-h1, h2, h3 {
-  font-weight: 700;
-  color: var(--color-text-main);
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   Legacy compatibility — surfaces still consumed by pre-migration pages
+   (dashboard legacy, old landing). Deliberately unlayered so they keep
+   winning against the new base until the pages are migrated and removed.
+   ═══════════════════════════════════════════════════════════════════════ */
 
-.hero-title {
-  color: var(--color-primary);
-  font-weight: 800;
-}
-
-.text-heading {
-  font-size: clamp(1.5rem, 3vw, 2.5rem);
-  color: var(--color-primary);
-}
-
-.text-subheading {
-  font-size: clamp(1rem, 2vw, 1.5rem);
-  color: var(--color-text-main);
-}
-
-/* ───────────────────────────────
-    📱 5. Mobile Behaviour
-    ─────────────────────────────── */
 .mobile-menu {
   max-height: 0;
   overflow: hidden;
@@ -134,4 +613,21 @@ h1, h2, h3 {
 .mobile-menu.open {
   max-height: 300px;
   transition: max-height 0.3s ease-in;
+}
+
+.icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+  border-radius: 9999px;
+  background: var(--color-elevated);
+  border: 1px solid var(--color-hairline);
+  color: var(--color-emerald-text);
+}
+.icon-svg {
+  width: 24px;
+  height: 24px;
 }
