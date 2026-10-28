@@ -1,3 +1,6 @@
+"use client";
+
+import { useI18n } from "@context/I18nContext";
 import { useStats } from "@hooks/protocol/useStats";
 
 /**
@@ -8,56 +11,56 @@ import { useStats } from "@hooks/protocol/useStats";
  * pulsing emerald dot at the top are how the mockup communicates
  * "live" without any JS.
  *
- * Today every figure is null
- *   `useStats()` returns null for all four fields (see that hook's
- *   header for why: the current VaultChainMVP contract only emits
- *   `PhotoRegistered(user, contentHash, encryptedTxId)` — no size, no
- *   shares, and deriving counts requires an indexer over the full
- *   event history). Each cell therefore renders "—".
- *
- *   This is honest, not a placeholder for a fake value. The design
- *   system forbids hardcoded numbers dressed as real data. The
- *   `data-placeholder="hardcoded"` attribute on each cell is visible
- *   in devtools so a developer inspecting the DOM knows this is the
- *   current stub, without any copy saying so in the UI.
- *
- * Server Component
+ * Client Component
+ *   `"use client"` because of `useI18n()`. The section reads its four
+ *   labels, subtitle and placeholder from the active dictionary.
  *   `useStats()` is a plain function (no React hooks inside) despite
- *   its `use` prefix. It works in a Server Component. When the
- *   indexer lands and `useStats` becomes a `useQuery` call, this
- *   file becomes a client island — no other change to this file is
- *   needed then (the return shape is preserved).
+ *   its `use` prefix — it works in a Client Component exactly as it
+ *   did in a Server one.
  *
- * Motion
- *   - The emerald dot uses `animate-pulse-ring` (2.6s halo pulse).
- *     Resolves to `animation: none` under `prefers-reduced-motion:
- *     reduce` (globals.css token override), so the dot sits static —
- *     still "live" in meaning, just not moving.
- *   - No count-up on the numbers today. The count-up utility exists
- *     (`.count-up` + `@property --n`) but it needs a numeric target;
- *     with nulls there is nothing to count. When real data arrives,
- *     swapping `<span>{value.toLocaleString()}</span>` for
- *     `<span className="count-up" style={{ "--n": value }} />` is a
- *     one-line change.
+ *   When the indexer lands and `useStats` becomes a `useQuery` call,
+ *   this file needs no change: `useQuery` also runs in client
+ *   components, the return shape stays the same, and the consumer
+ *   contract (four fields, `number | null`) does not move.
  *
- * Glass surface
- *   The mockup wraps this section in `.gl` (the glass utility).
- *   DESIGN §4.4 reserves glass for sidebar, dock, slide-overs,
- *   popovers and chips — but the mockup is the source of truth, and
- *   here glass is the right choice: the section sits over the page's
- *   drifting orbs and the backdrop-filter lets them show through as
- *   a subtle life signal behind the numbers. Not nested inside any
- *   `preserve-3d` ancestor, so no blur degradation.
+ * Today every figure is null
+ *   `useStats()` returns null for all four fields. Each cell renders
+ *   `landing.liveStats.notAvailable` (`—`). This is honest, not a
+ *   placeholder for a fake value — the design system forbids
+ *   hardcoded numbers dressed as real data. The
+ *   `data-placeholder="hardcoded"` attribute on each cell remains,
+ *   visible in devtools only.
+ *
+ * i18n
+ *   Everything visible reads from `landing.liveStats.*`:
+ *     eyebrow, subtitle, photosKept, spacesOpened, dataStored,
+ *     photosShared, notAvailable, unitGb.
+ *
+ *   `notAvailable` (`—`) and `unitGb` (`GB`) are technically
+ *   translatable but stay identical in every locale by editorial
+ *   choice — they are symbols, not words. Translators are free to
+ *   adjust `unitGb` in locales where a different glyph is conventional
+ *   (e.g. some scripts prefer "GB" written in the local form).
  *
  * Number formatting
  *   `value.toLocaleString()` uses the user's locale for thousands
- *   separators (`18,402` in en-US, `18.402` in es-CO). The mockup
- *   renders raw digits because `counter()` does not add separators,
- *   but readability wins for larger numbers — and this only affects
- *   real data, which is not rendering yet.
+ *   separators (`18,402` en-US, `18.402` es-CO). The current data is
+ *   `null`, so this branch is dormant — but it is the right behaviour
+ *   once the indexer lands.
+ *
+ * Motion
+ *   The emerald dot uses `animate-pulse-ring` (2.6s halo pulse).
+ *   Under `prefers-reduced-motion: reduce` the token resolves to
+ *   `none`, so the dot is static. No count-up today: `--n` needs a
+ *   numeric target and there is nothing to count yet.
+ *
+ * Layout stability
+ *   `text-balance` on the eyebrow row would break the monospace
+ *   rhythm (label + subtitle run inline). Left as-is.
  */
 
 export function LiveStats() {
+  const { t } = useI18n();
   const stats = useStats();
 
   return (
@@ -69,22 +72,35 @@ export function LiveStats() {
             className="animate-pulse-ring h-2 w-2 rounded-full bg-emerald"
           />
           <span className="label-mono text-emerald-text">
-            Live from the network
+            {t("landing.liveStats.eyebrow")}
           </span>
           <span className="font-mono text-[12px] text-muted">
-            Counted from public contract events. No names. No files.
+            {t("landing.liveStats.subtitle")}
           </span>
         </div>
 
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCell label="Photos kept" value={stats.photosKept} />
-          <StatCell label="Spaces opened" value={stats.spacesOpened} />
           <StatCell
-            label="Data stored"
-            value={stats.dataStoredGb}
-            unit="GB"
+            label={t("landing.liveStats.photosKept")}
+            value={stats.photosKept}
+            placeholder={t("landing.liveStats.notAvailable")}
           />
-          <StatCell label="Photos shared" value={stats.photosShared} />
+          <StatCell
+            label={t("landing.liveStats.spacesOpened")}
+            value={stats.spacesOpened}
+            placeholder={t("landing.liveStats.notAvailable")}
+          />
+          <StatCell
+            label={t("landing.liveStats.dataStored")}
+            value={stats.dataStoredGb}
+            unit={t("landing.liveStats.unitGb")}
+            placeholder={t("landing.liveStats.notAvailable")}
+          />
+          <StatCell
+            label={t("landing.liveStats.photosShared")}
+            value={stats.photosShared}
+            placeholder={t("landing.liveStats.notAvailable")}
+          />
         </div>
       </div>
     </section>
@@ -94,33 +110,33 @@ export function LiveStats() {
 /**
  * One figure in the stats grid.
  *
- * Renders "—" when `value` is null. The `data-placeholder` attribute
- * is a devtools affordance: inspecting the DOM shows
- * `data-placeholder="hardcoded"`, which is how a future developer
- * distinguishes "currently a stub" from "value happens to be missing
- * for another reason". No visible copy claims the numbers are fake
- * — that would be meta-commentary on the product, not on the design.
+ * Renders `placeholder` (`—`) when `value` is null. The
+ * `data-placeholder` attribute is a devtools affordance: inspecting
+ * the DOM shows `data-placeholder="hardcoded"`, distinguishing
+ * "currently a stub" from "value happens to be missing for another
+ * reason". No visible copy claims the numbers are fake.
  *
- * The unit suffix ("GB" for Data stored) sits inline, smaller and
- * muted, exactly like the mockup. It is rendered only when the value
- * is not null — showing "— GB" would imply "unknown GB amount" rather
- * than "no data yet", which is subtly wrong.
+ * `unit` (e.g. "GB") renders only when `value` is not null — showing
+ * "— GB" would imply "unknown number of GB" rather than "no data
+ * yet", which is subtly wrong.
  */
 function StatCell({
   label,
   value,
   unit,
+  placeholder,
 }: {
   label: string;
   value: number | null;
   unit?: string;
+  placeholder: string;
 }) {
   const isPlaceholder = value === null;
 
   return (
     <div data-placeholder={isPlaceholder ? "hardcoded" : undefined}>
       <div className="font-mono text-[30px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-ink md:text-[44px]">
-        {isPlaceholder ? "—" : value.toLocaleString()}
+        {isPlaceholder ? placeholder : value.toLocaleString()}
         {!isPlaceholder && unit && (
           <span className="ml-1 text-[18px] font-medium text-muted">
             {unit}

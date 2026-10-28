@@ -1,5 +1,7 @@
 "use client";
 
+import { useI18n } from "@context/I18nContext";
+
 /**
  * Landing hero.
  *
@@ -11,26 +13,49 @@
  *   - drop zone: dashed emerald frame with pulsing primary CTA inside
  *   - ghost link: "Or look around first"
  *
+ * Full-viewport layout
+ *   The section carries `hero-viewport` (globals.css), which sets
+ *   `min-height: calc(100dvh - 84px)` with `svh` and `vh` fallbacks.
+ *   Combined with `flex flex-col justify-center` here, the hero fills
+ *   at least one viewport minus the sticky navbar (84px) and centers
+ *   its content vertically. This matters most at tablet (768–1024):
+ *   previously the hero ended at the natural content height, leaving
+ *   a gap above the fold. Now the hero covers the fold and the next
+ *   section starts cleanly below it.
+ *
+ *   If content ever exceeds the viewport (very short landscape phones
+ *   or a future addition), `min-height` grows to fit — the section
+ *   never clips. `justify-center` has no effect when content is taller
+ *   than the min-height, so overflow flows naturally.
+ *
+ * i18n
+ *   All visible strings come from `landing.hero.*`:
+ *     - eyebrow, title, subtitle, lede
+ *     - dropPhoto (desktop-only hint inside the drop zone)
+ *     - uploadCta (primary button label)
+ *     - noAccount (with `{count}` placeholder for the batch limit)
+ *     - orLookAround (ghost link below the drop zone)
+ *
+ *   The H1 and H2 also use `text-balance` so longer translations
+ *   (German "Deine Fotos gehören dir", French "Vos photos sont à
+ *   vous") break at balanced points without leaving a widow word.
+ *
  * Atmospheric layer
  *   The page-wide glow + two drifting orbs come from <PageBackground />
  *   at the page level (see (public)/page.tsx). Hero does NOT paint a
- *   local glow: a 600×340 radial on top of `.page-glow` made the top
- *   of the page read denser than the mockup, which is the exact issue
- *   the local glow was trying to solve and then exacerbated. One
- *   source of atmosphere, at the page level.
+ *   local glow — a local radial on top of `.page-glow` made the top
+ *   of the page read denser than the mockup.
  *
  * Motion
  *   - `animate-rise` on every block except the H1 (see LCP note).
- *   - `shn-shine` on the H1 — the emerald sweep from the mockup's
- *     `.shn` utility. Only `background-position` animates; no opacity,
- *     no fill-mode.
+ *   - `shn-shine` on the H1 — emerald sweep from the mockup's `.shn`.
+ *     Only `background-position` animates; no opacity, no fill-mode.
  *   - `animate-pulse-ring` on the primary CTA (halo pulse).
  *   - Hover lift (scale 1.02) on the CTA. Hovering the drop zone
  *     brightens the dashed border and the emerald tint.
  *   - Under `prefers-reduced-motion`, `--animate-*` tokens resolve to
- *     `none`; `shn-shine` falls back to solid ink automatically
- *     (`background-position` stays at 0 0, which exposes the leading
- *     ink stop under the text). No `!important`.
+ *     `none`; `shn-shine` falls back to solid ink automatically. No
+ *     `!important`.
  *
  * LCP note
  *   The H1 is the LCP candidate. Two rules protect that:
@@ -56,6 +81,17 @@
  *       hijacking click semantics;
  *     - the copy below the CTA stays readable text.
  *
+ * SEO
+ *   - The H1 is the only `<h1>` on the page, in the primary locale
+ *     (matches `<html lang>`). After the route restructure it becomes
+ *     the H1 for `/` (en) and `/es/` (es) — never both on one route.
+ *   - The ghost link is a real `<a href="#journey">` (crawlable anchor,
+ *     matches in-page navigation, correct semantics).
+ *   - The CTA is a `<button>` today because `/upload` does not exist;
+ *     it becomes a `<Link href="/upload">` when the intercepted route
+ *     lands. Buttons are appropriate for JS-only actions; links for
+ *     navigation.
+ *
  * TODO: open /upload intercepted route on drop-zone click.
  * TODO: accept actual drag & drop on the wrapper.
  */
@@ -65,14 +101,16 @@ const MAX_BATCH_SIZE = 10; // TODO: derive from device class.
 const RISE = (delayMs: number) => ({ animationDelay: `${delayMs}ms` });
 
 export function Hero() {
+  const { t } = useI18n();
+
   return (
-    <section className="relative mx-auto max-w-[1280px] px-6 pb-24 pt-20 md:px-10 md:pb-32 md:pt-28">
+    <section className="hero-viewport relative mx-auto flex max-w-[1280px] flex-col justify-center px-6 py-16 md:px-10 md:py-20">
       <div className="mx-auto max-w-3xl text-center">
         <p
           className="label-mono animate-rise text-emerald-text"
           style={RISE(0)}
         >
-          Digital property, not rental
+          {t("landing.hero.eyebrow")}
         </p>
 
         {/* LCP element. No `animate-rise`; `shn-shine` drives only the
@@ -81,23 +119,22 @@ export function Hero() {
             header. `text-ink` is intentionally absent: `shn-shine`
             sets `color: transparent` and provides the visible color
             via the gradient clipped to the text. */}
-        <h1 className="shn-shine mt-8 font-serif text-[54px] leading-[1.02] tracking-[-0.015em] md:text-[104px]">
-          Your photos are yours.
+        <h1 className="shn-shine mt-8 font-serif text-balance text-[54px] leading-[1.02] tracking-[-0.015em] md:text-[104px]">
+          {t("landing.hero.title")}
         </h1>
 
         <h2
-          className="animate-rise mt-8 text-[22px] font-semibold leading-[1.3] tracking-[-0.02em] text-muted md:text-[30px]"
+          className="animate-rise mt-8 text-balance text-[22px] font-semibold leading-[1.3] tracking-[-0.02em] text-muted md:text-[30px]"
           style={RISE(160)}
         >
-          The intelligence built on them is yours too.
+          {t("landing.hero.subtitle")}
         </h2>
 
         <p
-          className="animate-rise mx-auto mt-6 max-w-xl text-[16px] leading-[1.6] text-muted md:text-[17px]"
+          className="animate-rise mx-auto mt-6 max-w-xl text-pretty text-[16px] leading-[1.6] text-muted md:text-[17px]"
           style={RISE(240)}
         >
-          Locked on your device, recorded as yours, kept forever. No
-          subscription, and nobody else holds the key.
+          {t("landing.hero.lede")}
         </p>
       </div>
 
@@ -127,7 +164,9 @@ export function Hero() {
               <path d="M12 16V4M7 9l5-5 5 5" />
               <path d="M5 20h14" />
             </svg>
-            <p className="text-[15px] text-muted">Drop a photo here</p>
+            <p className="text-[15px] text-muted">
+              {t("landing.hero.dropPhoto")}
+            </p>
           </div>
 
           <button
@@ -137,12 +176,11 @@ export function Hero() {
             }}
             className="animate-pulse-ring inline-flex h-14 max-w-full items-center justify-center rounded-[14px] bg-emerald px-8 text-[16px] font-semibold text-on-emerald transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02] focus-visible:scale-[1.02]"
           >
-            Upload your first photo
+            {t("landing.hero.uploadCta")}
           </button>
 
           <p className="text-[13px] text-muted">
-            No account needed to start. Choose up to {MAX_BATCH_SIZE} photos
-            at once.
+            {t("landing.hero.noAccount", { count: MAX_BATCH_SIZE })}
           </p>
         </div>
 
@@ -151,7 +189,7 @@ export function Hero() {
             href="#journey"
             className="animate-rise text-sm text-muted underline decoration-hairline decoration-1 underline-offset-4 transition-colors duration-200 hover:text-ink hover:decoration-emerald/60"
           >
-            Or look around first
+            {t("landing.hero.orLookAround")}
           </a>
         </div>
       </div>

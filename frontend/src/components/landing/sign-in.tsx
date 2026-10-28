@@ -1,144 +1,177 @@
+"use client";
+
 import type { CSSProperties } from "react";
+import { useI18n } from "@context/I18nContext";
 
 /**
  * "Sign in however you like" — landing section.
  *
- * Centered composition: eyebrow, headline, sub, then two rows of
- * `chip-pulse` chips (methods on top in emerald, wallets below in
- * violet), a connector SVG that funnels both rows into a single point,
- * and a glass card at the bottom reading "Your space — The same one,
- * whichever way you came in."
+ * Desktop (≥ md)
+ *   Two rows of chips (methods emerald, wallets violet) + connector
+ *   SVG + glass destination card. Unchanged from the previous pass —
+ *   the connector visualizes the convergence and reads correctly at
+ *   desktop width.
  *
- * The connector is the mockup's main contribution to this section: it
- * is not ornamental. Two visually distinct rows (methods vs. wallets)
- * converge on one endpoint, which is exactly the product claim in the
- * subtitle ("The same one, whichever way you came in"). Removing it
- * would reduce the section to "we support a lot of login options"; the
- * SVG makes the "one space" part visible.
+ * Mobile (< md) — "cosmic convergence"
+ *   The SVG connector is hidden (`hidden md:block`) because it cannot
+ *   survive arbitrary chip wrapping. In its place, two coordinated,
+ *   CSS-only effects that literalize the section's message ("many
+ *   ways in, one space"):
  *
- * Copy source of truth
- *   The mockup (Landing-dark.html / Landing-Light / Landing-Mobile).
- *   Changes relative to the inline version this replaces:
- *     - Eyebrow: "Ways in" → "Any way in, one space" (mockup).
- *     - Chips: 6 static → 10 animated. First row = methods (emerald),
- *       second row = wallets (violet). The mockup's two-tone treatment
- *       names a real distinction: methods identify you, wallets sign
- *       for you. Same endpoint either way.
- *     - Sub rewritten to match the mockup: "Email, social, passkey or
- *       a web3 wallet. Kipio never asks who you are, only that it is
- *       you."
- *     - Connector SVG added between the chips and the card. Not in
- *       the inline. In the mockup (`.hm` class).
- *     - Glass card at the bottom added: 52px emerald icon, "Your
- *       space", "The same one, whichever way you came in."
+ *     - `.card-portal` — a conic gradient behind the destination
+ *                        card that rotates slowly (22s) while
+ *                        breathing (5s opacity 0.5 → 1.0). Reads as
+ *                        "energy source" — the space attracts the
+ *                        methods. No `filter: blur` (which would
+ *                        force re-raster every rotation frame on
+ *                        mobile); the soft alpha stops of the conic
+ *                        gradient produce the same glow with paint
+ *                        only.
  *
- * Reused utilities
- *   - `.chip-pulse` (globals.css): base chip + staggered pulse. First
- *     row uses the default (emerald); second row overrides
- *     `--chip-color: var(--color-violet)` per chip.
- *     `--chip-i` is the global chip index (0..5 for methods, 6..9 for
- *     wallets) so the stagger sweeps across both rows as one wave.
- *   - `.journey-line` (globals.css): dashed 3/7 at 2.2s linear. Shared
- *     with `network-viz.tsx` and JourneyStage's network slide. The
- *     three consumers are documented in the globals.css section header;
- *     renaming the class breaks all three.
- *   - `.glass` (globals.css): the "Your space" card. Not nested inside
- *     a `preserve-3d` ancestor, so the blur is stable.
+ *     - `.chip-pulse::after` — each chip emits a small dot in its
+ *                        own color (`--chip-color`, so emerald for
+ *                        methods, violet for wallets). The dot
+ *                        charges up (scale 1.2 + glow), then falls
+ *                        toward the card, dissolving on the way down.
+ *                        Stagger of 0.6s per chip (via `--chip-i`)
+ *                        means a continuous particle stream — one
+ *                        chip "fires" every 0.6s, so at any moment
+ *                        several particles are mid-fall at different
+ *                        depths. This is the visual "many → one".
  *
- * Connector SVG
- *   ViewBox `0 0 1000 100`, `preserveAspectRatio="none"` so it stretches
- *   to the container width and stays 100px tall. The five paths
- *   converge on `(500, 98)`. Three start at x=200/350/500 with emerald
- *   stroke (methods); two at x=650/800 with violet stroke (wallets).
- *   The visual effect: both rows feed the same endpoint, one in each
- *   brand color.
+ *   Why this over the previous "aura + beam"
+ *     The previous iteration was decorative (a pulsing halo + a
+ *     vertical line) but not semantic — a viewer had to be told what
+ *     it meant. Particles *leaving* chips and *arriving* at the card
+ *     need no caption: the motion itself is the message. The
+ *     rotating portal doubles down on "the card is the source of
+ *     gravity", which is what the section is actually claiming.
  *
- *   Hidden on `< md` (`hidden md:block`, mockup's `.hm`). On mobile the
- *   two rows wrap unpredictably and the funnel geometry would land on
- *   chips at arbitrary positions. Removing it on mobile avoids the
- *   "broken arrow pointing nowhere" look. On desktop it always lands
- *   on the card below because the card is `max-w-[560px]` centered and
- *   the SVG is inside the same centered column.
+ *   Space
+ *     No new wrappers, no extra height. The portal sits behind the
+ *     card at `inset: -30% -20% -20%` (bleeds visually upward into
+ *     the chip area, clipped horizontally by `overflow-x-clip` on
+ *     the section). The dots are 5px pseudo-elements emitted from
+ *     existing chip positions. The section's vertical footprint is
+ *     actually slightly shorter than before because the chips no
+ *     longer carry `.chip-float` (which added a competing motion).
  *
- *   `stroke="var(--color-emerald)"` and `stroke="var(--color-violet)"`
- *   instead of the mockup's hardcoded `oklch(...)` values — the tokens
- *   are the same color, and using them means the connector follows if
- *   the palette ever shifts. `strokeWidth="1.5"` matches the mockup.
+ * Overflow safety
+ *   `overflow-x-clip` on the `<section>` — belt and suspenders. The
+ *   portal's horizontal bleed is clipped at the section boundary
+ *   regardless of viewport width. `html { overflow-x: clip }` in
+ *   globals.css already provides a page-level guard, but relying on
+ *   a global rule for a component-specific effect hides intent; the
+ *   section owns its own clip.
  *
- * Server Component
- *   No state, no effects, no handlers. `--chip-i` is a static per-chip
- *   index from `Array.map`, not state. Reduced motion: `--animate-chip-pulse`
- *   resolves to `none` (globals.css), the connector's `journey-line`
- *   animation resolves to `none`, and the section becomes fully static
- *   without any conditional logic here.
+ * Client Component
+ *   `useI18n()` provides `t()` and the active dictionary. The
+ *   component is `"use client"` because of that hook — no other
+ *   state or effect lives here. All visible strings flow through the
+ *   active dictionary; switching language re-renders the section
+ *   with the target strings.
  *
- * Placeholder behavior
- *   Today all chips are decorative — clicking one does nothing. The
- *   login flow (Fase 9) will wrap the relevant chips in buttons that
- *   open the login overlay. Until then, `<span>` is correct: they are
- *   perceivable, not interactive. When they become interactive, the
- *   span→button swap is per-chip and localized.
+ * Two ways of reading the dictionary
+ *   - `t("landing.signIn.title")` — dot-path scalar strings
+ *     (eyebrow, title, subtitle, cardTitle, cardBody).
+ *   - `dictionary.landing.signIn.methods` — array reads. `t()` is
+ *     typed against `Path<Dictionary>`, which only resolves leaf
+ *     strings, so it cannot return arrays. Reading from `dictionary`
+ *     directly is the idiomatic path for iterating translated lists.
+ *
+ * Chips as `<ul><li>`
+ *   The mockup renders each chip as a `<span>`, which loses list
+ *   semantics. Wrapping them in `<ul><li>` gives screen readers
+ *   "list, 6 items" and "list, 4 items" before the items themselves.
+ *   `role="list"` is kept explicit because some older VoiceOver
+ *   versions drop list announcement when `list-style` is `none`
+ *   (which `.chip-pulse` implies via `display: inline-flex`).
+ *
+ * Chip identity
+ *   `key={i}` (index), not the string. Locale changes swap the text
+ *   ("Email" → "Correo"); using the text as key would remount each
+ *   `<li>`, restarting both the `chip-pulse` stagger AND the emitted
+ *   particle animation. The lists are positional — method #1 stays
+ *   method #1 in every language — so index is the semantically
+ *   correct identity.
+ *
+ * Deferred
+ *   Chips are decorative today. Fase 9 wraps each `<li>`'s text in a
+ *   `<button>` that opens the login overlay. The particle animation
+ *   is independent of the interaction and continues unchanged.
+ *
+ * Reduced motion
+ *   `.card-portal` has its animation gated under
+ *   `@media (prefers-reduced-motion: no-preference)`, so the portal
+ *   renders statically (visible at base opacity 0.55, no rotation).
+ *   `.chip-pulse::after` has no base opacity, so without the
+ *   animation it is invisible — the section becomes a static stack
+ *   of chips + card with the portal glow. No motion, no information
+ *   lost (the section's message is in the copy).
  */
-
-const METHODS = [
-  "Email",
-  "Google",
-  "X",
-  "Apple",
-  "Microsoft",
-  "Passkey",
-] as const;
-
-const WALLETS = ["MetaMask", "Brave Wallet", "Rabby", "Ledger"] as const;
-
 export function SignIn() {
+  const { t, dictionary } = useI18n();
+  const { methods, wallets } = dictionary.landing.signIn;
+
   return (
-    <section className="mx-auto max-w-[1280px] px-6 py-24 md:px-10">
+    <section className="relative mx-auto max-w-[1280px] overflow-x-clip px-6 py-24 md:px-10">
       <div className="mx-auto max-w-2xl text-center">
-        <p className="label-mono text-emerald-text">Any way in, one space</p>
+        <p className="label-mono text-emerald-text">
+          {t("landing.signIn.eyebrow")}
+        </p>
         <h2 className="mt-3 text-[30px] font-bold leading-tight tracking-[-0.025em] text-ink md:text-[40px]">
-          Sign in however you like.
+          {t("landing.signIn.title")}
         </h2>
         <p className="mx-auto mt-3 max-w-[480px] text-[16px] leading-[1.55] text-muted">
-          Email, social, passkey or a web3 wallet. Kipio never asks who you
-          are, only that it is you.
+          {t("landing.signIn.subtitle")}
         </p>
 
-        {/* Methods — emerald chips (default `--chip-color`) */}
-        <div className="mt-9 flex flex-wrap justify-center gap-3">
-          {METHODS.map((method, i) => (
-            <span
-              key={method}
+        {/* ── Methods — emerald chips ──────────────────────────────
+            Each `<li>` gets `.chip-pulse` (idle border+halo pulse)
+            and its own emitted particle via `::after`. The particle
+            animation is gated in globals.css to
+            (max-width: 767px) + no reduced motion. */}
+        <ul
+          role="list"
+          className="mt-9 flex flex-wrap justify-center gap-2 md:gap-3"
+        >
+          {methods.map((label, i) => (
+            <li
+              key={i}
               className="chip-pulse"
               style={{ "--chip-i": i } as CSSProperties}
             >
-              {method}
-            </span>
+              {label}
+            </li>
           ))}
-        </div>
+        </ul>
 
-        {/* Wallets — violet chips. `--chip-i` continues from the methods
-            row (6..9) so the pulse travels across both rows as one
-            wave, matching the mockup's `--i:6` .. `--i:9`. */}
-        <div className="mt-3 flex flex-wrap justify-center gap-3">
-          {WALLETS.map((wallet, i) => (
-            <span
-              key={wallet}
+        {/* ── Wallets — violet chips ───────────────────────────────
+            `--chip-i` continues from the methods row (6..9) so the
+            particle stream stays continuous across both rows. */}
+        <ul
+          role="list"
+          className="mt-2 flex flex-wrap justify-center gap-2 md:mt-3 md:gap-3"
+        >
+          {wallets.map((label, i) => (
+            <li
+              key={i}
               className="chip-pulse"
               style={
                 {
-                  "--chip-i": i + METHODS.length,
+                  "--chip-i": i + methods.length,
                   "--chip-color": "var(--color-violet)",
                 } as CSSProperties
               }
             >
-              {wallet}
-            </span>
+              {label}
+            </li>
           ))}
-        </div>
+        </ul>
 
-        {/* Connector — desktop only. Funnels both rows into the card
-            below. Hidden at < md; see the file header. */}
+        {/* ── Connector (desktop only) ─────────────────────────────
+            Hidden on < md; the mobile substitute is the portal +
+            emitted particles. */}
         <svg
           aria-hidden="true"
           className="hidden h-[100px] w-full md:block"
@@ -174,30 +207,40 @@ export function SignIn() {
           </g>
         </svg>
 
-        {/* Destination card — the "one space" both rows converge on. */}
-        <div className="glass mx-auto mt-6 flex max-w-[560px] items-center gap-5 rounded-[24px] px-7 py-6 text-left">
-          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[15px] bg-emerald text-on-emerald">
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="5" y="11" width="14" height="9" rx="2" />
-              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-            </svg>
-          </div>
-          <div>
-            <div className="text-[20px] font-semibold text-ink">
-              Your space
+        {/* ── Destination card with mobile portal ──────────────────
+            `.card-portal` is positioned absolute behind the card at
+            `inset: -30% -20% -20%` — it bleeds upward into the
+            gap toward the chips (visually receiving the particles),
+            and horizontally beyond the card edges (soft glow). The
+            section's `overflow-x-clip` guards the horizontal bleed;
+            the vertical bleed stays inside the section's `py-24`. */}
+        <div className="relative mt-6">
+          <div aria-hidden="true" className="card-portal md:hidden" />
+
+          <div className="glass relative z-10 mx-auto flex max-w-[560px] items-center gap-4 rounded-[24px] px-5 py-5 text-left md:gap-5 md:px-7 md:py-6">
+            <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[15px] bg-emerald text-on-emerald">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="5" y="11" width="14" height="9" rx="2" />
+                <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
             </div>
-            <div className="mt-1 text-[14px] text-muted">
-              The same one, whichever way you came in.
+            <div>
+              <div className="text-[20px] font-semibold text-ink">
+                {t("landing.signIn.cardTitle")}
+              </div>
+              <div className="mt-1 text-[14px] text-muted">
+                {t("landing.signIn.cardBody")}
+              </div>
             </div>
           </div>
         </div>

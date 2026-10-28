@@ -7,44 +7,99 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useI18n } from "@context/I18nContext";
 import { JourneySamples } from "./journey-samples";
 
 /**
  * Landing — "Your photo's journey" 3D stage.
  *
- * A four-slide, auto-advancing carousel of the four steps described in
- * the copy. Each slide is positioned in 3D space (`translate3d +
- * rotateY`) inside a `perspective` parent with `transform-style:
- * preserve-3d`. Sizing is responsive (see "Slide sizing" below);
- * positioning is defined in `globals.css` under `.journey-stage` as CSS
- * variables, so desktop and mobile can use different offsets without
- * duplicating JSX.
+ * A four-slide, auto-advancing carousel. Each slide is positioned in
+ * 3D space (`translate3d + rotateY`) inside a `perspective` parent
+ * with `transform-style: preserve-3d`. Sizing is responsive (see
+ * "Slide sizing"); positioning is defined in `globals.css` under
+ * `.journey-stage` as CSS variables, so desktop and mobile use
+ * different offsets without duplicating JSX.
  *
  * Autoplay + manual controls (hybrid)
- *   The mockup uses a 20s CSS keyframe loop. That is elegant for a
- *   passive viewer but does not let a reader control the flow — which
- *   matters when the same visitor uses the section to *explain* the
- *   product to someone else. Therefore:
+ *   - Auto-advance every 5s while playing.
+ *   - Prev / Pause / Next + four progress-bar buttons.
+ *   - Pure CSS transitions on `transform` and `opacity`.
+ *   - Progress bars animate 0→100% over the current step. Pause
+ *     freezes; unpause restarts bar + timer in lockstep.
  *
- *     - The step advances every 5s while playing.
- *     - Prev / Pause / Next and four progress-bar buttons allow the
- *       visitor to jump to any step.
- *     - The transitions between steps are pure CSS `transition` on
- *       `transform` and `opacity`.
- *     - Progress bars animate 0→100% over the current step duration.
- *       Pause freezes the bar; unpausing restarts bar + timer in
- *       lockstep (see "Progress sync").
+ * i18n
+ *   Every visible string comes from `useI18n()`:
+ *     - Section header (eyebrow, title, subtitle) — `landing.journey.*`.
+ *     - Caption title/body/hood — `dictionary.landing.journey.steps[i]`
+ *       (array read, not `t()`, because `t()` resolves only leaf strings).
+ *     - Slide overlays — `landing.journey.slideOverlays.<slide>.*`.
+ *     - Transport controls — `landing.journey.{previous,pause,play,next}`.
+ *     - Progress-bar aria-labels — `landing.journey.showStep` with
+ *       `{index}`, `{total}`, `{title}` placeholders.
  *
- * Progress sync
- *   Bar and timer must restart together when the user unpauses. A
- *   `generation` state is bumped on every pause→play transition, and
- *   the progress buttons key on `${index}-${active}-${generation}`, so
- *   on unpause they remount fresh at 0%. The autoplay effect re-arms
- *   on `paused` change, so the timer also restarts from
- *   `STEP_DURATION_MS`.
+ *   Each slide calls `useI18n()` directly. They are children of the
+ *   same file — prop drilling 8+ translated strings through props
+ *   would be noise without benefit. The hook reads from the same
+ *   context, so there is exactly one dictionary load per locale
+ *   change, shared by parent and slides.
  *
- *   While paused, the bar freezes via the CSS var
- *   `--journey-progress-play-state`.
+ * Captions — grid layout (i18n safety)
+ *   The caption area uses `grid` with all captions stacked at
+ *   `col-start-1 row-start-1` and cross-faded via `opacity`. This
+ *   solves two i18n problems in one move:
+ *
+ *     1. **No fixed height.** A fixed height would clip longer
+ *        translations (German captions wrap to more lines than
+ *        English). The grid container auto-sizes to the tallest
+ *        caption, so every locale fits.
+ *     2. **No layout shift on switch.** Because all captions are
+ *        rendered simultaneously (only one visible), the container
+ *        height is always the max. Switching from a short caption to
+ *        a long one does not push the controls below down — the
+ *        space was already reserved.
+ *
+ *   `text-balance` on the title and `text-pretty` on the body even
+ *   out line lengths so no single word is orphaned on its own line
+ *   in any locale.
+ *
+ * Chips inside slides — responsive + i18n safety
+ *   Each chip carries `max-w-[calc(100%-28px)]` (28px = the
+ *   `right-3.5` or `left-3.5` offset on both sides of the slide).
+ *
+ *   **Font and padding shrink at mobile (< sm).** At 320px the slide
+ *   inner width is ~232px and the chip's usable area after padding
+ *   is ~212px. At `text-[12px]` mono, "Optimized · one photo at a
+ *   time" (30 chars) needs ~216px and would truncate; at
+ *   `text-[11px]` it needs ~198px and fits on one line. The `sm:`
+ *   variants restore the original sizes (12px / 16px padding) so the
+ *   desktop look is unchanged.
+ *
+ *   **`rounded-2xl` at mobile, `rounded-full` at `sm:`.** A chip
+ *   that fits on one line at 11px still looks right with
+ *   `rounded-full`; the only case where `rounded-full` looks wrong is
+ *   a 2-line wrap (which the padding at `rounded-full` would clip
+ *   visually). `rounded-2xl` handles both cases, and `sm:rounded-full`
+ *   restores the mockup's pill at desktop where 2-line wraps do not
+ *   occur.
+ *
+ *   **No `truncate`.** `truncate` = `overflow: hidden; text-overflow:
+ *   ellipsis; white-space: nowrap`. Removing it lets the chip grow
+ *   vertically (wrapping) when a future translation exceeds the fit
+ *   width. `overflow-hidden` stays as a defensive clip — if a
+ *   pathological translation (100+ chars) ever lands, it clips the
+ *   chip's content rather than breaking the slide layout, but normal
+ *   translations wrap gracefully.
+ *
+ *   **`title={chip}`** stays for hover on desktop — redundant now
+ *   that text fits, but a free fallback if a future locale wraps
+ *   unpredictably. On mobile `title` does nothing (no hover) but
+ *   costs nothing to keep.
+ *
+ *   **Icon-bearing chip (Lock)** adds `items-start sm:items-center`
+ *   so the icon aligns to the first line when the text wraps, and
+ *   `mt-[1px]` on the SVG nudges it to optical center against the
+ *   text baseline. At desktop (`sm:`) the layout reverts to
+ *   `items-center` — single-line, icon and text vertically centered.
  *
  * Rasterization quality — history of the "sharp then blurry" defect
  *   Three separate causes were identified and fixed. Do NOT regress:
@@ -55,56 +110,35 @@ import { JourneySamples } from "./journey-samples";
  *      < 1×, so Chromium rastered at DPR and downscaled.
  *
  *      Fix: shift the `translateZ` values so the active slide sits at
- *      Z = 0. `--pos-*-z` values below are the mockup's, shifted by
- *      −120. Do NOT restore the mockup's raw Z values — that would
- *      bring back the front-blurry / back-sharp asymmetry.
+ *      Z = 0. Do NOT restore the mockup's raw Z values.
  *
  *   2. `scale-[0.78]` on the tilt layer. `scale` is applied by the
- *      compositor AFTER raster; on high-DPR devices (mobile, DPR 2–3),
- *      raster happens at 1× CSS px, then `scale 0.78 → display at
- *      DPR` upscales the raster → blurry. Desktop (DPR 1) happened to
- *      look sharp because display ended at < 1× (downscale). Tablet at
- *      `md:` breakpoint had `scale-100` → sharp by coincidence.
+ *      compositor AFTER raster; on high-DPR devices the raster is at
+ *      1× CSS px then upscaled → blurry.
  *
  *      Fix: no `scale` on the tilt layer. Slides have their own
  *      responsive `w-[calc] max-w-[460px] aspect-[460/380]` — sizing
- *      happens at layout, not by raster-then-upscale. This is the
- *      single most important fix for mobile sharpness. If a future
+ *      happens at layout, not by raster-then-upscale. If a future
  *      change re-adds `scale` (in any form) to any ancestor, mobile
  *      blur returns.
  *
  *   3. `backface-visibility: hidden` on each slide. Combined with the
- *      absence of `scale`, this nudges Chromium to raster each slide at
- *      native DPR (instead of 1× CSS px). It was tried without removing
- *      `scale` and did NOT help — because `scale` overrode its effect.
- *      Now that #2 is fixed, `backface-visibility: hidden` is kept as
- *      a stabilizer against future Chromium heuristic changes.
+ *      absence of `scale`, nudges Chromium to raster each slide at
+ *      native DPR. Kept as a stabilizer against future Chromium
+ *      heuristic changes.
  *
  *   Do NOT add:
  *     - `will-change: transform` on any slide or the tilt layer.
- *       Previously froze the tilt keyframe and re-introduced 1× raster
- *       blur on desktop.
- *     - `scale` (property or `transform: scale()`) on the tilt layer.
- *     - `overflow-hidden` on the stage wrapper *without* `w-screen`
- *       (would re-clip slides at ~1200px instead of the viewport).
+ *     - `scale` on the tilt layer.
+ *     - `overflow-hidden` on the stage wrapper *without* `w-screen`.
  *     - `translateZ` > 0 on any slide.
- *     - `image-rendering` / `shape-rendering` on SVGs (no-op for
- *       layer-level rasterization).
- *
- * Slide sizing
- *   `w-[calc(100vw-60px)] max-w-[460px] aspect-[460/380]` — 330px on a
- *   390px mobile viewport, 460px on desktop, capped at 460px on
- *   anything wider. Content inside was designed for 460×380; at 330px
- *   the inner padding (14px × 2 = 28px) leaves 302px of content space,
- *   which fits the widest internal element (the notary icon row at
- *   ~202px). Verified by inspection, not measurement.
+ *     - `image-rendering` / `shape-rendering` on SVGs.
  *
  * Stage overflow
- *   Slides at `n1`/`n2` extend up to ~770px from center on desktop.
  *   The stage wrapper is `w-screen` (100vw) with `overflow-hidden`, so
- *   clipping happens at the viewport boundary — same as the mockup's
+ *   slides clip at the viewport boundary — same as the mockup's
  *   `.kv { overflow: hidden }`. Header, captions and controls each
- *   carry their own `mx-auto max-w-*` so only the stage is full-bleed.
+ *   carry their own `mx-auto max-w-*`, so only the stage is full-bleed.
  *
  * Position model
  *   Each slide's slot is derived from its signed distance to the
@@ -121,59 +155,37 @@ import { JourneySamples } from "./journey-samples";
  *
  *   Mobile overrides in globals.css (`@media (max-width: 767px)`) use
  *   smaller X distances so adjacent slides visibly peek from the
- *   viewport edges instead of being pushed off-screen. Z and rotation
- *   are reduced in proportion so foreshortening stays similar.
- *
- *   Z values are the mockup's, shifted by −120 (active at Z = 0). See
- *   "Rasterization quality" #1.
+ *   viewport edges instead of being pushed off-screen.
  *
  * Micro-animations
- *   Each slide's inner elements carry `journey-*` classes that run
- *   continuously (mockup behavior — no `[data-active]` gate). Rules
- *   live in globals.css ("Journey micro-animations & progress bars").
- *   `data-active` on the slide is used only for `aria-hidden` semantics.
- *
+ *   Inner elements carry `journey-*` classes (globals.css):
  *     - `journey-shrink`  → two bars in SlideOptimize (breathing)
  *     - `journey-sweep`   → overlay in SlideLock (loops)
  *     - `journey-beacon`  → last node chip in SlideNotary (pulses)
- *     - `journey-bar`     → three content bars in SlideNotary, delay
- *                           from `--journey-bar-delay` inline (three
- *                           bars in separate parent `<div>`s cannot be
- *                           staggered via `:nth-of-type`).
+ *     - `journey-bar`     → three content bars in SlideNotary, stagger
+ *                           via `--journey-bar-delay` inline
  *     - `journey-line`    → eight dashed lines in SlideNetwork
- *                           (continuous dash motion)
- *     - `journey-node`    → eight satellite groups in SlideNetwork,
- *                           delay from `--journey-node-delay` inline
- *                           (same `:nth-of-type` constraint).
+ *     - `journey-node`    → eight satellites in SlideNetwork, stagger
+ *                           via `--journey-node-delay` inline
  *
  * Stage tilt
- *   The 3D drift (`rotateX(8°→4°) rotateY(-7°→6°)`) is applied via the
- *   `.journey-tilt` CSS class, not inline style. Rationale: it must be
- *   disabled on mobile via media query (see next paragraph) and gate-able
- *   via `prefers-reduced-motion` in CSS. Inline style would override
- *   both. Only `transform-style: preserve-3d` is inline — that is a
- *   structural property, not a tunable.
- *
- *   On mobile (< 768px), the tilt is disabled. The continuous 14s
- *   keyframe cycle forces the compositor to re-raster the tilt layer
- *   every frame it advances, and on mobile GPUs that raster competes
- *   with the render budget enough to re-introduce the sharp→blurry
- *   swap this component spent multiple iterations fixing. Desktop and
- *   tablet keep the tilt. Re-enabling on mobile means accepting either
- *   the blur regression or a full compositor-promotion trial (see
- *   "Rasterization quality" for the reasons `will-change` is not the
- *   answer).
+ *   The 3D drift (`rotateX(8°→4°) rotateY(-7°→6°)`) is applied via
+ *   `.journey-tilt` (globals.css), not inline style — must be
+ *   disabled on mobile via media query and gate-able via
+ *   `prefers-reduced-motion`. Inline style would override both. Only
+ *   `transform-style: preserve-3d` is inline (structural, not tunable).
  *
  * Reduced motion
  *   `prefers-reduced-motion: reduce` disables autoplay, applies
- *   `transition: none` to every slide, and (via CSS) disables the
- *   stage tilt. The carousel becomes a static stage on step 0 that the
+ *   `transition: none` to every slide, and disables the stage tilt
+ *   via CSS. The carousel becomes a static stage on step 0 that the
  *   visitor can navigate with the controls.
  *
  * Accessibility
  *   - Non-active slides carry `aria-hidden="true"`.
- *   - The four progress-bar segments are buttons ("Show step N of 4").
- *   - Prev / Pause / Next buttons carry `aria-label`s.
+ *   - Progress-bar segments are buttons with `aria-label` (translated,
+ *     with `{index}`, `{total}`, `{title}` placeholders).
+ *   - Prev / Pause / Next buttons carry translated `aria-label`s.
  *   - `aria-current="step"` marks the active segment.
  *   - Focus ring comes from `:focus-visible` in globals.css.
  *
@@ -182,26 +194,24 @@ import { JourneySamples } from "./journey-samples";
  *   transitions between a "past" slot (P1) and a "future" slot (N2)
  *   while still visible, crossing the center of the stage. The mockup
  *   hides this by fading to 0 before the jump; a two-phase transition
- *   would be required to match exactly.
+ *   would be required to match exactly. Documented; not fixed.
  *
  * Slide fidelity notes
  *   - SlideLock contains three layers matching the mockup's `.vl v2`:
- *     a blurred duplicate, a darkening overlay, and a lock icon. The
- *     emerald "sweep cursor" dot sits on the sweep's right edge.
+ *     a blurred duplicate, a darkening overlay, and a lock icon.
  *   - SlideNetwork renders eight blurred satellite thumbnails of the
  *     four journey photos (mockup `.pp`), clipped to rounded rects.
  *   - The blurred duplicate in SlideLock hardcodes `w-[432px]` (inner
- *     slide width at desktop, 460 − 2×14 padding). On mobile, the
- *     slide is narrower, so the blurred duplicate overflows the
- *     sweep's clip and is only shown inside the sweep's expanding
- *     width — visually correct because the sweep never exceeds the
- *     inner width.
+ *     slide width at desktop, 460 − 2×14 padding). On mobile the slide
+ *     is narrower, so the blurred duplicate overflows the sweep's clip
+ *     and is only shown inside the sweep's expanding width — visually
+ *     correct because the sweep never exceeds the inner width.
  */
 
 const STEP_DURATION_MS = 5000;
 const TRANSITION_MS = 400;
 const SLIDE_COUNT = 4;
-const SLIDE_INNER_WIDTH_PX = 432; // 460 - 2 × 14 (p-3.5)
+const SLIDE_INNER_WIDTH_PX = 432;
 
 const SLIDES = [
   { kind: "optimize" as const },
@@ -210,11 +220,6 @@ const SLIDES = [
   { kind: "network" as const },
 ];
 
-/**
- * Per-slot opacity. X/Z/rotation live in CSS variables
- * (`--pos-<slot>-{x,z,ry}`) so a single media query can retune mobile
- * offsets without duplicating JSX. See the file header.
- */
 const POSITIONS = {
   a: { opacity: 1 },
   n1: { opacity: 0.55 },
@@ -236,30 +241,10 @@ function getSlidePos(index: number, current: number): SlidePos {
   return "p2";
 }
 
-const CAPTIONS = [
-  {
-    title: "Each photo, optimized.",
-    body: "Every photo is tidied and made lighter on your device, then stored on its own.",
-    hood: "Under the hood · per-photo optimization",
-  },
-  {
-    title: "Locked on your device.",
-    body: "Scrambled with a key only you hold, before anything leaves.",
-    hood: "Under the hood · symmetric encryption",
-  },
-  {
-    title: "Noted by a blind notary.",
-    body: "A public contract records that it is yours. It cannot see what it is.",
-    hood: "Under the hood · Arbitrum smart contract",
-  },
-  {
-    title: "Kept in many places.",
-    body: "Locked copies on computers around the world, for good or for the time you choose. Nobody hosting one can see inside.",
-    hood: "Under the hood · Irys storage network",
-  },
-] as const;
-
 export function JourneyStage() {
+  const { t, dictionary } = useI18n();
+  const steps = dictionary.landing.journey.steps;
+
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -307,32 +292,23 @@ export function JourneyStage() {
   return (
     <section id="journey" className="journey-stage py-24">
       <div className="mx-auto max-w-2xl px-6 text-center md:px-10">
-        <p className="label-mono text-emerald-text">How it works</p>
-        <h2 className="mt-4 text-[30px] font-bold leading-tight tracking-[-0.025em] text-ink md:text-[40px]">
-          Your photo&apos;s journey.
+        <p className="label-mono text-emerald-text">
+          {t("landing.journey.eyebrow")}
+        </p>
+        <h2 className="mt-4 text-balance text-[30px] font-bold leading-tight tracking-[-0.025em] text-ink md:text-[40px]">
+          {t("landing.journey.title")}
         </h2>
-        <p className="mt-4 text-[15px] leading-relaxed text-muted md:text-[16px]">
-          One approval, and all four steps happen together. If one fails,
-          none of them do.
+        <p className="mt-4 text-balance text-[15px] leading-relaxed text-muted md:text-[16px]">
+          {t("landing.journey.subtitle")}
         </p>
       </div>
 
-      {/* Symbols defined once per page. The slides' `<use href="#sN" />`
-          resolve against this instance. */}
+      {/* Symbols defined once per page. */}
       <JourneySamples />
 
-      {/* Stage wrapper — w-screen + centered via left-1/2 -translate-x-1/2,
-          overflow-hidden so slides clip at the viewport (like the mockup's
-          `.kv { overflow: hidden }`). */}
+      {/* Stage wrapper — clips slides at viewport. See header. */}
       <div className="relative left-1/2 mt-7 h-[410px] w-screen -translate-x-1/2 overflow-hidden md:h-[520px]">
-        {/* Perspective — more foreshortening on mobile (1200px) makes
-            the 3D layering visible at small sizes; desktop uses the
-            mockup's 1800px. */}
         <div className="absolute inset-0 [perspective:1200px] md:[perspective:1800px]">
-          {/* Tilt layer. `preserve-3d` and the tilt animation class.
-              The animation is applied via CSS (globals.css `.journey-tilt`)
-              so it can be disabled below `md:` and under reduced motion
-              without fighting inline styles. */}
           <div
             className="journey-tilt absolute inset-0"
             style={{ transformStyle: "preserve-3d" }}
@@ -347,15 +323,9 @@ export function JourneyStage() {
                   aria-hidden={i !== current}
                   className="journey-slide absolute left-1/2 top-1/2 w-[calc(100vw-60px)] max-w-[460px] aspect-[460/380] overflow-hidden rounded-[28px] border border-hairline bg-card p-3.5 shadow-[0_30px_60px_-24px_light-dark(rgba(12,19,36,0.3),rgba(0,0,0,0.6))]"
                   style={{
-                    // `translate(-50%, -50%)` centers the slide
-                    // regardless of its responsive width/height; the
-                    // `translate3d` then offsets in 3D. Position X/Z/ry
-                    // come from `--pos-<slot>-{x,z,ry}` (globals.css),
-                    // which are retuned under `@media (max-width: 767px)`.
                     transform: `translate(-50%, -50%) translate3d(var(--pos-${pos}-x), 0, var(--pos-${pos}-z)) rotateY(var(--pos-${pos}-ry))`,
                     opacity,
                     transition: transitionStyle,
-                    // See "Rasterization quality" #3.
                     backfaceVisibility: "hidden",
                     WebkitBackfaceVisibility: "hidden",
                   }}
@@ -373,44 +343,52 @@ export function JourneyStage() {
         </div>
       </div>
 
-      <div className="relative mx-auto mt-3 h-[170px] max-w-[620px] text-center md:h-[150px]">
-        {CAPTIONS.map((cap, i) => (
-          <div
-            key={cap.title}
-            className="absolute inset-0 transition-opacity duration-300 ease-out"
-            style={{
-              opacity: i === current ? 1 : 0,
-              pointerEvents: i === current ? "auto" : "none",
-            }}
-            aria-hidden={i !== current}
-          >
-            <p className="text-[26px] font-semibold tracking-[-0.02em] text-ink">
-              {cap.title}
-            </p>
-            <p className="mx-auto mt-2 max-w-[560px] text-[15px] leading-[1.55] text-muted">
-              {cap.body}
-            </p>
-            <p className="mt-2.5 font-mono text-[11px] text-muted/70">
-              {cap.hood}
-            </p>
-          </div>
-        ))}
+      {/* Captions — grid stacked, no fixed height. See header. */}
+      <div className="relative mx-auto mt-3 grid max-w-[620px] px-6 text-center md:px-0">
+        {steps.map((cap, i) => {
+          const isActive = i === current;
+          return (
+            <div
+              key={i}
+              className="col-start-1 row-start-1 transition-opacity duration-300 ease-out"
+              style={{
+                opacity: isActive ? 1 : 0,
+                pointerEvents: isActive ? "auto" : "none",
+              }}
+              aria-hidden={!isActive}
+            >
+              <p className="text-balance text-[26px] font-semibold tracking-[-0.02em] text-ink">
+                {cap.title}
+              </p>
+              <p className="mx-auto mt-2 max-w-[560px] text-pretty text-[15px] leading-[1.55] text-muted">
+                {cap.body}
+              </p>
+              <p className="mt-2.5 font-mono text-[11px] text-muted-soft">
+                {cap.hood}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex flex-col items-center gap-4">
         <div
-          className="flex w-full max-w-[360px] gap-2"
+          className="flex w-full max-w-[360px] gap-2 px-6 md:px-0"
           role="group"
-          aria-label="Journey steps"
+          aria-label={t("landing.journey.stepsLabel")}
         >
-          {CAPTIONS.map((cap, i) => {
+          {steps.map((cap, i) => {
             const isActive = i === current;
             return (
               <button
                 key={`${i}-${isActive ? "active" : "inactive"}-${generation}`}
                 type="button"
                 onClick={() => goTo(i)}
-                aria-label={`Show step ${i + 1} of ${SLIDE_COUNT}: ${cap.title}`}
+                aria-label={t("landing.journey.showStep", {
+                  index: i + 1,
+                  total: SLIDE_COUNT,
+                  title: cap.title,
+                })}
                 aria-current={isActive ? "step" : undefined}
                 className={`h-1 flex-1 rounded-full ${
                   isActive
@@ -432,28 +410,67 @@ export function JourneyStage() {
           })}
         </div>
         <div className="flex items-center gap-2">
-          <TransportButton onClick={retreat} label="Previous step">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <TransportButton
+            onClick={retreat}
+            label={t("landing.journey.previous")}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </TransportButton>
           <TransportButton
             onClick={handleTogglePause}
-            label={paused ? "Play" : "Pause"}
+            label={
+              paused
+                ? t("landing.journey.play")
+                : t("landing.journey.pause")
+            }
           >
             {paused ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path d="M8 5v14l11-7z" />
               </svg>
             ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <rect x="6" y="4" width="4" height="16" rx="1" />
                 <rect x="14" y="4" width="4" height="16" rx="1" />
               </svg>
             )}
           </TransportButton>
-          <TransportButton onClick={advance} label="Next step">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <TransportButton onClick={advance} label={t("landing.journey.next")}>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M9 6l6 6-6 6" />
             </svg>
           </TransportButton>
@@ -485,12 +502,23 @@ function TransportButton({
 }
 
 /* ── Slide content ─────────────────────────────────────────────────────
- * Structural replicas of the mockup's four slides. Elements that are
- * animated carry `journey-*` classes; the rules key off the parent
- * slide's `data-active` attribute. See the component header.
+ * Structural replicas of the mockup's four slides. Each calls
+ * `useI18n()` directly for its own overlay strings — they are children
+ * of this file, so prop drilling would add noise without benefit.
+ *
+ * Chips carry `max-w-[calc(100%-28px)]`, `text-[11px] sm:text-[12px]`,
+ * `rounded-2xl sm:rounded-full` and `overflow-hidden` (no `truncate`).
+ * At 320px the text fits on one line; if a future translation is
+ * longer it wraps to 2 lines instead of ellipsizing. See the file
+ * header ("Chips inside slides") for the full reasoning.
  * ─────────────────────────────────────────────────────────────────── */
 
 function SlideOptimize() {
+  const { t } = useI18n();
+  const sizeLabel = t("landing.journey.slideOverlays.optimize.sizeLabel");
+  const priceLabel = t("landing.journey.slideOverlays.optimize.priceLabel");
+  const chip = t("landing.journey.slideOverlays.optimize.chip");
+
   return (
     <>
       <svg
@@ -504,27 +532,33 @@ function SlideOptimize() {
 
       <div className="absolute inset-x-3.5 bottom-3.5 rounded-2xl bg-[rgba(10,16,30,0.75)] p-3.5">
         <div className="flex items-center gap-2 font-mono text-[11px] font-medium text-slate-300">
-          Size
+          {sizeLabel}
           <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-hairline">
             <span className="journey-shrink block h-full w-full rounded-full bg-emerald" />
           </span>
         </div>
         <div className="mt-2.5 flex items-center gap-2 font-mono text-[11px] font-medium text-slate-300">
-          Price
+          {priceLabel}
           <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-hairline">
             <span className="journey-shrink block h-full w-full rounded-full bg-emerald" />
           </span>
         </div>
       </div>
 
-      <span className="journey-chip absolute right-3.5 top-3.5 rounded-full border border-hairline bg-card px-4 py-2 font-mono text-[12px] text-ink">
-        Optimized · one photo at a time
+      <span
+        title={chip}
+        className="journey-chip absolute right-3.5 top-3.5 max-w-[calc(100%-28px)] overflow-hidden rounded-2xl border border-hairline bg-card px-2.5 py-1.5 font-mono text-[11px] leading-[1.3] text-ink sm:rounded-full sm:px-4 sm:py-2 sm:text-[12px]"
+      >
+        {chip}
       </span>
     </>
   );
 }
 
 function SlideLock() {
+  const { t } = useI18n();
+  const chip = t("landing.journey.slideOverlays.lock.chip");
+
   return (
     <>
       <svg
@@ -556,7 +590,7 @@ function SlideLock() {
         </div>
 
         <svg
-          className="absolute left-1/2 top-1/2 -mt-3 -ml-3 h-6 w-6 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+          className="absolute left-1/2 top-1/2 -ml-3 -mt-3 h-6 w-6 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -570,27 +604,50 @@ function SlideLock() {
         </svg>
 
         <span
-          className="absolute top-1/2 -right-[13px] -mt-[13px] h-[26px] w-[26px] rounded-full bg-emerald"
+          className="absolute -right-[13px] top-1/2 -mt-[13px] h-[26px] w-[26px] rounded-full bg-emerald"
           style={{ boxShadow: "0 0 0 6px oklch(0.70 0.15 160 / 0.25)" }}
         />
       </div>
 
-      <span className="journey-chip absolute bottom-3.5 left-3.5 inline-flex items-center gap-1.5 rounded-full border border-hairline bg-card px-4 py-2 font-mono text-[12px] text-ink">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" className="text-emerald-text" aria-hidden="true">
+      <span
+        title={chip}
+        className="journey-chip absolute bottom-3.5 left-3.5 inline-flex max-w-[calc(100%-28px)] items-start gap-1.5 overflow-hidden rounded-2xl border border-hairline bg-card px-2.5 py-1.5 font-mono text-[11px] leading-[1.3] text-ink sm:items-center sm:rounded-full sm:px-4 sm:py-2 sm:text-[12px]"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          className="mt-[1px] shrink-0 text-emerald-text sm:mt-0"
+          aria-hidden="true"
+        >
           <rect x="5" y="11" width="14" height="9" rx="2" />
           <path d="M8 11V8a4 4 0 0 1 8 0v3" />
         </svg>
-        Key stays on this device
+        <span className="min-w-0">{chip}</span>
       </span>
     </>
   );
 }
 
 function SlideNotary() {
+  const { t } = useI18n();
+  const o = {
+    eyebrow: t("landing.journey.slideOverlays.notary.eyebrow"),
+    owner: t("landing.journey.slideOverlays.notary.ownerLabel"),
+    content: t("landing.journey.slideOverlays.notary.contentLabel"),
+    name: t("landing.journey.slideOverlays.notary.nameLabel"),
+    type: t("landing.journey.slideOverlays.notary.typeLabel"),
+    cannotSee: t("landing.journey.slideOverlays.notary.cannotSee"),
+  };
+
   return (
     <div className="relative h-full bg-elevated p-6">
       <p className="mb-3.5 font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-        Public notary · smart contract
+        {o.eyebrow}
       </p>
       <div className="mb-6 flex items-center" aria-hidden="true">
         <span className="h-[34px] w-[34px] flex-none rounded-[9px] border border-hairline bg-card" />
@@ -602,38 +659,41 @@ function SlideNotary() {
         <span className="journey-beacon h-[34px] w-[34px] flex-none rounded-[9px] border border-violet bg-violet/25" />
       </div>
       <div className="mb-2.5 flex items-center gap-2 font-mono text-[13px] text-muted">
-        owner
+        <span className="shrink-0">{o.owner}</span>
         <span className="text-emerald-text">0x7a3F…c91E</span>
       </div>
       <div className="mb-2.5 flex items-center gap-2 font-mono text-[13px] text-muted">
-        content
+        <span className="shrink-0">{o.content}</span>
         <span
           className="journey-bar inline-block h-[9px] w-[110px] rounded-[5px] bg-violet/80"
           style={{ "--journey-bar-delay": "0.3s" } as CSSProperties}
         />
       </div>
       <div className="mb-2.5 flex items-center gap-2 font-mono text-[13px] text-muted">
-        name
+        <span className="shrink-0">{o.name}</span>
         <span
           className="journey-bar inline-block h-[9px] w-[110px] rounded-[5px] bg-violet/80"
           style={{ "--journey-bar-delay": "0.5s" } as CSSProperties}
         />
       </div>
       <div className="flex items-center gap-2 font-mono text-[13px] text-muted">
-        type
+        <span className="shrink-0">{o.type}</span>
         <span
           className="journey-bar inline-block h-[9px] w-[110px] rounded-[5px] bg-violet/80"
           style={{ "--journey-bar-delay": "0.7s" } as CSSProperties}
         />
       </div>
       <p className="mt-4 font-mono text-[12px] text-violet-text">
-        It cannot see inside.
+        {o.cannotSee}
       </p>
     </div>
   );
 }
 
 function SlideNetwork() {
+  const { t } = useI18n();
+  const chip = t("landing.journey.slideOverlays.network.chip");
+
   const satellites = [
     { x: 216, y: 40 },
     { x: 330, y: 80 },
@@ -712,8 +772,11 @@ function SlideNetwork() {
           <path d="M6 10V7a6 6 0 0 1 12 0v3" />
         </g>
       </svg>
-      <span className="absolute bottom-3.5 left-3.5 rounded-full border border-hairline bg-card px-4 py-2 font-mono text-[12px] text-ink">
-        Locked copies, worldwide
+      <span
+        title={chip}
+        className="journey-chip absolute bottom-3.5 left-3.5 max-w-[calc(100%-28px)] overflow-hidden rounded-2xl border border-hairline bg-card px-2.5 py-1.5 font-mono text-[11px] leading-[1.3] text-ink sm:rounded-full sm:px-4 sm:py-2 sm:text-[12px]"
+      >
+        {chip}
       </span>
     </>
   );

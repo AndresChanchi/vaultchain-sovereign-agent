@@ -41,19 +41,18 @@
  *
  * Server vs. client
  *   No `"use client"` today. The hook is a plain function that returns
- *   a constant object; it is safe to call from a Server Component
- *   (LiveStats stays server-rendered).
+ *   a constant object; it is safe to call from a Server Component.
  *
  *   Migration path when the indexer lands:
  *     1. this file becomes a `useQuery` (from @tanstack/react-query);
  *     2. `"use client"` is added to this file;
  *     3. LiveStats becomes a small client island (consumers do not
  *        change — the return shape is preserved);
- *     4. `QueryClientProvider` is already mounted in Web3Provider
- *        (verified), so no provider plumbing is required.
+ *     4. `QueryClientProvider` is already mounted in Web3Provider,
+ *        so no provider plumbing is required.
  *
  * Consumers
- *   - `components/landing/live-stats.tsx` (Fase 5).
+ *   - `components/landing/live-stats.tsx`.
  *   - Future: dashboard `(app)/home`, explorer view, protocol analytics
  *     page. Same return shape across all.
  */
