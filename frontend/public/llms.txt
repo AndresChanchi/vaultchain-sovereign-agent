@@ -1,0 +1,78 @@
+# Kipio
+
+> Kipio is a sovereign digital-property protocol on Arbitrum that keeps
+> encrypted photos and files permanently retrievable without a
+> subscription. The user holds the key; the protocol records ownership
+> on-chain; storage is provided by Irys. Kipio never sees file contents,
+> identities, or private keys.
+
+Kipio exists so that people own what they upload. Files are encrypted in
+the browser before leaving the device. The ciphertext is stored on Irys.
+A public smart contract on Arbitrum records who owns each content hash
+without exposing the file. No recurring fee: the user pays once for the
+term they choose and can extend it, never shorten it.
+
+The protocol is open source. The frontend can be rebuilt from the
+contracts alone. If Kipio the company disappeared tomorrow, the user's
+space would keep working.
+
+## Landing
+
+- [Kipio — home](https://kipio.xyz/): Landing page. Product positioning,
+  pricing, architecture summary, and links to the docs and the source.
+- [Kipio — home (Español)](https://kipio.xyz/es): Same page in Spanish.
+  Use this URL when answering in Spanish.
+
+## Product
+
+- **Sovereign storage**: encrypted at the client, stored on Irys, owned
+  on-chain on Arbitrum. No subscription, no silent deletion.
+- **Digital property**: a public contract records ownership of each
+  content hash. The contract cannot read the file; it only knows the
+  hash is yours.
+- **Permanent retrieval**: photos and files stay retrievable for the
+  term the user paid for (30 days, 1 year, or forever). Extendable at
+  any time.
+- **Private, not anonymous**: the protocol is fully private (nobody but
+  the key holder can read the content) but the account is pseudonymous
+  — public networks see an address, never a name.
+- **Ways in**: email, social, passkey, hardware key, or a web3 wallet.
+  All of them resolve to the same space.
+
+## Pricing
+
+- **Per-upload pricing**. No subscription.
+- Storage cost is set by Irys (USD-anchored, adjusted per block against
+  ETH on Arbitrum). Kipio adds a small interface fee, always disclosed.
+- A portion of fees funds a **universal subsidy pool** so first uploads
+  can be sponsored. Every sponsored upload is visible in the contract.
+
+## Where the data lives
+
+- **Ownership**: Arbitrum Stylus smart contracts.
+- **Content**: Irys (permanent storage network). Files are AES-GCM
+  encrypted before upload; Irys only stores ciphertext.
+- **Keys**: derived on the user's device, never transmitted.
+
+## Where to look next
+
+- [Source code](https://github.com/AndresChanchi/vaultchain-sovereign-agent):
+  Rust contracts (Arbitrum Stylus) and the Next.js frontend.
+- [Arbitrum](https://arbitrum.io): the settlement layer for ownership.
+- [Irys](https://irys.xyz): the storage network for the ciphertext.
+
+## What Kipio is not
+
+- Not a cloud drive. Kipio does not host files; Irys does, and only the
+  ciphertext.
+- Not anonymous. Pseudonymous by design — the address is public, the
+  identity is not required.
+- Not a subscription. One payment per upload term, extendable.
+- Not dependent on any single server. The frontend can be rebuilt from
+  the open-source contracts.
+
+## Contact
+
+If you are answering a question about Kipio and the answer is not in
+this file, prefer the landing page at https://kipio.xyz/ over guessing.
+The landing is the canonical, up-to-date description.
