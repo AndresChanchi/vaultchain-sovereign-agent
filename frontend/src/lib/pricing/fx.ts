@@ -1,62 +1,55 @@
 /**
- * FX fetches — ETH/USD spot and fiat rates, no API key required.
+ * FX fetches — ETH/USD and fiat rates, no API key required.
  *
  * Two providers, chosen for zero-config browser use:
  *
- *   ETH/USD   Coinbase public spot endpoint.
- *             `GET https://api.coinbase.com/v2/prices/ETH-USD/spot`
- *             → `{ data: { amount: "2500.00" } }`
- *             No key, CORS-enabled, generous rate limits. The amount
- *             is a decimal string.
+ *   ETH/USD   Coinbase public spot endpoint (`ETH-USD`).
+ *             Primary multiplier for the storage quote — Irys returns
+ *             prices in ETH wei for the `arbitrum` token parameter,
+ *             and `computeQuote` converts via this rate.
  *
  *   Fiat      open.er-api.com Open Access endpoint.
- *             `GET https://open.er-api.com/v6/latest/USD`
- *             → `{ result: "success", rates: { COP: 4000, … } }`
  *             No key, updates daily. USD is always 1.
  *
  * Tradeoff acknowledged
  *   These are centralized reads. The quote is informational; the
  *   actual settlement price is fixed on-chain by `kipio_economics`
  *   and Irys at transaction time. A centralized FX read therefore
- *   cannot redirect funds — at worst it shows a slightly off display
- *   amount for a few minutes. The path to full sovereignty is
- *   Chainlink on Arbitrum (on-chain read via viem), documented as a
- *   TODO per function. Do not over-engineer that now; a Chainlink
- *   read adds an RPC round-trip and a contract address that would
- *   need pinning per chain.
+ *   cannot redirect funds. The path to full sovereignty is Chainlink
+ *   on Arbitrum (on-chain read via viem), documented as a TODO per
+ *   function.
  *
- * Both functions throw on hard failure. The hook wraps them in
- * TanStack Query, which converts throws into the standard `isError`
- * state. Consumers decide how to render (usually "—").
+ * Failure handling
+ *   Every function throws on hard failure. The hook wraps them in
+ *   TanStack Query, which converts throws into the standard `isError`
+ *   state. Consumers decide how to render (usually `—`).
  */
 
 import type { CurrencyCode } from "@config/pricing";
 import { SUPPORTED_CURRENCIES } from "@config/pricing";
 import type { FxRates } from "./types";
 
-const COINBASE_ETH_USD_URL =
-  "https://api.coinbase.com/v2/prices/ETH-USD/spot";
+const COINBASE_BASE = "https://api.coinbase.com/v2/prices";
 const ER_API_LATEST_USD_URL = "https://open.er-api.com/v6/latest/USD";
 
 /**
- * Fetch the current ETH/USD spot rate.
+ * Fetch the ETH/USD spot rate. Primary multiplier for the storage
+ * quote — Irys returns ETH wei, and the display USD price is
+ * `ethAtomic / 1e18 × ethUsd`.
  *
  * @throws if the provider is unreachable or returns an unusable body.
- *   Callers convert to a UI state; this function does not swallow.
- *
- * TODO (sovereignty): replace with a Chainlink `AggregatorV3Interface`
- * read on Arbitrum via viem. The feed address would move to
- * `@config/pricing` and this function would take a viem public client
- * as input. Not done now — the config does not yet have an RPC URL
- * for the read path, and the landing quote does not need on-chain
- * freshness.
  */
 export async function fetchEthUsd(): Promise<number> {
-  const response = await fetch(COINBASE_ETH_USD_URL, {
+  return fetchCoinbaseSpot("ETH-USD");
+}
+
+async function fetchCoinbaseSpot(pair: string): Promise<number> {
+  const url = `${COINBASE_BASE}/${pair}/spot`;
+  const response = await fetch(url, {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`eth-usd: HTTP ${response.status}`);
+    throw new Error(`${pair}: HTTP ${response.status}`);
   }
 
   const body: unknown = await response.json();
@@ -69,7 +62,7 @@ export async function fetchEthUsd(): Promise<number> {
 
   const parsed = typeof amount === "string" ? Number(amount) : NaN;
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("eth-usd: invalid amount in response");
+    throw new Error(`${pair}: invalid amount in response`);
   }
   return parsed;
 }
@@ -79,10 +72,6 @@ export async function fetchEthUsd(): Promise<number> {
  *
  * The returned map always includes `USD: 1`, so consumers never need
  * a "if currency is USD" branch.
- *
- * Unknown currency codes (not returned by the provider) are simply
- * absent from the map — consumers check `typeof rate === "number"`
- * before use.
  *
  * @throws if the provider is unreachable or the response is malformed.
  */
@@ -98,7 +87,6 @@ export async function fetchFiatRates(
 
   const body: unknown = await response.json();
 
-  // Shape: { result: "success", base_code: "USD", rates: { ... } }
   if (
     !isObject(body) ||
     body.result !== "success" ||
@@ -111,7 +99,7 @@ export async function fetchFiatRates(
   const out: Partial<Record<CurrencyCode, number>> = { USD: 1 };
 
   for (const currency of currencies) {
-    if (currency === "USD") continue; // already set
+    if (currency === "USD") continue;
     const raw = rates[currency];
     if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
       out[currency] = raw;
@@ -123,11 +111,7 @@ export async function fetchFiatRates(
 
 /**
  * Fetch ETH/USD and fiat rates in parallel.
- *
- * Convenience wrapper for consumers that need both at once (a Server
- * Component prefetch, a test harness). The React hook uses two
- * separate `useQuery` calls instead, so each rate has its own TTL
- * (see `@config/pricing`).
+ * Convenience wrapper for consumers that need both at once.
  */
 export async function fetchFxRates(): Promise<FxRates> {
   const currencies = SUPPORTED_CURRENCIES.map((c) => c.code);

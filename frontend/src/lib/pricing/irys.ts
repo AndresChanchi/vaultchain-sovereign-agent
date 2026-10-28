@@ -1,146 +1,190 @@
 /**
- * Irys price fetch — single responsibility: ask the bundler how much
- * storage costs, in wei on Arbitrum.
+ * Irys price fetch — asks the L1 uploader for the price of **1 GiB**
+ * in ETH wei, then scales linearly to the requested byte count.
  *
- * Uses the REST endpoint directly, NOT the `@irys/sdk`.
+ * **Endpoint: uploader.irys.xyz (L1) — NOT node2.irys.xyz (Bundlr)**
  *
- * Why not the SDK
- *   `@irys/sdk` is needed when signing and uploading (Fase 10). For a
- *   read-only price query it pulls tens of KB of signer code into the
- *   bundle for a single GET. The REST endpoint returns the same number
- *   in the same units. The SDK enters the pricing stack only when the
- *   upload path needs it.
+ * The legacy Bundlr endpoint returns prices in the old AR-denominated
+ * model, which is not what Irys charges today. The L1 endpoint returns
+ * ETH wei when the token parameter is `"arbitrum"`.
  *
- * Endpoint
- *   `GET {IRYS_BUNDLER_URL}/price/{IRYS_TOKEN}/{bytes}`
- *   → `{ price: "<atomic>" }` (atomic units of the token — wei for ETH
- *   on Arbitrum). Confirmed against the Bundlr-era REST API and the
- *   SDK's `getPrice` behavior. If Irys changes the shape, only
- *   `fetchIrysPrice` below changes; the rest of the stack is insulated.
+ * Verified October 2026:
+ *   uploader.irys.xyz/price/arbitrum/1GiB → 1284654946983374 wei
+ *   → 0.00128 ETH × $2353 ≈ $3.02/GiB (matches Irys's ~$2.50/GB
+ *     planning estimate)
  *
- * Term support
- *   Permanent pricing is confirmed. Term-ledger pricing (Cascade: 30
- *   days, 1 year, arbitrary durations) exists at the protocol level but
- *   its REST parameter is not documented in the public reference. Until
- *   verified, term queries return `unavailable` with a reason — the UI
- *   shows "—" rather than a guessed number. When the format is
- *   confirmed, edit the single `termPriceUrl` function below; nothing
- *   else in the codebase needs to change.
+ *   node2.irys.xyz/price/arbitrum/1GiB  → 58864981745681107
+ *   → 0.0588 AR × $15 ≈ $0.88/GiB (old Bundlr model, deprecated)
+ *
+ * Reference size
+ *   Irys pricing is linear per byte. Verified:
+ *     1 GiB → 1284654946983374 wei
+ *     1 MiB → 1254545846664 wei
+ *     1284654946983374 / 1024 ≈ 1254545846664  (exact ratio)
+ *
+ *   Ask for 1 GiB once and multiply by `bytes / reference`:
+ *     - Works for any size without depending on the endpoint accepting
+ *       arbitrary byte counts.
+ *     - One cache entry per term shared by every size.
+ *
+ * Term pricing
+ *   The public `?term=` parameter is **ignored** by the bundler
+ *   (verified: identical response for `permanent`, `term:30`,
+ *   `term:365`). Every term request returns the permanent price for
+ *   the reference size, which is a legitimate upper bound — terms
+ *   cost less, not more. The result is marked `termFallback: true`
+ *   so the UI shows `pricing.termFallbackNote`.
+ *
+ *   When Cascade exposes a working REST term endpoint, replace
+ *   `fetchReferencePrice` and the fallback flag in one place.
  *
  * Free threshold
- *   Uploads under 100 KiB are free on Irys. Checked client-side before
- *   the network call, so the bundler is not hit for files that would
- *   return 0 anyway.
+ *   Uploads under 100 KiB are free. Checked before the network call.
  */
 
-import { IRYS_BUNDLER_URL, IRYS_FREE_UPLOAD_BYTES, IRYS_TOKEN } from "@config/pricing";
+import {
+  IRYS_BUNDLER_URL,
+  IRYS_FREE_UPLOAD_BYTES,
+  IRYS_PRICE_REFERENCE_BYTES,
+  IRYS_TOKEN,
+} from "@config/pricing";
 import type { IrysPriceResult, Term } from "./types";
 
-/**
- * Build the permanent-storage price URL.
- *
- * Kept as a tiny function (not a template used inline) so a future
- * endpoint move is one edit, not a grep.
- */
-function permanentPriceUrl(bytes: number): string {
-  return `${IRYS_BUNDLER_URL}/price/${IRYS_TOKEN}/${bytes}`;
+function referencePriceUrl(): string {
+  return `${IRYS_BUNDLER_URL}/price/${IRYS_TOKEN}/${IRYS_PRICE_REFERENCE_BYTES}`;
 }
 
-/**
- * Build the term-ledger price URL.
- *
- * TODO: The Cascade term price parameter is not yet documented. This
- * best-effort form (`?term={days}`) may or may not be accepted by the
- * bundler — the fetch below treats any non-conforming response as
- * `unavailable`, so an incorrect format degrades gracefully instead of
- * showing a wrong number.
- *
- * When the format is confirmed (the user's own upload scripts already
- * call it), replace this function's body; the call site does not
- * change.
- */
-function termPriceUrl(bytes: number, days: number): string {
-  return `${IRYS_BUNDLER_URL}/price/${IRYS_TOKEN}/${bytes}?term=${days}`;
+function termPriceUrl(days: number): string {
+  // TODO: replace `?term={days}` with the exact parameter used by the
+  // Cascade term-ledger price route once it is documented or exposed.
+  // The bundler currently ignores this parameter and returns the
+  // permanent price; the caller treats this as a fallback.
+  return `${IRYS_BUNDLER_URL}/price/${IRYS_TOKEN}/${IRYS_PRICE_REFERENCE_BYTES}?term=${days}`;
 }
 
-/**
- * Fetch the storage cost for `bytes` under `term`.
- *
- * @returns
- *   - `{ status: "free" }` when `bytes` is under Irys's threshold.
- *   - `{ status: "ok", ethAtomic }` on a successful price query.
- *   - `{ status: "unavailable", reason }` on any failure. Consumers
- *     must render "—" and never a fallback number.
- */
-export async function fetchIrysPrice(
-  bytes: number,
-  term: Term,
-): Promise<IrysPriceResult> {
-  // Guard against pathological inputs before doing anything else.
-  if (!Number.isFinite(bytes) || bytes < 0) {
-    return { status: "unavailable", reason: "invalid-bytes" };
+function extractAtomicPrice(body: unknown): string | null {
+  if (typeof body === "number" && Number.isFinite(body) && body > 0) {
+    return String(Math.trunc(body));
   }
-
-  // Free threshold: skip the network entirely.
-  if (bytes <= IRYS_FREE_UPLOAD_BYTES) {
-    return { status: "free" };
+  if (typeof body === "string" && /^\d+$/.test(body)) {
+    return body;
   }
+  if (typeof body === "object" && body !== null) {
+    const obj = body as Record<string, unknown>;
+    for (const key of ["price", "amount"] as const) {
+      const v = obj[key];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+        return String(Math.trunc(v));
+      }
+      if (typeof v === "string" && /^\d+$/.test(v)) {
+        return v;
+      }
+    }
+  }
+  return null;
+}
 
-  const url =
-    term.kind === "permanent"
-      ? permanentPriceUrl(bytes)
-      : termPriceUrl(bytes, term.days);
+function logDev(message: string, payload: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "development") {
+    console.warn(`[irys] ${message}`, payload);
+  }
+}
 
+async function fetchReferencePrice(url: string): Promise<bigint | null> {
   let response: Response;
   try {
-    response = await fetch(url, {
-      // Irys quotes move with the ETH/USD rate; a short client cache is
-      // fine. TanStack Query adds its own stale-while-revalidate on top.
-      headers: { Accept: "application/json" },
-    });
-  } catch {
-    return { status: "unavailable", reason: "network-error" };
+    response = await fetch(url, { headers: { Accept: "application/json" } });
+  } catch (err) {
+    logDev("network error", { url, err: String(err) });
+    return null;
   }
 
   if (!response.ok) {
-    return {
-      status: "unavailable",
-      reason: `http-${response.status}`,
-    };
+    logDev("http error", { url, status: response.status });
+    return null;
   }
 
   let body: unknown;
   try {
     body = await response.json();
-  } catch {
-    return { status: "unavailable", reason: "invalid-json" };
+  } catch (err) {
+    logDev("invalid json", { url, err: String(err) });
+    return null;
   }
 
-  // Expected shape: { price: "<decimal string>" }.
-  // Some deployments wrap it; both shapes are accepted defensively.
-  const priceValue =
-    isObject(body) && "price" in body
-      ? (body as { price: unknown }).price
-      : undefined;
-
-  if (typeof priceValue !== "string" && typeof priceValue !== "number") {
-    return { status: "unavailable", reason: "unexpected-shape" };
+  const raw = extractAtomicPrice(body);
+  if (raw === null) {
+    logDev("unexpected shape", { url, body });
+    return null;
   }
 
-  let ethAtomic: bigint;
   try {
-    ethAtomic = BigInt(priceValue.toString());
+    return BigInt(raw);
   } catch {
-    return { status: "unavailable", reason: "non-integer-price" };
+    logDev("non-integer price", { url, body, raw });
+    return null;
   }
-
-  if (ethAtomic < 0n) {
-    return { status: "unavailable", reason: "negative-price" };
-  }
-
-  return { status: "ok", ethAtomic };
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+export async function fetchIrysPrice(
+  bytes: number,
+  term: Term,
+): Promise<IrysPriceResult> {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return { status: "unavailable", reason: "invalid-bytes" };
+  }
+
+  if (bytes <= IRYS_FREE_UPLOAD_BYTES) {
+    return { status: "free" };
+  }
+
+  // ── 1. Reference price ──────────────────────────────────────────
+  let referenceEthAtomic: bigint | null = null;
+  let termFallback = false;
+
+  if (term.kind === "permanent") {
+    referenceEthAtomic = await fetchReferencePrice(referencePriceUrl());
+  } else {
+    // The bundler ignores `?term=` and returns the permanent price.
+    // Fetch it explicitly, compare, and mark as fallback.
+    const termResult = await fetchReferencePrice(termPriceUrl(term.days));
+    const permanentResult = await fetchReferencePrice(referencePriceUrl());
+
+    if (termResult === null) {
+      referenceEthAtomic = permanentResult;
+      termFallback = true;
+    } else if (permanentResult !== null && termResult === permanentResult) {
+      // Bundler ignored `?term=` — this is the permanent price, not
+      // the term price. Use it as an upper bound with a note.
+      referenceEthAtomic = termResult;
+      termFallback = true;
+    } else {
+      referenceEthAtomic = termResult;
+    }
+  }
+
+  if (referenceEthAtomic === null) {
+    return { status: "unavailable", reason: "reference-price-unavailable" };
+  }
+
+  // ── 2. Scale linearly to requested bytes ────────────────────────
+  const scaled =
+    (referenceEthAtomic * BigInt(Math.round(bytes))) /
+    BigInt(IRYS_PRICE_REFERENCE_BYTES);
+
+  if (scaled <= 0n) {
+    return { status: "unavailable", reason: "non-positive-scaled-price" };
+  }
+
+  logDev("ok", {
+    term: term.kind === "permanent" ? "permanent" : `term:${term.days}`,
+    termFallback,
+    bytes,
+    referenceEthAtomic: referenceEthAtomic.toString(),
+    scaledEthAtomic: scaled.toString(),
+  });
+
+  return termFallback
+    ? { status: "ok", ethAtomic: scaled, termFallback: true }
+    : { status: "ok", ethAtomic: scaled };
 }
