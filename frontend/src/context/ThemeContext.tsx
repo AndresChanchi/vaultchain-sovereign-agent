@@ -14,7 +14,7 @@ export type Theme = "dark" | "light" | "system";
 export type ResolvedTheme = "dark" | "light";
 
 const STORAGE_KEY = "kipio:theme";
-const DEFAULT_THEME: Theme = "dark";
+const DEFAULT_THEME: Theme = "system";
 
 type ThemeContextValue = {
   /** The user's explicit choice (may be "system"). */
@@ -45,13 +45,35 @@ function resolveTheme(theme: Theme): ResolvedTheme {
 }
 
 /**
- * Provides the active theme to the app. Persists the choice in localStorage
- * under `kipio:theme`, applies it to `document.documentElement.dataset.theme`
- * (which `globals.css` reads through `:root[data-theme=...]`), and keeps
- * `resolvedTheme` in sync when the OS preference changes for "system".
+ * Provides the active theme to the app. Persists the choice in
+ * localStorage under `kipio:theme`, applies it to
+ * `document.documentElement.dataset.theme` (which `globals.css` reads
+ * through `:root[data-theme=...]`), and keeps `resolvedTheme` in sync
+ * when the OS preference changes for "system".
  *
- * The initial paint is handled by an inline script in the root layout so the
- * user never sees a flash of the wrong theme on reload.
+ * Default theme
+ *   `"system"` — not `"dark"`. The user's OS preference drives the
+ *   initial paint (via `light-dark()` CSS once `data-theme="system"`
+ *   is set on `<html>`), so a first visit on a light-OS browser shows
+ *   light, and a first visit on a dark-OS browser shows dark. There is
+ *   no flash because the init script in `layout.tsx` applies the
+ *   stored-or-default theme before first paint — see that file.
+ *
+ *   Before this change the default was `"dark"`, which meant every
+ *   first visit ignored the user's OS preference. That contradicted
+ *   the product's stated intent ("the browser tries to guess what the
+ *   user was") and was fixed.
+ *
+ * "System" is never shown in the UI
+ *   The visible toggle exposes only two states (`light` and `dark`)
+ *   and renders the icon for `resolvedTheme`, not `theme`. A user in
+ *   the `"system"` state sees the icon matching their effective
+ *   appearance — sun on a light-OS browser, moon on a dark-OS one.
+ *   "System" is a valid theme value (Settings can expose it in a
+ *   future phase), but the toggle never surfaces it.
+ *
+ * The initial paint is handled by an inline script in the root layout
+ * so the user never sees a flash of the wrong theme on reload.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME);

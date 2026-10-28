@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Web3Provider } from "@components/web3-provider";
 import { ThemeProvider } from "@context/ThemeContext";
+import { I18nProvider } from "@context/I18nContext";
 
 /**
  * Geist Sans — all UI text.
@@ -62,14 +63,50 @@ const themeInitScript = `
 (function(){
   try {
     var stored = localStorage.getItem("kipio:theme");
-    var theme = (stored === "dark" || stored === "light" || stored === "system") ? stored : "dark";
+    var theme = (stored === "dark" || stored === "light" || stored === "system") ? stored : "system";
     document.documentElement.dataset.theme = theme;
   } catch (e) {
-    document.documentElement.dataset.theme = "dark";
+    document.documentElement.dataset.theme = "system";
   }
 })();
 `;
 
+/**
+ * Root layout — the only `<html>` for the whole app.
+ *
+ * Provider order
+ *   `<ThemeProvider>` → `<I18nProvider>` → `<Web3Provider>` → children
+ *
+ *   - ThemeProvider first: it drives `data-theme` on `<html>`, which
+ *     every other layer's CSS depends on. If it were deeper in the tree,
+ *     a child component could paint before the theme attribute is set.
+ *
+ *   - I18nProvider second: the strings from every downstream component
+ *     resolve through `useI18n()`. Web3Provider hosts wallet state and
+ *     is irrelevant to any string; i18n does not depend on it, so it
+ *     sits outside. When a future login overlay (Phase 9) needs both,
+ *     it consumes `useI18n()` and `useAccount()` without a provider
+ *     ordering constraint.
+ *
+ *   - Web3Provider innermost: `wagmi` and TanStack Query are wrapped
+ *     only where they are needed. The public landing does not require
+ *     wallet connectivity for the H1 to paint; keeping it innermost
+ *     means the i18n and theme layers never wait for wagmi's
+ *     initialization.
+ *
+ * `<html lang>` and `<html dir>`
+ *   Hardcoded to `en` / `ltr` here, matching the default locale.
+ *   `I18nProvider` updates both attributes on mount if the user's
+ *   stored preference differs — see its header. After the route
+ *   restructure, each `[locale]` root layout will set `lang` and `dir`
+ *   on the server, and this file's hardcoded attributes will move into
+ *   a shared `RootDocument` component that both groups render.
+ *
+ * `<html data-theme>`
+ *   The `dark` default is overwritten by `themeInitScript` before
+ *   paint, so the value here is only the fallback for the one frame
+ *   between HTML parse and inline script execution.
+ */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
@@ -85,7 +122,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <Web3Provider>{children}</Web3Provider>
+          <I18nProvider>
+            <Web3Provider>{children}</Web3Provider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>
