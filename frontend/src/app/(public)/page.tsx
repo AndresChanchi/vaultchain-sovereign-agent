@@ -5,7 +5,7 @@ import { LiveStats } from "@components/landing/live-stats";
 import { NotOnServers } from "@components/landing/not-on-servers";
 import { AnyDevice } from "@components/landing/any-device";
 import { OpenByDesign } from "@components/landing/open-by-design";
-import { PricingCard } from "@components/landing/pricing-card";
+import { Pricing } from "@components/landing/pricing";
 import { Sovereign } from "@components/landing/sovereign";
 import { Economy } from "@components/landing/economy";
 import { SignIn } from "@components/landing/sign-in";
@@ -21,7 +21,7 @@ import { PageBackground } from "@components/ui/page-background";
  *   [x] Journey       → components/landing/journey-stage.tsx (+ journey-samples.tsx)
  *   [x] LiveStats     → components/landing/live-stats.tsx (+ hooks/protocol/useStats.ts)
  *   [x] NotOnServers  → components/landing/not-on-servers.tsx (+ network-viz.tsx)
- *   [x] Pricing card  → components/landing/pricing-card.tsx
+ *   [x] Pricing       → components/landing/pricing.tsx (+ pricing-card.tsx)
  *   [x] Sovereign     → components/landing/sovereign.tsx
  *   [x] AnyDevice     → components/landing/any-device.tsx
  *   [x] OpenByDesign  → components/landing/open-by-design.tsx
@@ -30,12 +30,14 @@ import { PageBackground } from "@components/ui/page-background";
  *   [x] Footer        → components/landing/footer.tsx
  *   [x] Background    → components/ui/page-background.tsx
  *
- * Remaining inline: `<Pricing>` — the section wrapper that positions
- * `<PricingCard>` with its eyebrow, H2 and copy. Not yet extracted
- * because the split (wrapper vs. card) is worth deciding together
- * with the PricingCard polish (Fase 6.5: feeding real numbers from
- * `useUploadQuote`). Extracting the wrapper alone adds a file without
- * changing behavior; leaving it here for now.
+ * Landing composition complete. Remaining work, tracked elsewhere:
+ *
+ *   - i18n pass for `not-on-servers.tsx` and `network-viz.tsx`
+ *     (the two components that still render hardcoded English).
+ *   - Route restructure (`(default)/` for `en`, `[locale]/` for the
+ *     rest) — the current build serves `/` only; locales switch
+ *     client-side via `I18nProvider`. The URL-level locales and
+ *     `generateMetadata` + hreflang follow in that phase.
  *
  * Background composition
  *   The page-wide atmosphere (one central glow + two drifting orbs) is a
@@ -55,37 +57,26 @@ import { PageBackground } from "@components/ui/page-background";
  *     it would land *below* the `bg` paint and disappear.
  *
  * Client islands on this page
- *   `Hero`, `JourneyStage` and `PricingCard` are `"use client"`
- *   (interactive CTA, carousel autoplay + controls, segmented
- *   selection). Everything else — navbar, background, live stats,
- *   not-on-servers, sovereign, any-device, open-by-design, economy,
- *   sign-in, footer, and the `<Pricing>` wrapper — stays
- *   server-rendered. `LiveStats` calls `useStats()` which is a plain
- *   function returning an object literal; despite the `use` prefix,
- *   it contains no React hooks and is safe in a Server Component.
- *   This file remains a Server Component; the boundary is per-island.
+ *   Every section that reads `useI18n()` is necessarily a client
+ *   component — the provider runs only on the client (static export
+ *   cannot read cookies at request time, so the initial locale comes
+ *   from the server as `en` and gets swapped on hydration when a
+ *   stored preference exists). That covers `Navbar`, `Pricing`,
+ *   `Sovereign`, `AnyDevice`, `OpenByDesign`, `Economy`, `SignIn`,
+ *   `Footer`. `Hero` and `JourneyStage` are client for interactivity
+ *   independent of i18n. `PricingCard` is client for TanStack Query
+ *   and slider state.
+ *
+ *   `LiveStats` and `NotOnServers` are the only sections still
+ *   server-rendered today. `LiveStats` calls `useStats()` which is a
+ *   plain function returning an object literal; despite the `use`
+ *   prefix, it contains no React hooks. `NotOnServers` will become
+ *   client when its i18n pass lands. `PageBackground` is a server
+ *   component — pure markup, no interactivity.
+ *
+ *   The page itself remains a Server Component. The boundary is
+ *   per-island.
  */
-
-function Pricing() {
-  return (
-    <section id="pricing" className="mx-auto max-w-[1280px] px-6 py-24 md:px-10">
-      <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-        <div>
-          <p className="label-mono text-muted">Honest pricing</p>
-          <h2 className="mt-4 text-[30px] font-bold leading-tight tracking-[-0.025em] text-ink md:text-[40px]">
-            No monthly bill.
-          </h2>
-          <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-muted">
-            Pay once, for the term you choose. Storage is priced by the network,
-            plus a Kipio fee we always show.
-          </p>
-        </div>
-        <PricingCard />
-      </div>
-    </section>
-  );
-}
-
 export default function LandingPage() {
   return (
     <>
