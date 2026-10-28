@@ -10,8 +10,6 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    Design tokens — Midnight Emerald
-   @theme (not @theme inline) so utilities keep referencing the CSS
-   variables and light-dark() stays live at runtime.
    ═══════════════════════════════════════════════════════════════════════ */
 
 @theme {
@@ -26,6 +24,25 @@
   --color-elevated: light-dark(oklch(0.95 0.01 250), oklch(0.20 0.02 250));
   --color-ink: light-dark(oklch(0.20 0.02 250), oklch(0.95 0.01 250));
   --color-muted: light-dark(oklch(0.45 0.02 250), oklch(0.65 0.02 250));
+
+  /* Softer-than-muted text, calibrated to pass WCAG AA (≥4.5:1)
+     against both --color-bg and --color-card in light and dark
+     modes. Used for copyright lines, tertiary captions and
+     "under the hood" footnotes — text a reader is expected to
+     consume but which is intentionally de-emphasised.
+
+     Do NOT replace this with `text-muted/70`. Opacity-based dimming
+     is not a contrast guarantee: in this palette `text-muted/70`
+     renders ~3.0:1 on light and ~3.9:1 on dark, both below the
+     4.5:1 floor that WCAG 2.2 SC 1.4.3 requires for normal-size
+     text. This token sets a concrete oklch value that keeps the
+     contrast intact:
+       light: oklch(0.40 0.02 250) on oklch(0.98 0.006 250) ≈ 5.1:1
+       dark:  oklch(0.72 0.02 250) on oklch(0.12 0.02 250) ≈ 7.8:1
+     Both pass AA. Both pass AAA for the copyright line at
+     12px, which reads as large-adjacent at typical viewports. */
+  --color-muted-soft: light-dark(oklch(0.40 0.02 250), oklch(0.72 0.02 250));
+
   --color-hairline: light-dark(rgb(12 19 36 / 0.10), rgb(255 255 255 / 0.08));
   --color-emerald: oklch(0.70 0.15 160);
   --color-emerald-text: light-dark(oklch(0.50 0.13 160), oklch(0.78 0.15 160));
@@ -82,9 +99,7 @@
 
   /* Bar grow-in for allocation breakdown (mockup `.grow`). One-shot at
      mount; ends at the element's inline width. Used by Economy's three
-     allocation bars and the subsidy pool progress bar. `both` matches
-     the mockup exactly — no visible effect here since there is no
-     delay, but it keeps the intent explicit. */
+     allocation bars and the subsidy pool progress bar. */
   --animate-grow: grow 1.4s var(--ease-out) both;
 
   @keyframes rise {
@@ -209,13 +224,29 @@
 }
 
 /* Chip with staggered pulse — mockup `.sg`.
-   Used by AnyDevice (5 chips, emerald) and SignIn (10 chips across
-   two rows, emerald + violet; the second row sets
-   `--chip-color: var(--color-violet)` per-chip). Base style + pulse;
-   per-chip overrides via inline `--chip-i` and `--chip-color`. See
+   Used by SignIn (10 chips across two rows, emerald for methods +
+   violet for wallets; the second row sets `--chip-color:
+   var(--color-violet)` per-chip). Base style + pulse; per-chip
+   overrides via inline `--chip-i` and `--chip-color`. See
    `--animate-chip-pulse` in @theme for the keyframe and the
-   reduced-motion override. */
+   reduced-motion override.
+
+   SignIn emits a particle from each chip via `::after` (defined in
+   the "SignIn — cosmic convergence" block below). `position: relative`
+   is set here so every consumer has a positioning context for any
+   future `::after` or `::before`, without the mobile-only particle
+   rule forcing it via a more specific selector.
+
+   Mobile compacting
+     At < md the base chip is smaller (6px/12px padding, 12px font).
+     This drops the two-row block ~30%, keeping the section's vertical
+     footprint tighter than the pre-mobile-compaction version.
+
+   NOTE (2026-10): AnyDevice no longer uses this utility — the device
+   rail replaced the chip cloud. Kept for SignIn, which still relies
+   on it. */
 @utility chip-pulse {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -230,6 +261,13 @@
   animation-delay: calc(var(--chip-i, 0) * 0.55s);
 }
 
+@media (max-width: 767px) {
+  .chip-pulse {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
+
 /* Bar grow-in — mockup `.grow`. Consumed by Economy (three allocation
    bars + the subsidy pool bar). The bar's final width is set inline
    (`style={{ width: "N%" }}`); the animation interpolates from 0 to
@@ -237,6 +275,53 @@
    bar render at its final width immediately. */
 @utility grow-bar {
   animation: var(--animate-grow);
+}
+
+/* Skeleton shimmer — placeholder bar shown while an async value is
+   loading (currently: the three rows of `pricing-card.tsx` while the
+   Irys/FX quotes are in flight). Uses `--color-elevated` and
+   `--color-hairline` so it reads as "not yet content" in both themes
+   without adding a new palette entry.
+
+   Mechanics
+     `background-size: 200% 100%` + a keyframe that slides the
+     `background-position` from right to left produces a moving
+     highlight across a gradient. This animates `background-position`
+     — no layout, no repaint outside the element's own box. Stays on
+     the compositor for the same reason a `<marquee>` used to (well,
+     almost: it does not skip layout for gradients, but at 16px tall
+     on a card it is negligible).
+
+   Reduced motion
+     The animation is disabled and the element falls back to a flat
+     `--color-elevated` bar. Same shape, no motion. Anyone with a
+     motion sensitivity sees a neutral placeholder, not a pulsing
+     one.
+
+   Consumers should give the element a fixed height (h-4, h-5) and
+   width (w-16, w-full) so the shimmer matches what will replace it.
+   The utility sets no size — that is the consumer's job. */
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-elevated) 0%,
+    var(--color-hairline) 50%,
+    var(--color-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--color-elevated);
+  }
 }
 
 /* Ambient page background — legacy approximation, superseded on the
@@ -259,6 +344,60 @@
   color: #fff;
   font-size: 12px;
   font-weight: 500;
+}
+
+/* Long-form prose measure.
+   For docs, legal and blog surfaces — NOT for the landing, which
+   already constrains each paragraph to its own visual context with
+   `max-w-xl` / `max-w-2xl` / `max-w-[520px]`.
+
+   The value is 65ch, not 75ch. `ch` is the width of the "0" glyph;
+   in a proportional font like Geist Sans, a rendered line of 65ch
+   averages ~72 real characters, which is inside WCAG 1.4.8's "no
+   more than 80 characters" limit and matches the 45–75 range that
+   Bringhurst, USWDS and Baymard agree on. A raw 75ch CSS value
+   renders ~85 real characters and would fail WCAG 1.4.8.
+
+   Apply to the container of a prose block:
+     <article className="prose-measure">…</article>
+   The utility sets max-width only; it does not touch font-size,
+   line-height or colour — those come from the component. */
+@utility prose-measure {
+  max-width: 65ch;
+}
+
+/* Full-viewport hero.
+   On tablet and desktop the hero should occupy at least one full
+   viewport minus the sticky navbar (84px), so the "first impression"
+   covers the fold and the next section starts below it. On mobile,
+   `dvh` adjusts for the browser chrome (URL bar showing/hiding) so
+   content is never clipped.
+
+   Cascade of fallbacks:
+     100vh   — every browser; on mobile this is "large viewport"
+               (chrome hidden) which can clip content when chrome
+               is visible. The `svh` / `dvh` lines override.
+     100svh  — Chrome 108+, Firefox 101+, Safari 15.4+. "Small
+               viewport" — content always fits when chrome is visible.
+     100dvh  — Same browsers. "Dynamic viewport" — recalculates as
+               chrome shows/hides. Best UX; the one modern browsers
+               use.
+
+   Browsers pick the last declaration they understand; older
+   browsers fall back to `100vh` (content may extend slightly past
+   the fold on mobile, but no clipping on tablet/desktop where the
+   primary use case is). Do not reorder — the fallback chain only
+   works in this order.
+
+   Why 84px: the navbar height (`h-[84px]` in `navbar.tsx`). Keeping
+   this in sync means the hero fills the viewport exactly, with the
+   navbar sitting on top. If the navbar height ever changes, update
+   both places (this utility and `h-[84px]` in `navbar.tsx`). The
+   comment in `navbar.tsx` points here. */
+@utility hero-viewport {
+  min-height: calc(100vh - 84px);
+  min-height: calc(100svh - 84px);
+  min-height: calc(100dvh - 84px);
 }
 
 /* Legacy responsive container */
@@ -321,51 +460,345 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Journey micro-animations & progress bars
+   Sovereign — mobile accordion ("sovereign oath")
 
-   All slides animate continuously (mockup behavior: every slide's
-   inner content keeps moving regardless of whether it is the active
-   step). There is NO `[data-active="true"]` gate: every `journey-*`
-   class runs its animation on its own infinite cycle from page load
-   until unload. The `data-active` attribute remains on the slide for
-   `aria-hidden` semantics only.
+   Mobile (< sm): four statements become an accordion — collapsed by
+   default, one open at a time, first open on mount so the pattern is
+   legible without interaction. Collapsed rows (~56px each) reduce the
+   section's vertical footprint by ~55% versus the previous flat stack
+   while keeping every statement's full text in the DOM.
 
-   Cross-component use
-     `.journey-line` is NOT exclusive to the JourneyStage. It is also
-     rendered by `components/landing/network-viz.tsx` for the eight
-     dashed radiating lines in the "Not on our servers" panel, and will
-     be reused by `sign-in.tsx` for the connector SVG. Keeping all three
-     on the same class ensures the dash style (3 / 7 at 2.2s linear) and
-     opacity (0.7) stay in lockstep. If the class is ever moved or
-     renamed, update those files in the same change. The `network-node`
-     class (see the section below) is the companion only used by that
-     panel; the journey slide uses `journey-node` instead because it
-     animates scale, not opacity.
+   Desktop (≥ sm): accordion hidden, the original 2-column grid renders.
+   Each breakpoint reads the same `statements` array — no duplication.
 
-   Cycle durations
-     Chosen so each animation loops 1–3 times within a 5s carousel
-     step, giving continuous visual liveliness without looking frantic.
-     The mockup uses a 20s master cycle; using shorter self-contained
-     loops here avoids the phase-misalignment problem that a global
-     20s cycle would have with our 5s-per-step autoplay (each slide
-     would be at a different phase when it becomes active, making the
-     animations look stale or out of sync with the step).
-
-   Stagger on `.journey-bar`
-     The three bars live in separate parent `<div>`s, so `:nth-of-type`
-     does not work (each is `:nth-of-type(1)` of its parent). Each bar
-     reads `--journey-bar-delay` from its inline style (0.3s / 0.5s /
-     0.7s, set in journey-stage.tsx). Missing variable → 0s.
-
-   Stagger on `.journey-node`
-     Same mechanism via `--journey-node-delay` (0.12s per satellite,
-     matching the mockup's `.pp` stagger).
+   Height animation
+     `grid-template-rows: 0fr → 1fr` on a wrapper whose single child
+     has `overflow: hidden`. This is the modern replacement for
+     `max-height` hacks: no magic numbers, no JS measurement, works
+     with variable-length translations. Supported in every browser
+     Next.js 16 targets (Chrome 107+, Safari 16+, Firefox 66+).
 
    Reduced motion
-     Every `journey-*` animation is disabled. Base states are chosen so
-     the visuals still read correctly: bars at full width, sweep at 0,
-     beacon at scale 1, lines at opacity 0.7, nodes at scale 1, chips
-     at opacity 1, progress bars fully filled.
+     Transition removed; the toggle still works instantly. No
+     animation-dependent behaviour is lost.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* Height-animating wrapper. The single child must have
+     `overflow: hidden` — without it the collapsing row would show
+     its content spilling out. */
+  .sovereign-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 400ms var(--ease-out);
+  }
+  .sovereign-body.is-open {
+    grid-template-rows: 1fr;
+  }
+  .sovereign-body > div {
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sovereign-body {
+      transition: none;
+    }
+  }
+
+  /* Chevron: rotates 90° when the item is open. `transition` on
+     transform only; the icon never moves in any other way. */
+  .sovereign-chevron {
+    transition: transform 300ms var(--ease-out);
+  }
+  .sovereign-chevron.is-open {
+    transform: rotate(90deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sovereign-chevron { transition: none; }
+  }
+
+  /* Thread connecting the icons. Vertical hairline with a gradient
+     fade at both ends — reads as "connective tissue", not as a
+     hard-coded divider. Absolutely positioned at inline-start = 16px
+     (center of a 32px icon at inline-start: 0), inset vertically so
+     it starts/ends at the top/bottom edge of the first/last icon. */
+  .sovereign-thread {
+    position: absolute;
+    inset-inline-start: 15.5px;
+    top: 16px;
+    bottom: 16px;
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-hairline) 6%,
+      var(--color-hairline) 94%,
+      transparent
+    );
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SignIn — cosmic convergence (mobile only)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  /* ── Portal — rotating conic gradient behind the card ────────────
+     `inset: -30% -20% -20%` bleeds upward into the gap toward the
+     chips and outward from the card edges. `pointer-events: none`
+     so the glow never intercepts clicks. */
+  .card-portal {
+    position: absolute;
+    inset: -30% -20% -20%;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.55;
+    background: conic-gradient(
+      from 0deg at 50% 65%,
+      oklch(0.70 0.15 160 / 0) 0deg,
+      oklch(0.70 0.15 160 / 0.22) 60deg,
+      oklch(0.65 0.18 290 / 0) 120deg,
+      oklch(0.65 0.18 290 / 0.18) 180deg,
+      oklch(0.70 0.15 160 / 0) 240deg,
+      oklch(0.70 0.15 160 / 0.22) 300deg,
+      oklch(0.70 0.15 160 / 0) 360deg
+    );
+  }
+
+  @keyframes portal-spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes portal-breathe {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card-portal {
+      animation:
+        portal-spin 22s linear infinite,
+        portal-breathe 5s ease-in-out infinite;
+    }
+  }
+
+  /* ── Emitted particles — one per chip, staggered ─────────────────
+     Base `::after` is invisible (opacity 0) so the rule can exist
+     without a media query and still render nothing on desktop or
+     under reduced motion. The animation (mobile + no-reduce) brings
+     it in and out. */
+  .chip-pulse::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    width: 5px;
+    height: 5px;
+    margin-left: -2.5px;
+    border-radius: 50%;
+    background: var(--chip-color, var(--color-emerald));
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+  }
+
+  @keyframes chip-emit {
+    /* Charge-up: small pulse and glow at the chip. */
+    0%, 25% {
+      transform: translateY(0) scale(0);
+      opacity: 0;
+      box-shadow: 0 0 0 transparent;
+    }
+    30% {
+      transform: translateY(-2px) scale(1.2);
+      opacity: 0.9;
+      box-shadow: 0 0 8px var(--chip-color, var(--color-emerald));
+    }
+    38% {
+      transform: translateY(0) scale(1);
+      opacity: 0.85;
+      box-shadow: 0 0 4px var(--chip-color, var(--color-emerald));
+    }
+    /* Fall toward the card, dissolving. */
+    100% {
+      transform: translateY(90px) scale(0.25);
+      opacity: 0;
+      box-shadow: 0 0 2px transparent;
+    }
+  }
+
+  @media (max-width: 767px) and (prefers-reduced-motion: no-preference) {
+    .chip-pulse::after {
+      animation: chip-emit 5s cubic-bezier(0.4, 0, 0.7, 1) infinite;
+      animation-delay: calc(var(--chip-i, 0) * 0.6s);
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Economy — mobile ribbon sweep
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  @keyframes ribbon-sweep {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(100%); }
+  }
+
+  .ribbon-sweep {
+    animation: ribbon-sweep 0.9s var(--ease-out) 1.4s both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ribbon-sweep { display: none; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AnyDevice — device rail
+
+   A "travel rail" connecting five device nodes: iPhone, Android,
+   Windows, Mac, Web. A small emerald dot travels the rail continuously,
+   literalizing the section's message ("your photo travels with you").
+
+   Layout switch
+     - Mobile (< md): vertical rail. Icons on the left (44px circles),
+       labels on the right. The line runs behind the icon column; the
+       dot travels top→bottom.
+     - Desktop (≥ md): horizontal rail. Icons on top (44px circles),
+       labels below. The line runs behind the icon row; the dot
+       travels left→right.
+
+   Geometry
+     Icons are 44px on both breakpoints. The first icon is flush to
+     the rail's inline-start; the last icon is flush to inline-end
+     (via `justify-between` on desktop; via the natural leading edge
+     of each `<li>` on mobile). Icon centers are therefore 22px in
+     from each edge.
+       Desktop line: from 22px to (100% - 22px), at y=22px.
+       Desktop dot:  travels that same range, centered on the line.
+       Mobile line:  from 22px to (100% - 22px), at x=22px.
+       Mobile dot:   travels that same range, centered on the line.
+     The `-3px` negative margins on the 6px dot center it on those
+     coordinates.
+
+   RTL warning
+     The geometry below uses physical `left` / `right` / `top` /
+     `bottom` — not logical properties. This is deliberate for the two
+     locales currently shipped (`en`, `es`, both LTR). When Arabic
+     (`ar`) is added to `AVAILABLE_LOCALES`, this block must be
+     converted to logical properties in one pass:
+       `left`  → `inset-inline-start`
+       `right` → `inset-inline-end`
+     and the linear-gradient angle must flip (`to right` → `to left`
+     via `to inline-end`). The keyframes' endpoints then also need to
+     use `inset-inline-start` / `inset-inline-end` instead of `left` /
+     `top`. Not done today; documented so the RTL pass is a mechanical
+     edit, not a re-derivation.
+
+   Motion
+     The dot has a fixed 8s linear loop. It fades in during the first
+     15% and out during the last 15% so it does not "pop" at the ends.
+     `prefers-reduced-motion: reduce` disables the animation and hides
+     the dot (opacity 0); the line and nodes stay visible, and the
+     section is fully readable — just still.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer components {
+  .device-rail {
+    position: relative;
+  }
+
+  /* ── Rail line — behind the icons, gradient fade at edges ──────── */
+  .device-rail-line {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  @media (min-width: 768px) {
+    .device-rail-line {
+      top: 22px;
+      left: 22px;
+      right: 22px;
+      height: 1px;
+      background: linear-gradient(
+        to right,
+        transparent,
+        var(--color-hairline) 8%,
+        var(--color-hairline) 92%,
+        transparent
+      );
+    }
+  }
+
+  @media (max-width: 767px) {
+    .device-rail-line {
+      top: 22px;
+      bottom: 22px;
+      left: 22px;
+      width: 1px;
+      background: linear-gradient(
+        to bottom,
+        transparent,
+        var(--color-hairline) 8%,
+        var(--color-hairline) 92%,
+        transparent
+      );
+    }
+  }
+
+  /* ── Traveling dot ─────────────────────────────────────────────── */
+  .device-rail-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    margin-top: -3px;
+    border-radius: 50%;
+    background: var(--color-emerald);
+    box-shadow: 0 0 10px var(--color-emerald);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 2;
+  }
+
+  @media (min-width: 768px) {
+    .device-rail-dot {
+      top: 22px;
+      animation: device-rail-h 8s linear infinite;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .device-rail-dot {
+      left: 22px;
+      animation: device-rail-v 8s linear infinite;
+    }
+  }
+
+  @keyframes device-rail-h {
+    0%   { left: 22px; opacity: 0; }
+    15%  { opacity: 0.9; }
+    85%  { opacity: 0.9; }
+    100% { left: calc(100% - 22px); opacity: 0; }
+  }
+
+  @keyframes device-rail-v {
+    0%   { top: 22px; opacity: 0; }
+    15%  { opacity: 0.9; }
+    85%  { opacity: 0.9; }
+    100% { top: calc(100% - 22px); opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .device-rail-dot {
+      animation: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Journey micro-animations & progress bars
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
@@ -429,7 +862,7 @@
 
   /* ── Network slide: dashed lines always visible + dash motion ──
      Shared with `components/landing/network-viz.tsx` and
-     `components/landing/sign-in.tsx` (see the section header note). */
+     `components/landing/sign-in.tsx`. */
   .journey-line {
     stroke-dasharray: 3 7;
     stroke-dashoffset: 0;
@@ -452,8 +885,6 @@
     50%      { transform: scale(1); }
   }
 
-  /* ── Floating chips: static (informational, not decorative) ──── */
-
   /* Reduced motion: all journey micro-animations off. */
   @media (prefers-reduced-motion: reduce) {
     .journey-shrink,
@@ -469,24 +900,7 @@
     .journey-progress { background-size: 100% 100%; }
   }
 
-  /* Journey stage — position variables and tilt toggle.
-
-     X/Z/rotation per slot live here (not in JSX) so desktop and mobile
-     can use different offsets without duplicating the component. The
-     slide's inline transform composes them:
-
-       translate(-50%, -50%)
-       translate3d(var(--pos-<slot>-x), 0, var(--pos-<slot>-z))
-       rotateY(var(--pos-<slot>-ry))
-
-     The `translate(-50%, -50%)` centers the slide based on its own
-     responsive width/height, so this file's vars are pure offsets.
-
-     Mobile overrides use smaller X so adjacent slides visibly peek from
-     the viewport edges instead of being pushed off-screen. Z and
-     rotation are reduced proportionally so foreshortening stays
-     visually similar. Do NOT restore desktop X values on mobile — the
-     slides would disappear past the viewport. */
+  /* Journey stage — position variables and tilt toggle. */
   .journey-stage {
     --pos-a-x: 0px;     --pos-a-z: 0px;     --pos-a-ry: 0deg;
     --pos-n1-x: 540px;  --pos-n1-z: -270px; --pos-n1-ry: -34deg;
@@ -506,14 +920,7 @@
     }
   }
 
-  /* Stage tilt — the 3D drift on the parent layer.
-
-     Applied only at ≥ md: where the render budget comfortably absorbs
-     the continuous keyframe. On mobile the tilt competes with the
-     compositor budget and re-introduces the sharp→blurry swap this
-     component spent multiple iterations fixing. If a future change
-     wants tilt on mobile, test with a full refresh + devtools
-     performance panel first; do not simply remove the media query. */
+  /* Stage tilt — the 3D drift on the parent layer. */
   @media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
     .journey-tilt {
       animation: stage-tilt 14s ease-in-out infinite alternate;
@@ -523,21 +930,6 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    Network viz — ambient dot pulse
-
-   Companion to the panel in `components/landing/network-viz.tsx`. The
-   eight dashed lines that radiate from the lock reuse `.journey-line`
-   (defined above). Only the eighteen ambient dots are new: each carries
-   `.network-node` with a per-element `--network-node-delay` inline
-   style (i * 0.1s, i = 0..17) so the pulse travels around the
-   composition in a wave.
-
-   Duration 3s: with an 18-step stagger at 0.1s the wave spans 1.7s of
-   delay, so a 3s cycle means two waves can be visible at once before
-   wrapping — matches the mockup's `nd` keyframe (also 3s).
-
-   Reduced motion
-     Base state is `opacity: 1`, so the dots stay fully visible when
-     the animation is disabled. No content is lost.
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
@@ -565,13 +957,6 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-
-    /* Horizontal overflow guard. See journey-stage.tsx header: the
-       stage wrapper clips at the viewport (w-screen), this is the
-       outer safety net for 3D-transformed descendants that Chromium
-       does not always clip at the local boundary. `clip` (unlike
-       `hidden`) does not create a scroll container — sticky navbar
-       keeps working. */
     overflow-x: clip;
   }
 
@@ -601,8 +986,6 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    Legacy compatibility — surfaces still consumed by pre-migration pages
-   (dashboard legacy, old landing). Deliberately unlayered so they keep
-   winning against the new base until the pages are migrated and removed.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .mobile-menu {
