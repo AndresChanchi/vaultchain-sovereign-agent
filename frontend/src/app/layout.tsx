@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Web3Provider } from "@components/web3-provider";
 import { ThemeProvider } from "@context/ThemeContext";
 import { I18nProvider } from "@context/I18nContext";
+import { WalletProvider } from "@context/WalletContext";
+import { LoginModalProvider } from "@context/LoginModalContext";
+import { LoginModal } from "@components/login/login-modal";
 
 /**
  * Geist Sans — all UI text.
@@ -56,8 +60,30 @@ export const viewport: Viewport = {
 /**
  * Sets `data-theme` on <html> before first paint so the user never sees a
  * flash of the wrong theme. Reads the same storage key that ThemeContext
- * writes, defaults to dark. Errors are swallowed so private modes and
+ * writes, defaults to system. Errors are swallowed so private modes and
  * blocked-storage environments do not break rendering.
+ *
+ * Why `<Script>` and not `<script>`
+ *   React 19 warns when it encounters a `<script>` tag inside the React
+ *   tree during client rendering: "Scripts inside React components are
+ *   never executed when rendering on the client." The `<script>` did
+ *   execute on first HTML load (it is in the server-rendered `<head>`),
+ *   but any subsequent client-side render of that tree re-encounters
+ *   the tag and warns.
+ *
+ *   `next/script` with `strategy="beforeInteractive"` is the Next.js
+ *   pattern for a script that must run before hydration. It is
+ *   injected into the initial HTML `<head>` (so it still executes
+ *   before paint, no FOUC), and it is not re-rendered by React — no
+ *   warning. `id` is required by `next/script` for inline scripts.
+ *
+ * `suppressHydrationWarning` on `<html>` is still needed
+ *   The script mutates `data-theme` on `<html>` before React hydrates.
+ *   React sees `<html data-theme="light">` on the client when the
+ *   server sent `data-theme="dark"` — a legitimate mismatch caused by
+ *   client-side state. `suppressHydrationWarning` silences the warning
+ *   for that one attribute. Without it, every reload of a non-dark
+ *   theme logs a hydration error.
  */
 const themeInitScript = `
 (function(){
@@ -75,24 +101,34 @@ const themeInitScript = `
  * Root layout — the only `<html>` for the whole app.
  *
  * Provider order
- *   `<ThemeProvider>` → `<I18nProvider>` → `<Web3Provider>` → children
+ *   `<ThemeProvider>` → `<I18nProvider>` → `<WalletProvider>` →
+ *   `<LoginModalProvider>` → `<Web3Provider>` → children + `<LoginModal />`
  *
  *   - ThemeProvider first: it drives `data-theme` on `<html>`, which
- *     every other layer's CSS depends on. If it were deeper in the tree,
- *     a child component could paint before the theme attribute is set.
+ *     every other layer's CSS depends on.
  *
- *   - I18nProvider second: the strings from every downstream component
- *     resolve through `useI18n()`. Web3Provider hosts wallet state and
- *     is irrelevant to any string; i18n does not depend on it, so it
- *     sits outside. When a future login overlay (Phase 9) needs both,
- *     it consumes `useI18n()` and `useAccount()` without a provider
- *     ordering constraint.
+ *   - I18nProvider second: every downstream `t()` call resolves
+ *     through it. No dependency on wallet or wagmi.
  *
- *   - Web3Provider innermost: `wagmi` and TanStack Query are wrapped
- *     only where they are needed. The public landing does not require
- *     wallet connectivity for the H1 to paint; keeping it innermost
- *     means the i18n and theme layers never wait for wagmi's
- *     initialization.
+ *   - WalletProvider third: session state (`context/WalletContext.tsx`).
+ *     Independent of wagmi by design — the login surface must not pay
+ *     for the legacy wagmi stack.
+ *
+ *   - LoginModalProvider fourth: history integration for the login
+ *     modal. Reads `window.history` in effects only; SSR-safe.
+ *
+ *   - Web3Provider innermost: wagmi + TanStack Query, needed only by
+ *     the legacy `/space` (formerly `/dashboard`) and its children.
+ *     Kept innermost so nothing above it waits for wagmi init.
+ *
+ *   `<LoginModal />` renders outside `Web3Provider` because it does
+ *   not use wagmi hooks. It reads `useWallet()` and `useLoginModal()`
+ *   — both available in the ancestors. Placing it outside `Web3Provider`
+ *   keeps the login flow independent of the legacy stack at the tree
+ *   level, not just at the import level.
+ *
+ *   `LoginModal` must be a child of `LoginModalProvider` — the native
+ *   `<dialog>` is opened via `useLoginModal().isOpen`.
  *
  * `<html lang>` and `<html dir>`
  *   Hardcoded to `en` / `ltr` here, matching the default locale.
@@ -116,14 +152,23 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
         <link rel="stylesheet" href="/output.css" />
         <link rel="icon" href="/favicon.ico" />
       </head>
       <body>
         <ThemeProvider>
           <I18nProvider>
-            <Web3Provider>{children}</Web3Provider>
+            <WalletProvider>
+              <LoginModalProvider>
+                <Web3Provider>{children}</Web3Provider>
+                <LoginModal />
+              </LoginModalProvider>
+            </WalletProvider>
           </I18nProvider>
         </ThemeProvider>
       </body>

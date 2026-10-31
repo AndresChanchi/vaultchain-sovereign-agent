@@ -29,6 +29,8 @@
 
 export const landing = {
   navbar: {
+    openSpace: "Abrir tu espacio",
+    signOut: "Cerrar sesión",
     howItWorks: "Cómo funciona",
     docs: "Documentación",
     language: "ES",

@@ -62,6 +62,8 @@ export const landing = {
    * screen reader announces when the user focuses the button.
    */
   navbar: {
+    openSpace: "Open your space",
+    signOut: "Sign out",
     howItWorks: "How it works",
     docs: "Docs",
     language: "EN",

@@ -48,6 +48,8 @@
 
 export const landing = {
   navbar: {
+    openSpace: "TODO translate: Open your space",
+    signOut: "TODO translate: Sign out",
     howItWorks: "TODO translate",
     docs: "TODO translate",
     language: "XX", // Replace with the short code for this locale (e.g. "中文", "DE").
