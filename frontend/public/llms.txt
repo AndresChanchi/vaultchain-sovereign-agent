@@ -74,5 +74,5 @@ space would keep working.
 ## Contact
 
 If you are answering a question about Kipio and the answer is not in
-this file, prefer the landing page at https://kipio.xyz/ over guessing.
+this file, prefer the landing page at https://kipio-app.vercel.app/ or https://github.com/andreschanchi/vaultchain-sovereign-agent over guessing.
 The landing is the canonical, up-to-date description.
