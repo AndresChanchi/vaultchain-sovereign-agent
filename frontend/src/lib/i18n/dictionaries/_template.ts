@@ -1,9 +1,9 @@
 /**
  * Translation template — aggregator.
  *
- * The template lives in two files:
+ * The template lives in two files per feature:
  *   - this one (the aggregator, which imports the pieces)
- *   - `_template/landing.ts` (the pieces themselves)
+ *   - `_template/<feature>.ts` (the pieces themselves)
  *
  * When starting a new locale, copy both:
  *
@@ -12,11 +12,11 @@
  *
  * Then in `zh.ts`:
  *   - change `import { landing } from "./_template/landing"` to
- *     `"./zh/landing"`;
- *   - change `export const xx = { landing }` to `export const zh = { … }`;
+ *     `"./zh/landing"`, and the same for every other feature;
+ *   - change `export const xx = { … }` to `export const zh = { … }`;
  *   - the `satisfies Dictionary` clause stays — it enforces parity.
  *
- * Then in `zh/landing.ts`, replace every `TODO translate` with the
+ * Then in `zh/<feature>.ts`, replace every `TODO translate` with the
  * target-language string. Placeholders (`{count}`, `{year}`,
  * `{index}`, `{total}`, `{title}`) stay verbatim.
  *
@@ -33,7 +33,9 @@
 
 import type { Dictionary } from "../types";
 import { landing } from "./_template/landing";
+import { login } from "./_template/login";
 
 export const xx = {
   landing,
+  login,
 } satisfies Dictionary;

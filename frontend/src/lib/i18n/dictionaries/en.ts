@@ -6,13 +6,12 @@
  * shape. Each feature lives in its own file under `en/`:
  *
  *   en/landing.ts   → `en.landing`
+ *   en/login.ts     → `en.login`
  *   en/dashboard.ts → `en.dashboard`   (when it exists)
- *   en/settings.ts  → `en.settings`    (when it exists)
  *   …
  *
  * Adding a feature
- *   1. Create `en/<feature>.ts` exporting a `landing`-shaped object
- *      (or whatever the feature is called).
+ *   1. Create `en/<feature>.ts` exporting a `<feature>`-shaped object.
  *   2. Import it here and add it to the aggregate.
  *   3. Add the same feature to `es.ts`, `_template.ts` and every other
  *      locale's aggregate. The `satisfies Dictionary` check on those
@@ -28,7 +27,9 @@
  */
 
 import { landing } from "./en/landing";
+import { login } from "./en/login";
 
 export const en = {
   landing,
+  login,
 };
