@@ -1,23 +1,63 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import * as Comlink from "comlink";
-import { useSignTypedData, useAccount } from "wagmi";
-import { 
-  deriveKeyFromSignature, 
-  KIPIO_SIGN_DOMAIN, 
-  KIPIO_SIGN_TYPES, 
-  KIPIO_SIGN_MESSAGE 
+import type { Hex } from "viem";
+import { useWallet } from "@context/WalletContext";
+import {
+  deriveKeyFromSignature,
+  KIPIO_SIGN_DOMAIN,
+  KIPIO_SIGN_TYPES,
+  KIPIO_SIGN_MESSAGE,
 } from "@lib/crypto/kdf";
 import type { CryptoWorkerAPI } from "@lib/workers/crypto.worker";
-import type { Hex } from "viem";
 import type { FileMetadata } from "@interfaces/vault";
 
 /**
  * @title Kipio Security Context
  * @notice Centralized orchestrator for cryptographic operations and vault state.
- * @dev Implements a Singleton Worker pattern and ensures the AES-GCM master key 
- * remains strictly in volatile memory (RAM).
+ * @dev Singleton Worker pattern, AES-GCM master key stays strictly in
+ * volatile memory (RAM).
+ *
+ * Signer source — `WalletContext`
+ *   The session-aware signer lives in `WalletContext.signTypedData`.
+ *   `KipioContext` calls it with the fixed KIPIO_SIGN_* payload and
+ *   receives a signature without knowing whether the user
+ *   authenticated with a wallet or OAuth. The derivation is
+ *   identical for both.
+ *
+ * Key storage — ref + state
+ *   `encryptionKeyRef.current` holds the derived CryptoKey for the
+ *   imperative crypto operations (`encryptFile`, `decryptFile`, …).
+ *   `encryptionKey` state mirrors the same value for UI reactivity
+ *   (`isLocked`). Two reasons for the duplication:
+ *
+ *   1. `useCallback` captures state at definition time. After
+ *      `unlockVault()` returns, `setEncryptionKey(key)` triggers a
+ *      re-render but does not update any in-flight closure. A caller
+ *      that does `await unlockVault(); await encryptFile(...)` in the
+ *      same tick uses the *old* closure where `encryptionKey` is
+ *      still `null`, and `encryptFile` throws `VAULT_LOCKED`. This is
+ *      the exact failure mode of the upload flow before this fix.
+ *      Reading the ref inside `encryptFile` avoids the stale capture.
+ *
+ *   2. State is still required so `isLocked` derives correctly and
+ *      `DecryptedImage` / `useVaultUnlock` re-render when the key
+ *      becomes available. The ref alone would leave the UI blind.
+ *
+ *   Both are updated in lockstep inside `unlockVault()` and cleared
+ *   in lockstep on session change.
+ *
+ * Master key lifecycle
+ *   Derived from the EIP-712 signature via HKDF, held in memory, never
+ *   persisted. A tab reload forces re-derivation.
  */
 interface KipioContextType {
   encryptionKey: CryptoKey | null;
@@ -34,38 +74,38 @@ interface KipioContextType {
 const KipioContext = createContext<KipioContextType | null>(null);
 
 export function KipioProvider({ children }: { children: React.ReactNode }) {
-  const { address } = useAccount();
-  const { signTypedDataAsync } = useSignTypedData();
+  const { session, signTypedData } = useWallet();
 
   /**
-   * @dev Master Encryption Key (AES-GCM-256). 
-   * NEVER persists to LocalStorage or IndexedDB.
+   * Ref mirror of the master key. Read inside every crypto callback
+   * so an `await unlockVault(); await encryptFile();` sequence sees
+   * the freshly derived key, not the closure's stale `null`.
+   */
+  const encryptionKeyRef = useRef<CryptoKey | null>(null);
+
+  /**
+   * State mirror for UI reactivity. `isLocked` below reads this.
    */
   const [encryptionKey, setEncryptionKey] = useState<CryptoKey | null>(null);
+
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [workerReady, setWorkerReady] = useState(false);
 
-  /**
-   * @dev Singleton Worker Management.
-   * Prevents memory leaks and redundant thread allocation.
-   */
   const workerApi = useRef<Comlink.Remote<CryptoWorkerAPI> | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Initialize the Web Worker for off-main-thread cryptography
     const worker = new Worker(
       new URL("../lib/workers/crypto.worker.ts", import.meta.url),
-      { type: "module" }
+      { type: "module" },
     );
 
     workerRef.current = worker;
     workerApi.current = Comlink.wrap<CryptoWorkerAPI>(worker);
     setWorkerReady(true);
 
-    // Clean up worker on application unmount
     return () => {
       worker.terminate();
       setWorkerReady(false);
@@ -73,22 +113,30 @@ export function KipioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
-   * @notice Triggers the EIP-712 signature flow to derive the vault's master key.
-   * @dev Deterministic derivation ensures the same key is generated across devices.
+   * Clear the key whenever the session changes or ends — ref and
+   * state together. Prevents a stale key from a previous wallet from
+   * decrypting (or failing to decrypt) the current session's photos.
    */
+  useEffect(() => {
+    encryptionKeyRef.current = null;
+    setEncryptionKey(null);
+  }, [session?.address]);
+
   const unlockVault = useCallback(async () => {
-    if (!address) throw new Error("WALLET_NOT_CONNECTED");
-    
+    if (!session) throw new Error("WALLET_NOT_CONNECTED");
+
     try {
       setIsUnlocking(true);
-      const signature = await signTypedDataAsync({
+      const signature = await signTypedData({
         domain: KIPIO_SIGN_DOMAIN,
         types: KIPIO_SIGN_TYPES,
         primaryType: "VaultAuth",
         message: KIPIO_SIGN_MESSAGE,
       });
-
-      const key = await deriveKeyFromSignature(signature as Hex);
+      const key = await deriveKeyFromSignature(signature);
+      // Ref first so any in-flight caller sees the key immediately;
+      // state second for the next render's UI.
+      encryptionKeyRef.current = key;
       setEncryptionKey(key);
       return key;
     } catch (error) {
@@ -97,53 +145,56 @@ export function KipioProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsUnlocking(false);
     }
-  }, [address, signTypedDataAsync]);
+  }, [session, signTypedData]);
 
   /**
-   * @notice Encrypts a file buffer using the pre-injected Master Key.
-   * @dev Uses Comlink.transfer to avoid memory cloning (Zero-Copy).
+   * Crypto callbacks below have empty deps and read the key from the
+   * ref. That makes them stable references and immune to the stale
+   * closure problem described in the file header. The runtime guards
+   * (`workerApi.current`, `encryptionKeyRef.current`) throw the same
+   * `VAULT_LOCKED` error the previous version did, so existing error
+   * handling remains valid.
    */
+
   const encryptFile = useCallback(async (data: ArrayBuffer, hash: Hex) => {
-    if (!workerApi.current || !encryptionKey) throw new Error("VAULT_LOCKED");
+    const key = encryptionKeyRef.current;
+    if (!workerApi.current || !key) throw new Error("VAULT_LOCKED");
     return await workerApi.current.encryptFileWorker(
-      Comlink.transfer(data, [data]), 
-      hash, 
-      encryptionKey
+      Comlink.transfer(data, [data]),
+      hash,
+      key,
     );
-  }, [encryptionKey]);
+  }, []);
 
-  /**
-   * @notice Decrypts an encrypted file buffer.
-   */
-  const decryptFile = useCallback(async (encryptedData: ArrayBuffer, hash: Hex) => {
-    if (!workerApi.current || !encryptionKey) throw new Error("VAULT_LOCKED");
-    return await workerApi.current.decryptFileWorker(
-      Comlink.transfer(encryptedData, [encryptedData]), 
-      hash, 
-      encryptionKey
-    );
-  }, [encryptionKey]);
+  const decryptFile = useCallback(
+    async (encryptedData: ArrayBuffer, hash: Hex) => {
+      const key = encryptionKeyRef.current;
+      if (!workerApi.current || !key) throw new Error("VAULT_LOCKED");
+      return await workerApi.current.decryptFileWorker(
+        Comlink.transfer(encryptedData, [encryptedData]),
+        hash,
+        key,
+      );
+    },
+    [],
+  );
 
-  /**
-   * @notice Secures asset metadata before IPFS/Irys propagation.
-   */
   const encryptMetadata = useCallback(async (metadata: FileMetadata) => {
-    if (!workerApi.current || !encryptionKey) throw new Error("VAULT_LOCKED");
-    return await workerApi.current.encryptMetadataWorker(metadata, encryptionKey);
-  }, [encryptionKey]);
+    const key = encryptionKeyRef.current;
+    if (!workerApi.current || !key) throw new Error("VAULT_LOCKED");
+    return await workerApi.current.encryptMetadataWorker(metadata, key);
+  }, []);
 
-  /**
-   * @notice Decodes encrypted metadata back into a readable JSON object.
-   */
   const decryptMetadata = useCallback(async (encryptedData: ArrayBuffer) => {
-    if (!workerApi.current || !encryptionKey) throw new Error("VAULT_LOCKED");
+    const key = encryptionKeyRef.current;
+    if (!workerApi.current || !key) throw new Error("VAULT_LOCKED");
     return await workerApi.current.decryptMetadataWorker(
-      Comlink.transfer(encryptedData, [encryptedData]), 
-      encryptionKey
+      Comlink.transfer(encryptedData, [encryptedData]),
+      key,
     );
-  }, [encryptionKey]);
+  }, []);
 
-  const value = {
+  const value: KipioContextType = {
     encryptionKey,
     isLocked: !encryptionKey,
     isUnlocking,
@@ -155,11 +206,14 @@ export function KipioProvider({ children }: { children: React.ReactNode }) {
     decryptMetadata,
   };
 
-  return <KipioContext.Provider value={value}>{children}</KipioContext.Provider>;
+  return (
+    <KipioContext.Provider value={value}>{children}</KipioContext.Provider>
+  );
 }
 
 export function useKipioContext() {
   const context = useContext(KipioContext);
-  if (!context) throw new Error("useKipioContext must be used within KipioProvider");
+  if (!context)
+    throw new Error("useKipioContext must be used within KipioProvider");
   return context;
 }
