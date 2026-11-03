@@ -4,7 +4,15 @@
    Theme
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  /* Brand accent for native form controls (`input[type="checkbox"]`,
+     `input[type="radio"]`, `<progress>`, …). Browsers paint the check
+     mark and the fill with this color. Forms arrive with the Settings
+     surface; setting it here means the whole app inherits the brand
+     accent for free, without per-component `accent-color` overrides. */
+  accent-color: var(--color-emerald);
+}
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="system"] { color-scheme: light dark; }
 
@@ -79,28 +87,51 @@
   --animate-scan: scan 2.6s linear infinite;
   --animate-spin-slow: spin 1s linear infinite;
 
-  /* Text glint used by the landing H1 (mockup `.shn`). */
+  /* Text glint used by the landing H1. */
   --animate-shn: shn 7s ease-in-out infinite;
 
-  /* Atmospheric orbs (mockup `.orb.o1`, `.orb.o2`). */
+  /* Atmospheric orbs (landing hero background). */
   --animate-orb-drift-1: orb-drift-1 18s ease-in-out infinite alternate;
   --animate-orb-drift-2: orb-drift-2 22s ease-in-out infinite alternate;
 
-  /* 3D stage tilt (mockup `.st2` `fl2`). The parent's transform; do not
-     apply to children, they own their own transforms. */
+  /* 3D stage tilt — the parent transform for the journey stage and the
+     welcome stage. Applied to the perspective layer, not to children —
+     they own their own `translate3d` transforms. */
   --animate-stage-tilt: stage-tilt 14s ease-in-out infinite alternate;
 
-  /* Chip pulse (mockup `.sg`). Applied by `@utility chip-pulse` below.
-     The base chip pulses its border to `--chip-color`, lifts 3px, and
-     emits a 5px halo over the same color. `--chip-i` staggers the loop
-     across a row of chips (0.55s per index, matching the mockup's
-     `animation-delay: calc(var(--i) * .55s)`). */
+  /* Chip pulse (landing sign-in). Border pulses to `--chip-color`,
+     lifts 3px, emits a 5px halo. `--chip-i` staggers the loop across
+     a row (0.55s per index). */
   --animate-chip-pulse: chip-pulse 7s infinite;
 
-  /* Bar grow-in for allocation breakdown (mockup `.grow`). One-shot at
-     mount; ends at the element's inline width. Used by Economy's three
-     allocation bars and the subsidy pool progress bar. */
+  /* Bar grow-in (landing economy). One-shot at mount; ends at the
+     element's inline width. */
   --animate-grow: grow 1.4s var(--ease-out) both;
+
+  /* Welcome stage — five synchronized tracks on one 10s cycle. The
+     whole sequence reads as one story: "a photo is dragged into the
+     empty slot, gets locked, is kept."
+
+       0-5%    Idle. Frame empty, border breathing.
+       5-10%   Photo fades in at bottom-right of the frame (clipped
+               by the frame's overflow).
+       10-38%  Photo glides to center. Cursor follows from below.
+       38-42%  Photo settles. Cursor "clicks" (scale pulse).
+       42-60%  Lock sweep crosses the photo left→right (blur + tint).
+       60-68%  "Kept" badge pops.
+       68-92%  Hold.
+       92-100% Everything fades. Frame empty again. Loop.
+
+     Each track is one CSS animation, all on `10s infinite` starting
+     at 0. Phase-locking them is the only way to tell this as one
+     continuous motion instead of five unrelated loops. The `breathe`
+     runs on its own 4s cycle (independent) so the empty frame keeps
+     a slow pulse even between cycles. */
+  --animate-breathe: breathe 4s ease-in-out infinite;
+  --animate-photo-arrive: photo-arrive 10s ease-in-out infinite;
+  --animate-lock-reveal: lock-reveal 10s ease-in-out infinite;
+  --animate-kept-badge: kept-badge 10s ease-in-out infinite;
+  --animate-cursor-drag: cursor-drag 10s ease-in-out infinite;
 
   @keyframes rise {
     from { translate: 0 16px; }
@@ -158,6 +189,45 @@
   @keyframes grow {
     from { width: 0; }
   }
+  @keyframes breathe {
+    0%, 100% { border-color: oklch(0.70 0.15 160 / 0.35); }
+    50%      { border-color: oklch(0.70 0.15 160 / 0.75); }
+  }
+  /* The photo is `inset-0` inside the frame (overflow: hidden). The
+     percentage offsets are relative to the photo's own box, so the
+     glide distance scales with the frame — desktop (300×220) travels
+     further than compact (180×180), both end at the same place. */
+  @keyframes photo-arrive {
+    0%, 5%    { opacity: 0; transform: translate(150%, 180%) scale(0.6); }
+    10%       { opacity: 1; transform: translate(150%, 180%) scale(0.6); }
+    38%       { opacity: 1; transform: translate(0, 0) scale(1); }
+    42%, 90%  { opacity: 1; transform: translate(0, 0) scale(1); }
+    96%, 100% { opacity: 0; transform: translate(0, 0) scale(1); }
+  }
+  /* Animates `width`, not `transform: scaleX`. Scale would stretch
+     the 2px `border-right` that marks the sweep's leading edge — the
+     border would scale with the container, becoming a wedge instead
+     of a line. */
+  @keyframes lock-reveal {
+    0%, 42%   { width: 0%; }
+    60%, 90%  { width: 100%; }
+    96%, 100% { width: 0%; }
+  }
+  @keyframes kept-badge {
+    0%, 60%   { opacity: 0; transform: scale(0.5); }
+    64%       { opacity: 1; transform: scale(1.1); }
+    68%, 90%  { opacity: 1; transform: scale(1); }
+    96%, 100% { opacity: 0; transform: scale(0.5); }
+  }
+  @keyframes cursor-drag {
+    0%, 5%    { opacity: 0; transform: translate(140px, 140px) scale(1); }
+    10%       { opacity: 1; transform: translate(140px, 140px) scale(1); }
+    38%       { opacity: 1; transform: translate(0, 0) scale(1); }
+    40%       { transform: translate(0, 0) scale(0.85); }
+    42%       { transform: translate(0, 0) scale(1); }
+    90%       { opacity: 1; transform: translate(0, 0) scale(1); }
+    96%, 100% { opacity: 0; transform: translate(30px, 30px) scale(1); }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -178,6 +248,11 @@
     --animate-stage-tilt: none;
     --animate-chip-pulse: none;
     --animate-grow: none;
+    --animate-breathe: none;
+    --animate-photo-arrive: none;
+    --animate-lock-reveal: none;
+    --animate-kept-badge: none;
+    --animate-cursor-drag: none;
   }
 }
 
@@ -223,28 +298,18 @@
   animation: var(--animate-shn);
 }
 
-/* Chip with staggered pulse — mockup `.sg`.
-   Used by SignIn (10 chips across two rows, emerald for methods +
-   violet for wallets; the second row sets `--chip-color:
-   var(--color-violet)` per-chip). Base style + pulse; per-chip
-   overrides via inline `--chip-i` and `--chip-color`. See
-   `--animate-chip-pulse` in @theme for the keyframe and the
-   reduced-motion override.
+/* Chip with staggered pulse — landing sign-in.
+   Base style + pulse; per-chip overrides via inline `--chip-i` and
+   `--chip-color`. See `--animate-chip-pulse` in @theme for the
+   keyframe and the reduced-motion override.
 
-   SignIn emits a particle from each chip via `::after` (defined in
-   the "SignIn — cosmic convergence" block below). `position: relative`
-   is set here so every consumer has a positioning context for any
-   future `::after` or `::before`, without the mobile-only particle
-   rule forcing it via a more specific selector.
+   `position: relative` gives every consumer a positioning context
+   for the `::after` particle that the "SignIn — cosmic convergence"
+   block below attaches (mobile-only).
 
    Mobile compacting
      At < md the base chip is smaller (6px/12px padding, 12px font).
-     This drops the two-row block ~30%, keeping the section's vertical
-     footprint tighter than the pre-mobile-compaction version.
-
-   NOTE (2026-10): AnyDevice no longer uses this utility — the device
-   rail replaced the chip cloud. Kept for SignIn, which still relies
-   on it. */
+     Keeps the two-row block's vertical footprint tight. */
 @utility chip-pulse {
   position: relative;
   display: inline-flex;
@@ -268,8 +333,8 @@
   }
 }
 
-/* Bar grow-in — mockup `.grow`. Consumed by Economy (three allocation
-   bars + the subsidy pool bar). The bar's final width is set inline
+/* Bar grow-in — landing economy. Consumed by the three allocation
+   bars and the subsidy pool bar. The bar's final width is set inline
    (`style={{ width: "N%" }}`); the animation interpolates from 0 to
    that width. Under reduced motion, `--animate-grow: none` makes the
    bar render at its final width immediately. */
@@ -287,16 +352,11 @@
      `background-size: 200% 100%` + a keyframe that slides the
      `background-position` from right to left produces a moving
      highlight across a gradient. This animates `background-position`
-     — no layout, no repaint outside the element's own box. Stays on
-     the compositor for the same reason a `<marquee>` used to (well,
-     almost: it does not skip layout for gradients, but at 16px tall
-     on a card it is negligible).
+     — no layout, no repaint outside the element's own box.
 
    Reduced motion
      The animation is disabled and the element falls back to a flat
-     `--color-elevated` bar. Same shape, no motion. Anyone with a
-     motion sensitivity sees a neutral placeholder, not a pulsing
-     one.
+     `--color-elevated` bar. Same shape, no motion.
 
    Consumers should give the element a fixed height (h-4, h-5) and
    width (w-16, w-full) so the shimmer matches what will replace it.
@@ -324,9 +384,11 @@
   }
 }
 
-/* Ambient page background — legacy approximation, superseded on the
-   landing page by `<PageBackground />`. Preserved for pre-migration
-   pages. */
+/* Ambient page background — two soft radial glows over `--color-bg`.
+   Used by the landing (`(public)/page.tsx`) and the space shell
+   (`SpaceShell`). The landing layers a `<PageBackground />` component
+   on top of this for the parallax glow; the base treatment (the two
+   radials) comes from this utility. */
 @utility amb-bg {
   background:
     radial-gradient(900px 520px at 12% -8%, oklch(0.70 0.15 160 / 0.14), transparent 60%),
@@ -334,7 +396,10 @@
     var(--color-bg);
 }
 
-/* Photo tile name gradient overlay */
+/* Photo tile name gradient overlay.
+   Consumed by the old `VaultGallery` thumbnails (retired in Fase 10).
+   Kept until then so the legacy gallery does not lose its captions
+   mid-transition. */
 @utility tile-name {
   position: absolute;
   inset-inline: 0;
@@ -367,11 +432,11 @@
 }
 
 /* Full-viewport hero.
-   On tablet and desktop the hero should occupy at least one full
-   viewport minus the sticky navbar (84px), so the "first impression"
-   covers the fold and the next section starts below it. On mobile,
-   `dvh` adjusts for the browser chrome (URL bar showing/hiding) so
-   content is never clipped.
+   On tablet and desktop the landing hero should occupy at least one
+   full viewport minus the sticky navbar (84px), so the "first
+   impression" covers the fold and the next section starts below it.
+   On mobile, `dvh` adjusts for the browser chrome (URL bar
+   showing/hiding) so content is never clipped.
 
    Cascade of fallbacks:
      100vh   — every browser; on mobile this is "large viewport"
@@ -386,21 +451,21 @@
    Browsers pick the last declaration they understand; older
    browsers fall back to `100vh` (content may extend slightly past
    the fold on mobile, but no clipping on tablet/desktop where the
-   primary use case is). Do not reorder — the fallback chain only
-   works in this order.
+   primary use case is).
 
    Why 84px: the navbar height (`h-[84px]` in `navbar.tsx`). Keeping
-   this in sync means the hero fills the viewport exactly, with the
-   navbar sitting on top. If the navbar height ever changes, update
-   both places (this utility and `h-[84px]` in `navbar.tsx`). The
-   comment in `navbar.tsx` points here. */
+   this in sync means the hero fills the viewport exactly. If the
+   navbar height changes, update both places. */
 @utility hero-viewport {
   min-height: calc(100vh - 84px);
   min-height: calc(100svh - 84px);
   min-height: calc(100dvh - 84px);
 }
 
-/* Legacy responsive container */
+/* Legacy responsive container.
+   Currently consumed by the old `VaultGallery` / `UploadOrchestrator`
+   (retired in Fase 10). Kept until then so their layout does not
+   collapse mid-transition. */
 @utility container-responsive {
   width: 100%;
   margin-left: auto;
@@ -465,18 +530,17 @@
    Mobile (< sm): four statements become an accordion — collapsed by
    default, one open at a time, first open on mount so the pattern is
    legible without interaction. Collapsed rows (~56px each) reduce the
-   section's vertical footprint by ~55% versus the previous flat stack
-   while keeping every statement's full text in the DOM.
+   section's vertical footprint by ~55% versus a flat stack while
+   keeping every statement's full text in the DOM.
 
    Desktop (≥ sm): accordion hidden, the original 2-column grid renders.
    Each breakpoint reads the same `statements` array — no duplication.
 
    Height animation
      `grid-template-rows: 0fr → 1fr` on a wrapper whose single child
-     has `overflow: hidden`. This is the modern replacement for
-     `max-height` hacks: no magic numbers, no JS measurement, works
-     with variable-length translations. Supported in every browser
-     Next.js 16 targets (Chrome 107+, Safari 16+, Firefox 66+).
+     has `overflow: hidden`. The modern replacement for `max-height`
+     hacks: no magic numbers, no JS measurement, works with
+     variable-length translations.
 
    Reduced motion
      Transition removed; the toggle still works instantly. No
@@ -484,9 +548,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
-  /* Height-animating wrapper. The single child must have
-     `overflow: hidden` — without it the collapsing row would show
-     its content spilling out. */
   .sovereign-body {
     display: grid;
     grid-template-rows: 0fr;
@@ -505,8 +566,6 @@
     }
   }
 
-  /* Chevron: rotates 90° when the item is open. `transition` on
-     transform only; the icon never moves in any other way. */
   .sovereign-chevron {
     transition: transform 300ms var(--ease-out);
   }
@@ -543,7 +602,7 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
-  /* ── Portal — rotating conic gradient behind the card ────────────
+  /* Portal — rotating conic gradient behind the card.
      `inset: -30% -20% -20%` bleeds upward into the gap toward the
      chips and outward from the card edges. `pointer-events: none`
      so the glow never intercepts clicks. */
@@ -581,7 +640,7 @@
     }
   }
 
-  /* ── Emitted particles — one per chip, staggered ─────────────────
+  /* Emitted particles — one per chip, staggered.
      Base `::after` is invisible (opacity 0) so the rule can exist
      without a media query and still render nothing on desktop or
      under reduced motion. The animation (mobile + no-reduce) brings
@@ -602,7 +661,6 @@
   }
 
   @keyframes chip-emit {
-    /* Charge-up: small pulse and glow at the chip. */
     0%, 25% {
       transform: translateY(0) scale(0);
       opacity: 0;
@@ -618,7 +676,6 @@
       opacity: 0.85;
       box-shadow: 0 0 4px var(--chip-color, var(--color-emerald));
     }
-    /* Fall toward the card, dissolving. */
     100% {
       transform: translateY(90px) scale(0.25);
       opacity: 0;
@@ -669,38 +726,26 @@
        travels left→right.
 
    Geometry
-     Icons are 44px on both breakpoints. The first icon is flush to
-     the rail's inline-start; the last icon is flush to inline-end
-     (via `justify-between` on desktop; via the natural leading edge
-     of each `<li>` on mobile). Icon centers are therefore 22px in
-     from each edge.
-       Desktop line: from 22px to (100% - 22px), at y=22px.
-       Desktop dot:  travels that same range, centered on the line.
-       Mobile line:  from 22px to (100% - 22px), at x=22px.
-       Mobile dot:   travels that same range, centered on the line.
-     The `-3px` negative margins on the 6px dot center it on those
-     coordinates.
+     Icons are 44px on both breakpoints. Icon centers are 22px in
+     from each edge. Line and dot share those coordinates; the `-3px`
+     negative margins on the 6px dot center it on them.
 
    RTL warning
      The geometry below uses physical `left` / `right` / `top` /
-     `bottom` — not logical properties. This is deliberate for the two
+     `bottom` — not logical properties. Deliberate for the two
      locales currently shipped (`en`, `es`, both LTR). When Arabic
-     (`ar`) is added to `AVAILABLE_LOCALES`, this block must be
-     converted to logical properties in one pass:
+     (`ar`) is added to `AVAILABLE_LOCALES`, convert in one pass:
        `left`  → `inset-inline-start`
        `right` → `inset-inline-end`
-     and the linear-gradient angle must flip (`to right` → `to left`
-     via `to inline-end`). The keyframes' endpoints then also need to
-     use `inset-inline-start` / `inset-inline-end` instead of `left` /
-     `top`. Not done today; documented so the RTL pass is a mechanical
-     edit, not a re-derivation.
+     and flip the linear-gradient angle. Same for the keyframes'
+     endpoints. Not done today; documented so the RTL pass is a
+     mechanical edit, not a re-derivation.
 
    Motion
-     The dot has a fixed 8s linear loop. It fades in during the first
-     15% and out during the last 15% so it does not "pop" at the ends.
+     The dot has an 8s linear loop. Fades in during the first 15% and
+     out during the last 15% so it does not "pop" at the ends.
      `prefers-reduced-motion: reduce` disables the animation and hides
-     the dot (opacity 0); the line and nodes stay visible, and the
-     section is fully readable — just still.
+     the dot (opacity 0); the line and nodes stay visible.
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
@@ -708,7 +753,6 @@
     position: relative;
   }
 
-  /* ── Rail line — behind the icons, gradient fade at edges ──────── */
   .device-rail-line {
     position: absolute;
     pointer-events: none;
@@ -746,7 +790,6 @@
     }
   }
 
-  /* ── Traveling dot ─────────────────────────────────────────────── */
   .device-rail-dot {
     position: absolute;
     width: 6px;
@@ -802,7 +845,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 @layer components {
-  /* ── Progress bars ─────────────────────────────────────────────── */
   @keyframes journey-progress-fill {
     from { background-size: 0% 100%; }
     to   { background-size: 100% 100%; }
@@ -821,7 +863,6 @@
     animation-play-state: var(--journey-progress-play-state, running);
   }
 
-  /* ── Optimize slide: two bars breathing (100% → 50% → 100%) ──── */
   .journey-shrink {
     animation: journey-shrink 3s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
   }
@@ -830,7 +871,6 @@
     40%, 60% { width: 50%; }
   }
 
-  /* ── Lock slide: sweep loops 0% → 100% → 0% ───────────────────── */
   .journey-sweep {
     animation: journey-sweep 4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
   }
@@ -840,7 +880,6 @@
     100%      { width: 0%; }
   }
 
-  /* ── Notary slide: beacon subtly pulses (scale + opacity) ────── */
   .journey-beacon {
     animation: journey-beacon 2s cubic-bezier(0.34, 1.4, 0.5, 1) infinite;
   }
@@ -849,7 +888,6 @@
     50%      { transform: scale(1);    opacity: 1;   }
   }
 
-  /* ── Notary slide: three bars grow → hold → shrink, staggered ─ */
   .journey-bar {
     animation: journey-bar 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
     animation-delay: var(--journey-bar-delay, 0s);
@@ -860,9 +898,7 @@
     90%, 100% { width: 0; }
   }
 
-  /* ── Network slide: dashed lines always visible + dash motion ──
-     Shared with `components/landing/network-viz.tsx` and
-     `components/landing/sign-in.tsx`. */
+  /* Dashed lines — shared with `network-viz.tsx` and `sign-in.tsx`. */
   .journey-line {
     stroke-dasharray: 3 7;
     stroke-dashoffset: 0;
@@ -873,7 +909,6 @@
     to { stroke-dashoffset: -20; }
   }
 
-  /* ── Network slide: satellites subtly pulse (scale 0.92 → 1) ── */
   .journey-node {
     transform-box: fill-box;
     transform-origin: center;
@@ -885,7 +920,6 @@
     50%      { transform: scale(1); }
   }
 
-  /* Reduced motion: all journey micro-animations off. */
   @media (prefers-reduced-motion: reduce) {
     .journey-shrink,
     .journey-sweep,
@@ -920,7 +954,6 @@
     }
   }
 
-  /* Stage tilt — the 3D drift on the parent layer. */
   @media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
     .journey-tilt {
       animation: stage-tilt 14s ease-in-out infinite alternate;
@@ -958,6 +991,17 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overflow-x: clip;
+    /* Reserve the scrollbar gutter even when no scrollbar is present.
+       Prevents the 15px horizontal "jump" that happens when navigating
+       between a page with a scrollbar and one without (e.g. landing →
+       /space on short content, or modal-open/closed). */
+    scrollbar-gutter: stable;
+    /* Do not let the browser fake a weight or italic the font family
+       does not ship. Instrument_Serif is loaded at 400 only — a
+       synthesized bold would render as a smeared stroke; the correct
+       fallback is to keep 400. Geist Sans ships 400-700 (real bold),
+       so this does not affect UI text. */
+    font-synthesis: none;
   }
 
   @media (prefers-reduced-motion: no-preference) {
@@ -979,38 +1023,24 @@
     outline-offset: 2px;
   }
 
+  /* Selection color — emerald tint keeps selected text tied to the
+     brand instead of the browser-default blue. Background alpha is
+     low enough that the underlying text stays fully readable in both
+     themes; the ink color is inherited so light and dark modes both
+     resolve correctly. */
+  ::selection {
+    background: oklch(0.70 0.15 160 / 0.35);
+    color: var(--color-ink);
+  }
+
   .tabular {
     font-variant-numeric: tabular-nums;
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Legacy compatibility — surfaces still consumed by pre-migration pages
+   Still present (retained until their consumer retires):
+     - `@utility container-responsive` — used by the old
+       `VaultGallery` / `UploadOrchestrator`, rewired in Fase 10.
+     - `@utility tile-name` — same consumers.
    ═══════════════════════════════════════════════════════════════════════ */
-
-.mobile-menu {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s ease-out;
-}
-.mobile-menu.open {
-  max-height: 300px;
-  transition: max-height 0.3s ease-in;
-}
-
-.icon-wrapper {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 6px;
-  border-radius: 9999px;
-  background: var(--color-elevated);
-  border: 1px solid var(--color-hairline);
-  color: var(--color-emerald-text);
-}
-.icon-svg {
-  width: 24px;
-  height: 24px;
-}
