@@ -1,42 +1,51 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
-import { Web3Provider } from "@components/web3-provider";
-import { ThemeProvider } from "@context/ThemeContext";
-import { I18nProvider } from "@context/I18nContext";
-import { WalletProvider } from "@context/WalletContext";
-import { LoginModalProvider } from "@context/LoginModalContext";
-import { LoginModal } from "@components/login/login-modal";
+import { Providers } from "./providers";
+import { geistSans, geistMono, instrumentSerif } from "@lib/fonts";
+import { themeInitScript } from "@lib/theme/init-script";
 
 /**
- * Geist Sans — all UI text.
- * Geist Mono — addresses, hashes, prices, counters, mono labels.
- * Instrument Serif — hero H1s, featured Moment titles, public page name only.
+ * Root layout — the only `<html>` for the whole app.
  *
- * Each font exposes a CSS variable that `globals.css` @theme consumes as
- * `--font-sans`, `--font-mono`, `--font-serif`. `display: swap` avoids
- * invisible text during font load.
+ * Composition only
+ *   Fonts, theme init script and providers live in their own modules
+ *   (`lib/fonts.ts`, `lib/theme/init-script.ts`, `app/providers.tsx`).
+ *   This file composes them into `<html>` and `<body>`. Kept minimal
+ *   so the app's document structure is readable at a glance.
+ *
+ * Provider order and rationale
+ *   See `app/providers.tsx` — the doc lives with the code it
+ *   describes.
+ *
+ * `<html lang>` and `<html dir>`
+ *   Hardcoded to `en` / `ltr`, matching the default locale.
+ *   `I18nProvider` updates both attributes on mount if the user's
+ *   stored preference differs. After the route restructure, each
+ *   `[locale]` root layout will set `lang` and `dir` on the server,
+ *   and this file moves those attributes into a shared `RootDocument`
+ *   both groups render.
+ *
+ * `<html data-theme>`
+ *   The `dark` default is overwritten by `themeInitScript` before
+ *   paint. `suppressHydrationWarning` is required because the script
+ *   mutates the attribute before React hydrates — see
+ *   `lib/theme/init-script.ts`.
+ *
+ * `<head>`
+ *   - `<Script id="theme-init" strategy="beforeInteractive">` — runs
+ *     before paint, no FOUC.
+ *   - `<link rel="stylesheet" href="/output.css">` — the Tailwind CLI
+ *     emits `public/output.css`; the `<link>` tag is the connection.
+ *   - `<link rel="icon">` — favicon.
+ *
+ * Metadata
+ *   `title`, `description`, and the third-party verification token
+ *   (TalentApp) are declared here. The token is a build-time
+ *   constant; if it ever needs to vary by environment, move it to
+ *   `NEXT_PUBLIC_TALENTAPP_VERIFICATION` in `next.config` / `.env`
+ *   and read it in `metadata`.
  */
-const geistSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-geist-mono",
-  display: "swap",
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-instrument-serif",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
   title: "Kipio — Your photos are yours.",
   description:
@@ -57,92 +66,6 @@ export const viewport: Viewport = {
   ],
 };
 
-/**
- * Sets `data-theme` on <html> before first paint so the user never sees a
- * flash of the wrong theme. Reads the same storage key that ThemeContext
- * writes, defaults to system. Errors are swallowed so private modes and
- * blocked-storage environments do not break rendering.
- *
- * Why `<Script>` and not `<script>`
- *   React 19 warns when it encounters a `<script>` tag inside the React
- *   tree during client rendering: "Scripts inside React components are
- *   never executed when rendering on the client." The `<script>` did
- *   execute on first HTML load (it is in the server-rendered `<head>`),
- *   but any subsequent client-side render of that tree re-encounters
- *   the tag and warns.
- *
- *   `next/script` with `strategy="beforeInteractive"` is the Next.js
- *   pattern for a script that must run before hydration. It is
- *   injected into the initial HTML `<head>` (so it still executes
- *   before paint, no FOUC), and it is not re-rendered by React — no
- *   warning. `id` is required by `next/script` for inline scripts.
- *
- * `suppressHydrationWarning` on `<html>` is still needed
- *   The script mutates `data-theme` on `<html>` before React hydrates.
- *   React sees `<html data-theme="light">` on the client when the
- *   server sent `data-theme="dark"` — a legitimate mismatch caused by
- *   client-side state. `suppressHydrationWarning` silences the warning
- *   for that one attribute. Without it, every reload of a non-dark
- *   theme logs a hydration error.
- */
-const themeInitScript = `
-(function(){
-  try {
-    var stored = localStorage.getItem("kipio:theme");
-    var theme = (stored === "dark" || stored === "light" || stored === "system") ? stored : "system";
-    document.documentElement.dataset.theme = theme;
-  } catch (e) {
-    document.documentElement.dataset.theme = "system";
-  }
-})();
-`;
-
-/**
- * Root layout — the only `<html>` for the whole app.
- *
- * Provider order
- *   `<ThemeProvider>` → `<I18nProvider>` → `<WalletProvider>` →
- *   `<LoginModalProvider>` → `<Web3Provider>` → children + `<LoginModal />`
- *
- *   - ThemeProvider first: it drives `data-theme` on `<html>`, which
- *     every other layer's CSS depends on.
- *
- *   - I18nProvider second: every downstream `t()` call resolves
- *     through it. No dependency on wallet or wagmi.
- *
- *   - WalletProvider third: session state (`context/WalletContext.tsx`).
- *     Independent of wagmi by design — the login surface must not pay
- *     for the legacy wagmi stack.
- *
- *   - LoginModalProvider fourth: history integration for the login
- *     modal. Reads `window.history` in effects only; SSR-safe.
- *
- *   - Web3Provider innermost: wagmi + TanStack Query, needed only by
- *     the legacy `/space` (formerly `/dashboard`) and its children.
- *     Kept innermost so nothing above it waits for wagmi init.
- *
- *   `<LoginModal />` renders outside `Web3Provider` because it does
- *   not use wagmi hooks. It reads `useWallet()` and `useLoginModal()`
- *   — both available in the ancestors. Placing it outside `Web3Provider`
- *   keeps the login flow independent of the legacy stack at the tree
- *   level, not just at the import level.
- *
- *   `LoginModal` must be a child of `LoginModalProvider` — the native
- *   `<dialog>` is opened via `useLoginModal().isOpen`.
- *
- * `<html lang>` and `<html dir>`
- *   Hardcoded to `en` / `ltr` here, matching the default locale.
- *   `I18nProvider` updates both attributes on mount if the user's
- *   stored preference differs — see its header. After the route
- *   restructure, each `[locale]` root layout will set `lang` and `dir`
- *   on the server, and this file's hardcoded attributes will move into
- *   a shared `RootDocument` component that both groups render.
- *
- * `<html data-theme>`
- *   The `dark` default is overwritten by `themeInitScript` before
- *   paint, so the value here is only the fallback for the one frame
- *   between HTML parse and inline script execution.
- */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
@@ -161,16 +84,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="icon" href="/favicon.ico" />
       </head>
       <body>
-        <ThemeProvider>
-          <I18nProvider>
-            <WalletProvider>
-              <LoginModalProvider>
-                <Web3Provider>{children}</Web3Provider>
-                <LoginModal />
-              </LoginModalProvider>
-            </WalletProvider>
-          </I18nProvider>
-        </ThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
