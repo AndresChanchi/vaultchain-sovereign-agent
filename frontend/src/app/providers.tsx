@@ -16,7 +16,8 @@
  *
  * Provider order
  *   `<ThemeProvider>` → `<I18nProvider>` → `<WalletProvider>` →
- *   `<LoginModalProvider>` → `<Web3Provider>` → children + `<LoginModal />`
+ *   `<KipioProvider>` → `<LoginModalProvider>` → `<Web3Provider>` →
+ *   children + `<LoginModal />`
  *
  *   - ThemeProvider first: drives `data-theme` on `<html>`, which
  *     every other layer's CSS depends on.
@@ -26,10 +27,16 @@
  *     truth for authenticated identity. Independent of wagmi by
  *     design; the login surface (modal, /auth/callback, /space shell)
  *     reads only `useWallet()`.
- *   - LoginModalProvider fourth: `LoginModal` history integration.
+ *   - KipioProvider fourth: cryptographic operations (vault master
+ *     key, encrypt/decrypt, crypto worker). Depends on
+ *     `WalletProvider.signTypedData` to derive the AES key — that is
+ *     why it must sit inside `WalletProvider`. It does NOT depend on
+ *     wagmi; the signer is session-aware (wallet → provider popup,
+ *     OAuth → local ephemeral signature).
+ *   - LoginModalProvider fifth: `LoginModal` history integration.
  *   - Web3Provider innermost: wagmi + TanStack Query. Kept innermost
  *     because it is currently only used by the legacy upload flow
- *     that Phase 10 rewrites. Nothing above it needs it.
+ *     that Fase 10 rewrites. Nothing above it needs it.
  *
  *   `<LoginModal />` sits outside `Web3Provider` — it does not use
  *   wagmi hooks. Keeps the login flow independent of the legacy
@@ -41,7 +48,7 @@
  * Fase 10 retirement note
  *   When the legacy upload flow is rewritten against `WalletContext`,
  *   `<Web3Provider>` becomes dead code and is removed from this file.
- *   The other four stay.
+ *   The other five stay — they are the runtime the new product uses.
  */
 
 import type { ReactNode } from "react";
@@ -49,6 +56,7 @@ import { Web3Provider } from "@components/web3-provider";
 import { ThemeProvider } from "@context/ThemeContext";
 import { I18nProvider } from "@context/I18nContext";
 import { WalletProvider } from "@context/WalletContext";
+import { KipioProvider } from "@context/KipioContext";
 import { LoginModalProvider } from "@context/LoginModalContext";
 import { LoginModal } from "@components/login/login-modal";
 
@@ -57,10 +65,12 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider>
       <I18nProvider>
         <WalletProvider>
-          <LoginModalProvider>
-            <Web3Provider>{children}</Web3Provider>
-            <LoginModal />
-          </LoginModalProvider>
+          <KipioProvider>
+            <LoginModalProvider>
+              <Web3Provider>{children}</Web3Provider>
+              <LoginModal />
+            </LoginModalProvider>
+          </KipioProvider>
         </WalletProvider>
       </I18nProvider>
     </ThemeProvider>
