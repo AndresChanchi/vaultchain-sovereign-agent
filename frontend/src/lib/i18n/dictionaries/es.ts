@@ -19,8 +19,10 @@
 import type { Dictionary } from "../types";
 import { landing } from "./es/landing";
 import { login } from "./es/login";
+import { space } from "./es/space";
 
 export const es = {
   landing,
   login,
+  space,
 } satisfies Dictionary;

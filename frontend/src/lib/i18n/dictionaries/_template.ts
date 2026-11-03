@@ -34,8 +34,10 @@
 import type { Dictionary } from "../types";
 import { landing } from "./_template/landing";
 import { login } from "./_template/login";
+import { space } from "./_template/space";
 
 export const xx = {
   landing,
   login,
+  space,
 } satisfies Dictionary;

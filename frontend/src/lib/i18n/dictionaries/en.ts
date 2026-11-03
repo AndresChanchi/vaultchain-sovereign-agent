@@ -28,8 +28,10 @@
 
 import { landing } from "./en/landing";
 import { login } from "./en/login";
+import { space } from "./en/space";
 
 export const en = {
   landing,
   login,
+  space,
 };
