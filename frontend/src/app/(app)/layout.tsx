@@ -1,33 +1,35 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { SpaceShell } from "@components/space/space-shell";
+import { SpaceRefreshProvider } from "@context/SpaceRefreshContext";
+import { UploadDialogProvider } from "@context/UploadDialogContext";
+import { UploadDialog } from "@components/space/upload/upload-dialog";
 
 /**
- * Authenticated route group — everything under `(app)/` renders inside
- * the `SpaceShell` chrome (sidebar on desktop, dock on mobile).
+ * Authenticated route group — every route under `(app)/` renders
+ * inside `SpaceShell` (sidebar on desktop, dock on mobile/tablet).
  *
- * The `(app)` group does not add a URL segment. `(app)/space/page.tsx`
- * serves `/space`, and future routes (`(app)/library/`, `(app)/moments/`,
- * …) inherit the shell for free.
+ * Provider order
+ *   `<SpaceRefreshProvider>` → `<UploadDialogProvider>` →
+ *   `<SpaceShell>` + `<UploadDialog>`
  *
- * Gate
- *   The shell gates on `WalletContext.status`. `"restoring"` → blank
- *   amb-bg while the session resumes from `sessionStorage`.
- *   `"disconnected"` → `router.replace("/")`. `"connected"` → chrome
- *   + page.
+ *   - SpaceRefresh first: reactive reads (`useSpaceStats`,
+ *     `useSpaceGallery`) watch `version` and refetch on `bump()`.
+ *   - UploadDialogProvider second: open/close state for the upload
+ *     modal. Independent of refresh — the two do not talk to each
+ *     other (registerUpload already calls bump() internally; the
+ *     dialog does not trigger refetches itself).
+ *
+ * `<UploadDialog>` sits OUTSIDE `<SpaceShell>` — it is a modal
+ * overlay, not content inside `<main>`. The dialog is portaled to the
+ * top layer by `<dialog>.showModal()`, so layout position does not
+ * affect rendering, but keeping it out of the shell makes the intent
+ * clear: it is a chrome-level overlay, not page content.
  *
  * `robots: { index: false, follow: false }`
- *   `/space` is an authenticated surface. Crawlers see the shell's
- *   "restoring" state (SSR) and never the real content, so indexing
- *   it produces a useless entry. Next.js App Router applies layout
- *   metadata to every route in the group — one field covers `/space`
- *   and every future `(app)/*` route. Complementary to `robots.ts`
- *   disallow (defense in depth: even if a crawler ignores the
- *   disallow, it honours `<meta name="robots">`).
- *
- * Server component
- *   Thin wrapper — no data, no effects. `<SpaceShell>` handles the
- *   client-side gate.
+ *   `/space` is authenticated. Crawlers see the shell's "restoring"
+ *   state (SSR) and never the real content. Next.js App Router
+ *   applies layout metadata to every route in the group.
  */
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -38,5 +40,12 @@ export default function AppGroupLayout({
 }: {
   children: ReactNode;
 }) {
-  return <SpaceShell>{children}</SpaceShell>;
+  return (
+    <SpaceRefreshProvider>
+      <UploadDialogProvider>
+        <SpaceShell>{children}</SpaceShell>
+        <UploadDialog />
+      </UploadDialogProvider>
+    </SpaceRefreshProvider>
+  );
 }

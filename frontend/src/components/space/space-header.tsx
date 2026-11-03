@@ -42,12 +42,14 @@ import { usePathname } from "next/navigation";
 import { useI18n } from "@context/I18nContext";
 import { KipioMark } from "@components/ui/kipio-mark";
 import { LanguagePicker } from "@components/ui/language-picker";
+import { useUploadDialog } from "@context/UploadDialogContext";
 import { SpaceAccountAvatar } from "./space-account-avatar";
 import { SearchIcon, UploadIcon } from "./space-icons";
 
 export function SpaceHeader() {
   const { t } = useI18n();
   const pathname = usePathname();
+  const { open: openUpload } = useUploadDialog();
   const breadcrumb = pathname === "/space" ? t("space.sidebar.home") : "";
   const soon = t("space.sidebar.comingSoon");
 
@@ -89,10 +91,8 @@ export function SpaceHeader() {
           <LanguagePicker />
           <button
             type="button"
-            disabled
-            aria-disabled="true"
-            title={soon}
-            className="flex h-10 cursor-not-allowed items-center gap-2 rounded-[14px] bg-emerald px-4 text-sm font-semibold text-on-emerald opacity-60"
+	    onClick={openUpload}
+            className="flex h-10 items-center gap-2 rounded-[14px] bg-emerald px-4 text-sm font-semibold text-on-emerald transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02]"
           >
             <UploadIcon size={16} />
             {t("space.upload.button")}
