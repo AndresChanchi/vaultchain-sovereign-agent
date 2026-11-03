@@ -4,79 +4,73 @@
  * OAuth 2.0 Authorization Code + PKCE — browser-only ceremony.
  *
  * Implements the flow for providers that support PKCE on public
- * clients (no `client_secret`): Google, Microsoft, X.
+ * clients: Google, Microsoft, X.
  *
- * Providers that require a secret at the token endpoint (GitHub,
- * Apple) or do not expose OIDC with PKCE on public clients (Twitch)
- * are reported as `relay_required` — the UI shows the honest "needs
- * a secure relay" note, never a fake success.
+ * Google's token endpoint requires `client_secret` even with PKCE —
+ * a known deviation from RFC 7636, documented by Google in their
+ * OAuth 2.0 for Web Server Applications guide. The value lives in
+ * the bundle (`NEXT_PUBLIC_GOOGLE_CLIENT_SECRET`), which is
+ * acceptable *for Google specifically* because PKCE is the real
+ * security: without the `code_verifier`, the authorization code is
+ * useless to any interceptor. Do NOT replicate this pattern for
+ * Microsoft or X — both honour PKCE-only exchanges; adding a secret
+ * there would weaken the flow without any benefit.
+ *
+ * Providers that require a relay (GitHub, Apple, Twitch) are reported
+ * as `relay_required` — the UI shows the honest "needs a secure
+ * relay" note, never a fake success.
  *
  * Reference
  *   RFC 9700 (BCP 240, January 2025) — public clients MUST use PKCE;
  *   the implicit grant is deprecated.
  *   RFC 7636 — PKCE mechanics.
- *   RFC 10017 — OAuth 2.0 for Browser-Based Apps, the browser threat
- *   model this hook implements against.
+ *   RFC 10017 — OAuth 2.0 for Browser-Based Apps.
+ *   Google OAuth 2.0 for Web Server Applications — documents the
+ *   `client_secret` requirement at the token endpoint.
  *
  * Security invariants
  *   - `code_verifier` is 64 chars from the unreserved set, generated
  *     with `crypto.getRandomValues` and mapped WITHOUT modulo bias
- *     (rejection sampling at 192/256). RFC 7636 §4.1 requires
- *     sufficient entropy; biased modulo mapping weakens it.
- *   - `state` (CSRF) is 32 bytes hex, compared in CONSTANT TIME. A
- *     timing leak on an anti-CSRF nonce is a known OAuth attack
- *     vector (RFC 9700 §2.1.1).
+ *     (rejection sampling at 192/256). RFC 7636 §4.1.
+ *   - `state` (CSRF) is 32 bytes hex, compared in CONSTANT TIME.
+ *     RFC 9700 §2.1.1.
  *   - OIDC `nonce` is generated and validated against `id_token`
- *     where the provider returns one. Without it, a stolen ID token
- *     can be replayed (OIDC Core §3.1.2.1).
+ *     where the provider returns one. OIDC Core §3.1.2.1.
  *   - `id_token` claims `iss`, `aud`, `exp`, `nonce` are validated
  *     against the provider's expected values. The signature is NOT
  *     verified — no backend. Acceptable because the token comes
  *     directly from the provider over TLS in response to our PKCE
- *     exchange; an attacker who can forge a token in this position
- *     already controls the browser. `sub` is used as a correlation
- *     key, never as an authorization grant.
- *   - Tokens are NOT persisted. Only the provider and — when the
- *     provider returns an ID token — the OIDC `sub` are kept, inside
- *     the session created by `connectOAuth`. Access tokens are
- *     discarded.
- *   - `redirect_uri` must be registered exactly at the provider (RFC
- *     9700 §2.1, no wildcards).
+ *     exchange.
+ *   - Tokens are NOT persisted. Only the provider and — when
+ *     present — the OIDC `sub` are kept inside the session created
+ *     by `connectOAuth`.
+ *   - `redirect_uri` must match the provider registration exactly.
  *   - Fetch is aborted on unmount via `AbortController`.
  *
  * Why no refresh token
- *   `access_type=offline` / `prompt=consent` would return a refresh
- *   token, but there is nowhere safe to store it (`sessionStorage`
- *   is XSS-readable). The session lifetime is the tab's lifetime.
- *   When the tab closes, the user re-authenticates. Documented; not
- *   a limitation for the current scope.
+ *   Nowhere safe to store it (`sessionStorage` is XSS-readable). The
+ *   session lifetime is the tab's. When the tab closes, the user
+ *   re-authenticates.
  *
  * The `success` phase
  *   After the token exchange completes and `connectOAuth` runs, the
- *   hook transitions to `phase: "success"`. Without this phase, the
- *   caller cannot distinguish "idle because no callback ran" from
- *   "idle because the exchange succeeded" — and would either
- *   redirect prematurely or never redirect at all. The callback page
- *   (`app/auth/callback/page.tsx`) drives its redirect from this
- *   phase.
+ *   hook transitions to `phase: "success"`. Without it, the caller
+ *   cannot distinguish "idle because no callback ran" from "idle
+ *   because the exchange succeeded."
  *
  * The `redirectUri` guard
  *   The callback page computes `redirectUri` from
- *   `window.location.origin` in an effect (it is empty on the server
- *   and during the first client render). If `handleCallback` runs
+ *   `window.location.origin` in an effect. If `handleCallback` runs
  *   with an empty `redirectUri`, the token exchange sends
- *   `redirect_uri=""` and the provider rejects it — and
- *   `callbackHandled.current` then prevents retrying. The guard
- *   `if (!redirectUri) return;` in the effect prevents the first
- *   call. The second call (with the actual origin) proceeds.
+ *   `redirect_uri=""` and the provider rejects it. The guard
+ *   `if (!redirectUri) return;` prevents that.
  *
  * `subject` — the OIDC `sub` claim
  *   Parsed and validated against the ID token. Passed to
  *   `WalletContext.connectOAuth(provider, subject)` so the session
  *   carries the correlation key the contract layer will use to map
- *   the OAuth identity to a CREATE2 address (Fase 9+). Providers
- *   that do not return an ID token (X) or that require a relay
- *   (GitHub, Apple, Twitch) simply omit it.
+ *   the OAuth identity to a CREATE2 address. Providers without an
+ *   ID token (X) omit it; relay providers never reach this code.
  *
  * TODO: when the serverless relay ships (Marlin Oyster / Fleek
  *       Functions), add GitHub / Apple / Twitch by routing their
@@ -84,7 +78,7 @@
  *       flow is identical; only `tokenUrl` changes.
  * TODO: DPoP (RFC 9449) is the 2026 best practice for public-client
  *       token binding. None of the three PKCE providers advertise
- *       support yet. Add when they do.
+ *       support yet.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -99,6 +93,15 @@ type PkceProviderConfig = {
   authUrl: string;
   tokenUrl: string;
   clientId: string;
+  /**
+   * Optional. Only Google requires it — its token endpoint rejects
+   * PKCE exchanges without a `client_secret`, a documented deviation
+   * from RFC 7636. The value lives in the bundle
+   * (`NEXT_PUBLIC_GOOGLE_CLIENT_SECRET`), which is acceptable *for
+   * Google* because PKCE is the real security. Do NOT set this on
+   * Microsoft or X — both honour PKCE-only exchanges.
+   */
+  clientSecret?: string;
   scopes: string;
   /** Expected `iss` claim in the id_token. */
   issuer: string;
@@ -113,6 +116,10 @@ const PKCE_PROVIDERS: Partial<Record<OAuthProvider, PkceProviderConfig>> = {
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
+    // Google-specific: PKCE alone is rejected by the token endpoint.
+    // See "Google's token endpoint requires `client_secret`" in the
+    // file header.
+    clientSecret: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_SECRET ?? "",
     scopes: "openid email profile",
     issuer: "https://accounts.google.com",
     extraAuthParams: { access_type: "online", prompt: "select_account" },
@@ -124,9 +131,10 @@ const PKCE_PROVIDERS: Partial<Record<OAuthProvider, PkceProviderConfig>> = {
     tokenUrl:
       "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     clientId: process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID ?? "",
+    // No `clientSecret` — Microsoft honours PKCE for SPA clients.
     // No `offline_access` — a refresh token would be unusable (no
     // safe storage) and requesting it widens the consent screen for
-    // no gain. See "Why no refresh token" in the file header.
+    // no gain.
     scopes: "openid email profile",
     issuer: "https://login.microsoftonline.com",
     usesNonce: true,
@@ -135,6 +143,7 @@ const PKCE_PROVIDERS: Partial<Record<OAuthProvider, PkceProviderConfig>> = {
     authUrl: "https://x.com/i/oauth2/authorize",
     tokenUrl: "https://api.x.com/2/oauth2/token",
     clientId: process.env.NEXT_PUBLIC_X_CLIENT_ID ?? "",
+    // No `clientSecret` — X honours PKCE for public clients.
     // X returns no `id_token` for this scope set — the `nonce` is
     // sent but never validated. `usesNonce: true` documents the
     // intent; the validation branch checks `if (idToken)` before
@@ -596,6 +605,13 @@ export function useOAuthLogin(redirectUri: string): UseOAuthLoginResult {
         client_id: config.clientId,
         code_verifier: verifier,
       });
+
+      // Google rejects PKCE-only exchanges. See "Google's token
+      // endpoint requires `client_secret`" in the file header.
+      // Microsoft and X honour RFC 7636 and do not need this.
+      if (config.clientSecret) {
+        body.set("client_secret", config.clientSecret);
+      }
 
       const response = await fetch(config.tokenUrl, {
         method: "POST",
