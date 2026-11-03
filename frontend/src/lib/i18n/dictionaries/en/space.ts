@@ -78,19 +78,72 @@ export const space = {
     searchShortcut: "⌘K",
   },
 
-  /**
-   * Upload — the dialog shell (header, description, connect prompt).
-   * The pipeline body lives in `UploadOrchestrator` (rewired in
-   * Fase 10 to read from `WalletContext`).
-   */
   upload: {
     button: "Upload",
     dialogTitle: "Upload photos",
     dialogDescription: "Locked on your device. Kept in many places.",
-    connectPrompt: "Connect a wallet to upload.",
-    connectButton: "Connect wallet",
-  },
 
+    // OAuth gate (10.4)
+    oauthGateTitle: "Only wallets can upload",
+    oauthGateBody:
+      "Photos need a wallet that can sign. Sign in with a wallet to add photos to your space.",
+    oauthGateAction: "Switch to a wallet",
+
+    // Step 1 — Review
+    reviewTitle: "Review",
+    reviewOfTotal: "{current} of {total}",
+    reviewLockedNote: "Locked on your device. Nothing has left it yet.",
+    reviewTermsLabel: "How long to keep them",
+    reviewTerm30: "30 days",
+    reviewTerm1y: "1 year",
+    reviewTermForever: "Forever",
+    reviewTermFutureHint: "Only with the new contract",
+    reviewTermsHint:
+      "Not every photo needs forever. Shorter costs less. You can extend any time, but never shorten.",
+    reviewStorageLabel: "Storage · set by the network",
+    reviewFeeLabel: "Kipio fee",
+    reviewTotalLabel: "Total",
+    reviewPriceLoading: "—",
+    reviewEachPhotoNote: "Each photo is optimized and stored on its own.",
+    reviewContinue: "Continue",
+    reviewBack: "Back",
+
+    // Step 2 — Progress
+    progressTitle: "Uploading",
+    progressCurrentFile: "Uploading {name}",
+    progressOfTotal: "{current} of {total}",
+    progressItemLocked: "Locked on your device",
+    progressItemKept: "Kept in many places",
+    progressItemNoted: "Noted by the blind notary",
+    progressWaiting: "Waiting for approval…",
+    progressKeepOpen: "Keep this tab open until it finishes.",
+
+    // Step 3 — Kept
+    keptTitle: "Kept. They are yours.",
+    keptStepDone: "Done",
+    keptBody:
+      "Locked, noted and stored in many places. Only you can open them.",
+    keptOwnerLabel: "Owner",
+    keptIrysLabel: "Photo",
+    keptOpenSpace: "Open my space",
+    keptUploadMore: "Upload more",
+
+    // Errors
+    error: {
+      oauth: "Wallets can upload. Switch accounts to add photos.",
+      unlock: "Could not unlock your space. Try again.",
+      imageWorker: "The image optimizer did not load. Refresh and try again.",
+      irysInit: "Could not reach the storage network. Try again.",
+      funding: "Could not fund the upload. Check your wallet and try again.",
+      irysUpload: "The storage network rejected the upload. Try again.",
+      register: "The photo was uploaded but could not be recorded. Contact support.",
+      wrongChain: "Your wallet is on a different network. Switch back to try again.",
+      generic: "Something went wrong. Try again.",
+      retry: "Try again",
+      cancel: "Cancel",
+    },
+  },
+ 
   /** Welcome — 0-photo state (mockup `Welcome.dc.html`). */
   welcome: {
     eyebrow: "Your space is ready",
@@ -118,5 +171,31 @@ export const space = {
         body: "Invite them. Stop any time.",
       },
     },
+  },
+
+    /**
+   * Overview — the state shown when the space has at least one
+   * photo. Only `greeting` and `keptLabel` exist in 9.B; the rest
+   * of the sections (quick actions, expiring soon, recent,
+   * activity) add their keys as their sub-components ship.
+   */
+  overview: {
+    greeting: "Welcome back.",
+    subtitle: "Everything is locked and kept.",
+    keptLabel: "Photos kept",
+    recentTitle: "Recent uploads",
+    viewAll: "View all",
+    galleryError: "Could not load your photos.",
+    galleryEmpty: "No photos yet.",
+    quickActionsLabel: "Quick actions",
+    quickUpload: "Upload photos",
+    quickShare: "Share an album",
+    quickBackup: "Back up your access",
+    unlockTitle: "Unlock your space",
+    unlockBodyWallet:
+      "Sign with your wallet to unlock your photos. This is local — nothing leaves your device.",
+    unlockAction: "Unlock space",
+    unlocking: "Unlocking…",
+    unlockError: "Could not unlock your space. Try again.",
   },
 };
