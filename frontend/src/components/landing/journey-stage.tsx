@@ -321,7 +321,7 @@ export function JourneyStage() {
                   key={slide.kind}
                   data-active={i === current ? "true" : "false"}
                   aria-hidden={i !== current}
-                  className="journey-slide absolute left-1/2 top-1/2 w-[calc(100vw-60px)] max-w-[460px] aspect-[460/380] overflow-hidden rounded-[28px] border border-hairline bg-card p-3.5 shadow-[0_30px_60px_-24px_light-dark(rgba(12,19,36,0.3),rgba(0,0,0,0.6))]"
+                  className="journey-slide absolute left-1/2 top-1/2 w-[calc(100vw-60px)] max-w-[460px] aspect-[460/380] overflow-hidden rounded-[28px] border border-hairline bg-card p-3.5 shadow-[0_15px_30px_-15px_light-dark(rgba(12,19,36,0.3),rgba(0,0,0,0.6))] md:shadow-[0_30px_60px_-24px_light-dark(rgba(12,19,36,0.3),rgba(0,0,0,0.6))]"
                   style={{
                     transform: `translate(-50%, -50%) translate3d(var(--pos-${pos}-x), 0, var(--pos-${pos}-z)) rotateY(var(--pos-${pos}-ry))`,
                     opacity,

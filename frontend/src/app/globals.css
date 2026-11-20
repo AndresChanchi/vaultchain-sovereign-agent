@@ -962,6 +962,40 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   Mobile — targeted performance budget
+
+   iOS 15 Safari runs everything on a tighter GPU budget than desktop.
+   Rather than flatten the 3D journey stage (which the product design
+   wants to keep), this block targets the actual hot spots:
+
+     1. Glass — the dock is `position: fixed` and repaints on every
+        scroll frame; a 24px backdrop blur on a 60px-tall surface is
+        expensive on iOS 15. Reduced to 12px on mobile. Visually
+        imperceptible; GPU cost is not.
+
+     2. Everything else (3D transforms, SVG filters, orbs) stays as-is.
+        The single biggest remaining cost — the slide box-shadow — is
+        handled in `journey-stage.tsx` via a responsive Tailwind class,
+        because the shadow is set inline and cannot be overridden here
+        without `!important` (which the codebase forbids).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+  .glass {
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+  }
+}
+
+/* Reduced transparency takes precedence over the mobile blur budget. */
+@media (max-width: 767px) and (prefers-reduced-transparency: reduce) {
+  .glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    Network viz — ambient dot pulse
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -1044,3 +1078,4 @@
        `VaultGallery` / `UploadOrchestrator`, rewired in Fase 10.
      - `@utility tile-name` — same consumers.
    ═══════════════════════════════════════════════════════════════════════ */
+
