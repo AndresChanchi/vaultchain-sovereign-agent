@@ -1,58 +1,38 @@
 /**
  * Upload step helpers — pure presentation logic.
  *
- * No UI, no hook calls. Every consumer (the three step components)
- * imports from here so the mapping stage → visible state lives in one
- * place.
+ * No UI, no hook calls.
  *
  * Why reorder the checklist
- *   The mockup shows Locked → Noted → Kept. That order is aspirational:
- *   it assumes the new contract's single atomic transaction, where all
- *   three complete together and the order is purely visual.
+ *   The mockup shows Locked → Noted → Kept. That order assumes the
+ *   new contract's single atomic transaction, where all three
+ *   complete together. The current contract requires two transactions:
+ *   Irys upload (Kept) THEN contract register (Noted). Reordering to
+ *   Locked → Kept → Noted makes the visual progression match reality.
  *
- *   The current contract requires two transactions: Irys upload
- *   (Kept in many places) THEN contract register (Noted by the blind
- *   notary). Reordering the checklist to Locked → Kept → Noted makes
- *   the visual progression match the actual execution, so each item
- *   ticks exactly when its stage completes. Copy stays identical —
- *   only the order of the rows changes.
- *
- *   `funding` and `preparing` show "Waiting for approval…" between
- *   ticks because they need a wallet popup that has no visible
- *   progress state.
+ * `UploadStep` — 5 states
+ *   review   first step; file picker + price + Continue
+ *   login    shown when the user has no session; "Log in" opens the
+ *            login modal (which stacks on top)
+ *   pay      shown when the session is OAuth; methods visible but
+ *            only Wallet leads somewhere (switch to a wallet)
+ *   progress the pipeline is running (or errored)
+ *   kept     success confirmation
  */
 
 import type { UploadStage } from "@hooks/vault/useUploadFlow";
 
-/**
- * Cap on the number of files in a single upload batch. Matches the
- * landing hero's cap so the two entry points feel consistent.
- */
 export const MAX_BATCH_SIZE = 10;
 
-export type UploadStep = "review" | "progress" | "kept";
+export type UploadStep = "review" | "login" | "pay" | "progress" | "kept";
 
 export type ChecklistItem = "locked" | "kept" | "noted";
 
-/**
- * Checklist state — which rows are completed vs. which is in flight.
- *
- * Deliberately does NOT include `percent` — the numeric progress
- * needs `currentIndex` and `totalFiles`, which this helper does not
- * receive. `stageToPercent(stage, currentIndex, totalFiles)` returns
- * the numeric value; the two concerns stay separate.
- */
 export type StageProgress = {
-  /** Items already completed. Order = display order. */
   completed: ReadonlyArray<ChecklistItem>;
-  /** Item currently in progress, or null when waiting for approval. */
   active: ChecklistItem | null;
 };
 
-/**
- * Weights per stage, summing to 100 per file. Empirically tuned:
- * uploading (Irys network) dominates, so it gets the largest share.
- */
 const STAGE_WEIGHTS: Record<
   Exclude<UploadStage, "idle" | "kept" | "error">,
   number
@@ -83,11 +63,6 @@ const TOTAL_WEIGHT_PER_FILE = STAGES_IN_ORDER.reduce(
   0,
 );
 
-/**
- * Convert the current stage + position into a 0-100 progress value.
- * Uses per-stage weights so the bar moves roughly in proportion to
- * how long each step actually takes.
- */
 export function stageToPercent(
   stage: UploadStage,
   currentIndex: number,
@@ -108,10 +83,6 @@ export function stageToPercent(
   return Math.min(100, Math.max(0, Math.round(fraction * 100)));
 }
 
-/**
- * Map the current stage to the checklist state. See "Why reorder the
- * checklist" in the file header.
- */
 export function stageToChecklist(stage: UploadStage): StageProgress {
   switch (stage) {
     case "idle":
@@ -133,41 +104,27 @@ export function stageToChecklist(stage: UploadStage): StageProgress {
   }
 }
 
-/** Which step component the parent dialog should render. */
-export function stepFromStage(stage: UploadStage): UploadStep {
-  if (stage === "idle") return "review";
-  if (stage === "kept") return "kept";
-  return "progress";
-}
-
-/**
- * Union of every dict key `errorToDictKey` can return. Typed as
- * literal union so `t(errorToDictKey(...))` gets validated against
- * `Path<Dictionary>` — an unknown key fails at build time.
- */
 export type UploadErrorDictKey =
   | "space.upload.error.oauth"
   | "space.upload.error.unlock"
+  | "space.upload.error.walletUnauthorized"
   | "space.upload.error.imageWorker"
   | "space.upload.error.irysInit"
   | "space.upload.error.funding"
   | "space.upload.error.irysUpload"
   | "space.upload.error.register"
+  | "space.upload.error.duplicate"
   | "space.upload.error.wrongChain"
   | "space.upload.error.generic";
 
-/**
- * Map the flow's error string (thrown as `Error.message` in
- * `useUploadFlow`) to the dict key that holds its translated copy.
- * Unknown errors fall through to `error.generic` — no crashes on
- * unhandled cases.
- */
 export function errorToDictKey(error: string | null): UploadErrorDictKey {
   switch (error) {
     case "OAUTH_CANNOT_UPLOAD":
       return "space.upload.error.oauth";
     case "UNLOCK_FAILED":
       return "space.upload.error.unlock";
+    case "WALLET_UNAUTHORIZED":
+      return "space.upload.error.walletUnauthorized";
     case "IMAGE_WORKER_NOT_READY":
       return "space.upload.error.imageWorker";
     case "IRYS_INIT_FAILED":
@@ -178,6 +135,8 @@ export function errorToDictKey(error: string | null): UploadErrorDictKey {
       return "space.upload.error.irysUpload";
     case "REGISTER_FAILED":
       return "space.upload.error.register";
+    case "ASSET_ALREADY_IN_VAULT":
+      return "space.upload.error.duplicate";
     case "WRONG_CHAIN":
       return "space.upload.error.wrongChain";
     case "WALLET_NOT_CONNECTED":

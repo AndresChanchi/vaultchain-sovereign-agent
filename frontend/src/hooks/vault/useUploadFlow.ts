@@ -27,25 +27,44 @@ import { useVault } from "@hooks/useVault";
  *               `SpaceRefreshContext`, so `useSpaceStats` and
  *               `useSpaceGallery` refetch when it succeeds.
  *
- * Plus two outer stages:
+ * Plus three outer stages:
  *
  *   preparing   unlock vault (if locked) + init Irys SDK
  *   kept        every file registered; state stays here until
  *               `reset()` is called
  *   error       any unrecoverable failure; UI offers retry
  *
+ * Duplicate guard — before any wallet popup
+ *   The contract's `registerUpload` reverts when the contentHash is
+ *   already recorded. On the old contract that revert happens at the
+ *   END of the pipeline — after the user has already approved fund,
+ *   upload signature, and register — so a duplicate photo wastes 3
+ *   wallet popups and then lands in `error` with a cryptic message.
+ *
+ *   The legacy `UploadOrchestrator` had a guard: hash → check
+ *   `getMyPhoto` → throw before any signing. That guard was lost
+ *   in the 10.2 rewrite. It is restored here, between hashing and
+ *   compressing:
+ *
+ *     - `getPhotoId(contentHash)` is 1 RPC — cheaper than a wallet
+ *       popup by orders of magnitude.
+ *     - If the hash already exists, the file is skipped from
+ *       signing. `ASSET_ALREADY_IN_VAULT` is thrown and the error
+ *       stage shows the honest copy.
+ *     - Files earlier in the batch that already registered are
+ *       preserved (their tx is on-chain and `bump()` already fired).
+ *
+ *   The same photo dropped twice now costs 0 popups — the guard
+ *   catches it before compression even starts.
+ *
  * Why sequential
  *   Two concurrent `registerUpload` calls race the account nonce and
  *   the Irys node balance. Sequentially processing files lets each
- *   stage observe the state produced by the previous file: after
- *   file 1 registers, the gallery (via `bump`) shows 1 photo; after
- *   file 2, 2 photos; etc.
+ *   stage observe the state produced by the previous file.
  *
  * Wallet-only
  *   OAuth sessions use an ephemeral wallet with no funds. The flow
- *   refuses them upfront with `OAUTH_CANNOT_UPLOAD`. The dialog gate
- *   (10.4) prevents the flow from ever being called for OAuth; this
- *   check is belt-and-braces in case a future surface forgets.
+ *   refuses them upfront with `OAUTH_CANNOT_UPLOAD`.
  *
  * Popup count — honest about the current contract
  *   Fresh session, 1 file: unlock (personal_sign) + fund
@@ -57,32 +76,25 @@ import { useVault } from "@hooks/useVault";
  *
  * Fresh balance read
  *   `useIrys.balanceAtomic` is the balance at `start()` invocation
- *   time. The closure keeps that value; the `await initIrys()`
- *   updates the hook state but not the closure. Reading the balance
- *   fresh right before the funding check avoids an unnecessary
- *   funding tx on the first file of a warm session.
+ *   time. The closure keeps that value; `await initIrys()` updates
+ *   the hook state but not the closure. Reading the balance fresh
+ *   right before the funding check avoids an unnecessary funding tx
+ *   on the first file of a warm session.
  *
  * Error wrapping — register stage
  *   `registerUpload` can fail for three reasons: user rejection
  *   (`ACTION_REJECTED`, silent), a network/revert error from the
  *   receipt, or an unknown. Wrapping it here distinguishes "the user
- *   said no" from "the transaction was rejected by the chain" so the
- *   UI can show the right message. `errorToDictKey` maps
- *   `REGISTER_FAILED` to `space.upload.error.register`.
+ *   said no" from "the transaction was rejected by the chain".
  *
  * Cancellation vs. error
  *   Rejection returns to `idle` with no error — the user chose to
- *   abort. Any other failure lands in `stage: "error"` with a
- *   message the UI can translate. `runningRef` prevents re-entry.
- *
- * No cache invalidation here
- *   `registerUpload` already calls `bump()`. `useUploadFlow` does
- *   not duplicate that — the reactive hooks refetch on their own.
+ *   abort. Any other failure lands in `stage: "error"`. `runningRef`
+ *   prevents re-entry.
  *
  * Memory hygiene
  *   `previewUrl` for each file uses `URL.createObjectURL()`.
- *   `reset()` revokes every URL to prevent leaks across modal
- *   open/close cycles.
+ *   `reset()` revokes every URL to prevent leaks.
  */
 
 /* ──────────────────────────────────────────────────────────────────
@@ -156,13 +168,8 @@ export function useUploadFlow() {
   const { session } = useWallet();
   const { isLocked, unlockVault, encryptFile } = useKipioCrypto();
   const { compress } = useImageWorker();
-  const {
-    initIrys,
-    uploadFile,
-    fundNode,
-    getUploadPrice,
-  } = useIrys();
-  const { registerUpload } = useVault();
+  const { initIrys, uploadFile, fundNode, getUploadPrice } = useIrys();
+  const { registerUpload, getPhotoId } = useVault();
 
   const [state, setState] = useState<UploadState>(INITIAL_STATE);
   const runningRef = useRef(false);
@@ -220,9 +227,21 @@ export function useUploadFlow() {
           try {
             await unlockVault();
           } catch (err) {
-            throw new Error(
-              isCancellation(err) ? "ACTION_REJECTED" : "UNLOCK_FAILED",
-            );
+            if (isCancellation(err)) {
+              throw new Error("ACTION_REJECTED");
+            }
+            // 4100 = stale permission that survived the retry chain
+            // in `WalletContext.signTypedData`. Classify it apart so
+            // the UI shows an actionable "reconnect your wallet"
+            // message instead of a generic "try again".
+            const code =
+              err && typeof err === "object" && "code" in err
+                ? (err as { code: unknown }).code
+                : null;
+            if (code === "unauthorized") {
+              throw new Error("WALLET_UNAUTHORIZED");
+            }
+            throw new Error("UNLOCK_FAILED");
           }
         }
 
@@ -248,6 +267,17 @@ export function useUploadFlow() {
           const originalBuffer = await file.arrayBuffer();
           const contentHash = sha256(new Uint8Array(originalBuffer));
 
+          // 1b. Duplicate guard — 1 RPC, no wallet popup. See
+          // "Duplicate guard" in the header for the full rationale.
+          const existingId = await getPhotoId(contentHash);
+          if (
+            existingId &&
+            existingId !== "" &&
+            !existingId.startsWith("0x00000000")
+          ) {
+            throw new Error("ASSET_ALREADY_IN_VAULT");
+          }
+
           // 2. Compress — `compress()` handles worker readiness
           //    internally (main-thread fallback). No defensive throw.
           setState((s) => ({ ...s, stage: "compressing" }));
@@ -258,7 +288,7 @@ export function useUploadFlow() {
           const encrypted = await encryptFile(compressed, contentHash);
 
           // 4. Fund (only if needed) — fresh balance read, not the
-          //    closure's stale `balanceAtomic`. See header.
+          //    closure's stale `balanceAtomic`.
           setState((s) => ({ ...s, stage: "funding" }));
           const uploadBytes = encrypted.byteLength;
           const priceAtomic = await getUploadPrice(uploadBytes);
@@ -285,8 +315,7 @@ export function useUploadFlow() {
 
           // 6. Register (triggers bump() internally) — wrapped so
           //    the UI can distinguish "user cancelled" from
-          //    "transaction rejected" via `REGISTER_FAILED`. See
-          //    "Error wrapping" in the header.
+          //    "transaction rejected" via `REGISTER_FAILED`.
           setState((s) => ({ ...s, stage: "registering" }));
           let txHash: Hex;
           try {
@@ -329,6 +358,7 @@ export function useUploadFlow() {
       fundNode,
       getUploadPrice,
       registerUpload,
+      getPhotoId,
     ],
   );
 
