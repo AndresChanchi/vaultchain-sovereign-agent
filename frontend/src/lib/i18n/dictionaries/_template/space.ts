@@ -60,6 +60,10 @@ export const space = {
     dialogTitle: "TODO translate: Upload photos",
     dialogDescription:
       "TODO translate: Locked on your device. Kept in many places.",
+    signInToUpload: "TODO translate: Sign in to upload",
+    signInBody:
+      "TODO translate: Photos need an account that can sign. Sign in to add photos to your space.",
+    signInAction: "TODO translate: Log in",
 
     oauthGateTitle: "TODO translate: Only wallets can upload",
     oauthGateBody:
@@ -106,11 +110,27 @@ export const space = {
     keptOpenSpace: "TODO translate: Open my space",
     keptUploadMore: "TODO translate: Upload more",
 
+    payStep: {
+      title: "TODO translate: Payment",
+      heading: "TODO translate: Choose how to pay",
+      subtitle:
+        "TODO translate: Card, Nequi and Bre-B are coming soon. Upload with a crypto wallet today.",
+      card: "TODO translate: Card",
+      cardHint: "TODO translate: Visa · Mastercard",
+      nequi: "TODO translate: Nequi",
+      breb: "TODO translate: Bre-B",
+      wallet: "TODO translate: Wallet",
+      walletHint: "TODO translate: crypto",
+      comingSoon: "TODO translate: Coming soon",
+    },
+
     error: {
       oauth:
         "TODO translate: Wallets can upload. Switch accounts to add photos.",
       unlock:
         "TODO translate: Could not unlock your space. Try again.",
+      walletUnauthorized:
+        "TODO translate: Your wallet didn't authorize the signature. Open your wallet, disconnect this site, then reconnect and try again.",
       imageWorker:
         "TODO translate: The image optimizer did not load. Refresh and try again.",
       irysInit:
@@ -121,6 +141,7 @@ export const space = {
         "TODO translate: The storage network rejected the upload. Try again.",
       register:
         "TODO translate: The photo was uploaded but could not be recorded. Contact support.",
+      duplicate: "TODO translate: This photo is already in your space.",
       wrongChain:
         "TODO translate: Your wallet is on a different network. Switch back to try again.",
       generic: "TODO translate: Something went wrong. Try again.",
@@ -177,5 +198,15 @@ export const space = {
     unlockAction: "TODO translate: Unlock space",
     unlocking: "TODO translate: Unlocking…",
     unlockError: "TODO translate: Could not unlock your space. Try again.",
+    photo: {
+      loading: "TODO translate: Loading",
+      decrypting: "TODO translate: Decrypting",
+      expired: "TODO translate: No longer available",
+      expiredBody: "TODO translate: Testnet storage expires after 30 days.",
+      networkError: "TODO translate: Could not reach the storage network",
+      networkErrorBody: "TODO translate: Check your connection and try again.",
+      decryptError: "TODO translate: Could not unlock this photo",
+      decryptErrorBody: "TODO translate: The key may not match, or the file is corrupted.",
+    },
   },
 };

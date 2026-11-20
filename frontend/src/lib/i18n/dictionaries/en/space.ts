@@ -82,6 +82,11 @@ export const space = {
     button: "Upload",
     dialogTitle: "Upload photos",
     dialogDescription: "Locked on your device. Kept in many places.",
+    // Sign-in gate — used when openUpload is called with no session
+    signInToUpload: "Sign in to upload",
+    signInBody:
+      "Photos need an account that can sign. Sign in to add photos to your space.",
+    signInAction: "Log in",
 
     // OAuth gate (10.4)
     oauthGateTitle: "Only wallets can upload",
@@ -128,15 +133,32 @@ export const space = {
     keptOpenSpace: "Open my space",
     keptUploadMore: "Upload more",
 
+    payStep: {
+      title: "Payment",
+      heading: "Choose how to pay",
+      subtitle:
+        "Card, Nequi and Bre-B are coming soon. Upload with a crypto wallet today.",
+      card: "Card",
+      cardHint: "Visa · Mastercard",
+      nequi: "Nequi",
+      breb: "Bre-B",
+      wallet: "Wallet",
+      walletHint: "crypto",
+      comingSoon: "Coming soon",
+    },
+
     // Errors
     error: {
       oauth: "Wallets can upload. Switch accounts to add photos.",
       unlock: "Could not unlock your space. Try again.",
+      walletUnauthorized:
+        "Your wallet didn't authorize the signature. Open your wallet, disconnect this site, then reconnect and try again.",
       imageWorker: "The image optimizer did not load. Refresh and try again.",
       irysInit: "Could not reach the storage network. Try again.",
       funding: "Could not fund the upload. Check your wallet and try again.",
       irysUpload: "The storage network rejected the upload. Try again.",
       register: "The photo was uploaded but could not be recorded. Contact support.",
+      duplicate: "This photo is already in your space.",
       wrongChain: "Your wallet is on a different network. Switch back to try again.",
       generic: "Something went wrong. Try again.",
       retry: "Try again",
@@ -197,5 +219,15 @@ export const space = {
     unlockAction: "Unlock space",
     unlocking: "Unlocking…",
     unlockError: "Could not unlock your space. Try again.",
+    photo: {
+      loading: "Loading",
+      decrypting: "Decrypting",
+      expired: "No longer available",
+      expiredBody: "Testnet storage expires after 30 days.",
+      networkError: "Could not reach the storage network",
+      networkErrorBody: "Check your connection and try again.",
+      decryptError: "Could not unlock this photo",
+      decryptErrorBody: "The key may not match, or the file is corrupted.",
+    },
   },
 };

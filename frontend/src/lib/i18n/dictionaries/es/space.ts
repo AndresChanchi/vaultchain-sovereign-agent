@@ -60,6 +60,10 @@ export const space = {
     dialogTitle: "Subir fotos",
     dialogDescription:
       "Bloqueadas en tu dispositivo. Guardadas en muchos lugares.",
+    signInToUpload: "Inicia sesión para subir",
+    signInBody:
+      "Las fotos necesitan una cuenta que pueda firmar. Inicia sesión para añadir fotos a tu espacio.",
+    signInAction: "Iniciar sesión",
 
     oauthGateTitle: "Solo las billeteras pueden subir",
     oauthGateBody:
@@ -104,9 +108,25 @@ export const space = {
     keptOpenSpace: "Abrir mi espacio",
     keptUploadMore: "Subir más",
 
+    payStep: {
+      title: "Pago",
+      heading: "Elige cómo pagar",
+      subtitle:
+        "Tarjeta, Nequi y Bre-B estarán disponibles pronto. Sube con una billetera cripto hoy.",
+      card: "Tarjeta",
+      cardHint: "Visa · Mastercard",
+      nequi: "Nequi",
+      breb: "Bre-B",
+      wallet: "Billetera",
+      walletHint: "cripto",
+      comingSoon: "Próximamente",
+    },
+
     error: {
       oauth: "Las billeteras pueden subir. Cambia de cuenta para añadir fotos.",
       unlock: "No se pudo desbloquear tu espacio. Inténtalo de nuevo.",
+      walletUnauthorized:
+        "Tu billetera no autorizó la firma. Abre la billetera, desconecta este sitio, vuelve a conectar e inténtalo de nuevo.",
       imageWorker:
         "El optimizador de imágenes no se cargó. Recarga e inténtalo de nuevo.",
       irysInit:
@@ -117,6 +137,7 @@ export const space = {
         "La red de almacenamiento rechazó la subida. Inténtalo de nuevo.",
       register:
         "La foto se subió pero no se pudo registrar. Contacta a soporte.",
+      duplicate: "Esta foto ya está en tu espacio.",
       wrongChain:
         "Tu billetera está en otra red. Vuelve a la red correcta para intentarlo de nuevo.",
       generic: "Algo salió mal. Inténtalo de nuevo.",
@@ -171,5 +192,15 @@ export const space = {
     unlockAction: "Desbloquear espacio",
     unlocking: "Desbloqueando…",
     unlockError: "No se pudo desbloquear tu espacio. Inténtalo de nuevo.",
+    photo: {
+      loading: "Cargando",
+      decrypting: "Descifrando",
+      expired: "Ya no está disponible",
+      expiredBody: "El almacenamiento en testnet expira a los 30 días.",
+      networkError: "No se pudo contactar con la red de almacenamiento",
+      networkErrorBody: "Revisa tu conexión e inténtalo de nuevo.",
+      decryptError: "No se pudo desbloquear esta foto",
+      decryptErrorBody: "La clave no coincide, o el archivo está corrupto.",
+    },
   },
 };
