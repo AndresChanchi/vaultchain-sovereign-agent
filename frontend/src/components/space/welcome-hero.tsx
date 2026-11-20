@@ -7,45 +7,47 @@
  *   The user just signed in. The space is empty. Instead of
  *   apologizing, turn the emptiness into an invitation.
  *
- * Copy of the CTAs
- *   - "See how it works": a walkthrough of the flow (wired in 9.C).
- *     Kipio does NOT provide a sample photo — the user tries their
- *     own. The label says what it does, not what it invites.
- *   - "Upload yours": the primary action (wired in 9.D, opens the
- *     upload dialog).
+ * CTAs — both functional
+ *   - "Upload your first photos" (primary, emerald + pulse ring):
+ *     calls `openUpload()` from `UploadDialogContext`. The dialog is
+ *     mounted at root (`providers.tsx`) and gates on session — the
+ *     user is already signed in here, so it goes straight to review.
+ *   - "Look around first" (secondary, glass): scrolls to the
+ *     starters section (`#welcome-starters`) with `scrollIntoView`.
+ *     Respects `prefers-reduced-motion` via the global
+ *     `scroll-behavior: smooth` in `@layer base`.
  *
- *   Both CTAs are `disabled` today with the honest "coming in a
- *   later phase" tooltip. Visual fidelity wins over the dead-gray
- *   disabled convention — the primary keeps its pulse ring and the
- *   secondary keeps its glass surface, exactly like the mockup.
+ *   Reversed from the earlier iteration where both were disabled.
+ *   The primary pulse ring and emerald background were kept during
+ *   the disabled phase for visual fidelity; they were never a
+ *   promise the button would work. Now that it works, they are
+ *   honest affordance signals.
  *
  * The glow — mirror of the mockup's `.glow`
- *   `radial-gradient` (not a solid emerald blob + blur) at
- *   1200×900, centered on the hero, offset `top: -140px` upward.
- *   Three stops: 0.22 alpha at center, 0.06 at 55%, transparent at
- *   edge. Reads as ambient light, not as a green circle.
- *
- *   `isolate` on the wrapper is required — without it, `-z-10`
- *   slides behind the shell's `amb-bg` and the glow disappears.
- *   `isolation: isolate` creates a local stacking context that
- *   keeps the glow between the background and the hero text.
- *
- * Responsive
- *   H1 rises 44 → 56 → 68px across mobile → tablet → desktop.
- *   CTAs stack on `<sm`, row on `sm+`.
+ *   `radial-gradient` at 1200×900, centered on the hero, offset
+ *   `top: -140px` upward. `isolate` on the wrapper creates a local
+ *   stacking context so `-z-10` paints between the shell's `amb-bg`
+ *   and the hero text (without it, the glow slides behind the
+ *   background).
  */
 import { useI18n } from "@context/I18nContext";
+import { useUploadDialog } from "@context/UploadDialogContext";
 import { PlayIcon } from "./space-icons";
 
 const RISE = (delayMs: number) => ({ animationDelay: `${delayMs}ms` });
 
 export function WelcomeHero() {
   const { t } = useI18n();
-  const soon = t("space.sidebar.comingSoon");
+  const { open: openUpload } = useUploadDialog();
+
+  const handleExplore = () => {
+    document
+      .getElementById("welcome-starters")
+      ?.scrollIntoView({ block: "start" });
+  };
 
   return (
     <div className="relative isolate max-w-[560px]">
-      {/* Glow — see "The glow" in the file header. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -z-10"
@@ -92,20 +94,16 @@ export function WelcomeHero() {
       >
         <button
           type="button"
-          disabled
-          aria-disabled="true"
-          title={soon}
-          className="animate-pulse-ring inline-flex h-[54px] cursor-not-allowed items-center justify-center gap-2.5 rounded-[14px] bg-emerald px-[26px] text-[15px] font-semibold text-on-emerald"
+          onClick={openUpload}
+          className="animate-pulse-ring inline-flex h-[54px] items-center justify-center gap-2.5 rounded-[14px] bg-emerald px-[26px] text-[15px] font-semibold text-on-emerald transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02]"
         >
           <PlayIcon size={16} />
           {t("space.welcome.ctaUpload")}
         </button>
         <button
           type="button"
-          disabled
-          aria-disabled="true"
-          title={soon}
-          className="glass inline-flex h-[54px] cursor-not-allowed items-center justify-center rounded-[14px] px-[18px] text-[15px] font-medium text-ink"
+          onClick={handleExplore}
+          className="glass inline-flex h-[54px] items-center justify-center rounded-[14px] px-[18px] text-[15px] font-medium text-ink transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02]"
         >
           {t("space.welcome.ctaExplore")}
         </button>

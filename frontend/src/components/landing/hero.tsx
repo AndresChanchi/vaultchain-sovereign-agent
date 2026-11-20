@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@context/I18nContext";
+import { useUploadDialog } from "@context/UploadDialogContext";
 
 /**
  * Landing hero.
@@ -102,6 +103,7 @@ const RISE = (delayMs: number) => ({ animationDelay: `${delayMs}ms` });
 
 export function Hero() {
   const { t } = useI18n();
+  const { open: openUpload } = useUploadDialog();
 
   return (
     <section className="hero-viewport relative mx-auto flex max-w-[1280px] flex-col justify-center px-6 py-16 md:px-10 md:py-20">
@@ -171,9 +173,7 @@ export function Hero() {
 
           <button
             type="button"
-            onClick={() => {
-              // TODO: router.push("/upload") via intercepted route.
-            }}
+            onClick={openUpload}
             className="animate-pulse-ring inline-flex h-14 max-w-full items-center justify-center rounded-[14px] bg-emerald px-8 text-[16px] font-semibold text-on-emerald transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02] focus-visible:scale-[1.02]"
           >
             {t("landing.hero.uploadCta")}
