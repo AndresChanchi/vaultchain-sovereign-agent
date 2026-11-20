@@ -1,34 +1,22 @@
 "use client";
 
 /**
- * Upload step 2 — pipeline progress with a live preview of the file
+ * Upload step 3 — pipeline progress with a live preview of the file
  * currently being processed.
  *
- * Error state
- *   When `state.stage === "error"`, renders a card with the translated
- *   error + a retry button. Retry calls `reset()` → stage goes back
- *   to `idle` → the dialog re-renders review (empty, user re-picks).
- *   Preserving the failed file list across retry would need a state
- *   change in `useUploadFlow`; on the old contract, re-picking the
- *   same files produces the same result, so a full restart is
- *   acceptable.
+ * Error branch — deferred to parent
+ *   `onRetry` is called when the user clicks "Try again". The parent
+ *   (dialog) is responsible for `flow.reset()` + returning to review
+ *   atomically. Without this hand-off, `flow.reset()` would fire
+ *   inside this component and leave the dialog on `progress` for one
+ *   frame (flow.stage=idle, dialogStep=progress) — the flash.
  *
  * Checklist — reordered honestly
- *   Locked → Kept → Noted. See `stageToChecklist` for the rationale.
- *   Each row renders one of three states:
- *     completed (✓)  | active (spinner)  | pending (hollow)
- *   `funding` and `preparing` show "Waiting for approval…" between
- *   rows because they correspond to a wallet popup with no visible
- *   duration.
- *
- * Preview
- *   Uses `state.files[state.currentIndex]?.previewUrl` — the URL was
- *   created by `useUploadFlow.start()` and lives until `reset()`.
- *   The scan overlay (`className="scan"`) signals "work in progress"
- *   without telling the user what stage of the pipeline is running.
+ *   Locked → Kept → Noted. See `stageToChecklist` in
+ *   `upload-types.ts` for the rationale.
  */
 import { useI18n } from "@context/I18nContext";
-import type { useUploadFlow } from "@hooks/vault/useUploadFlow";
+import { useUploadFlow } from "@hooks/vault/useUploadFlow";
 import {
   errorToDictKey,
   stageToChecklist,
@@ -38,11 +26,12 @@ import {
 
 type UploadProgressProps = {
   flow: ReturnType<typeof useUploadFlow>;
+  onRetry: () => void;
 };
 
-export function UploadProgress({ flow }: UploadProgressProps) {
+export function UploadProgress({ flow, onRetry }: UploadProgressProps) {
   const { t } = useI18n();
-  const { state, reset } = flow;
+  const { state } = flow;
 
   if (state.stage === "error") {
     return (
@@ -55,7 +44,7 @@ export function UploadProgress({ flow }: UploadProgressProps) {
         </p>
         <button
           type="button"
-          onClick={reset}
+          onClick={onRetry}
           className="mt-2 inline-flex h-[44px] items-center justify-center rounded-[12px] bg-emerald px-6 text-[14px] font-semibold text-on-emerald"
         >
           {t("space.upload.error.retry")}
@@ -185,18 +174,16 @@ function ChecklistRow({ label, state }: { label: string; state: RowState }) {
           />
         </svg>
       )}
-      {state === "active" && <span className="spn flex-none" aria-hidden="true" />}
+      {state === "active" && (
+        <span className="spn flex-none" aria-hidden="true" />
+      )}
       {state === "pending" && (
         <span
           aria-hidden="true"
           className="h-[18px] w-[18px] flex-none rounded-full border border-hairline"
         />
       )}
-      <span
-        className={
-          state === "pending" ? "text-muted" : "text-ink"
-        }
-      >
+      <span className={state === "pending" ? "text-muted" : "text-ink"}>
         {label}
       </span>
     </div>

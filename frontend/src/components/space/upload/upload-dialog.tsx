@@ -1,53 +1,79 @@
 "use client";
 
 /**
- * Upload dialog — native `<dialog>` shell + step switch + OAuth gate.
+ * Upload dialog — 5-step native `<dialog>` shell.
  *
- * Single source of truth for the flow
- *   `useUploadFlow()` is called exactly ONCE, here. Step components
- *   receive the resulting `flow` object as a prop. If each step
- *   called the hook itself, each would get its own independent
- *   `useState` instance — `UploadReview.start()` would flip only the
- *   review's state, not the dialog's, and the dialog would stay on
- *   the review screen forever. See `upload-review.tsx` header for the
- *   same note from the child side.
+ * Steps (local state, not derived from `flow.state.stage`)
+ *   review   file picker + price + Continue
+ *   login    sign-in prompt → opens login modal on top
+ *   pay      OAuth-only: 3 disabled methods + Wallet → switch
+ *   progress pipeline running (flow.start in flight or errored)
+ *   kept     success confirmation
  *
- * OAuth gate
- *   Rendered before the step switch. OAuth sessions cannot upload
- *   (ephemeral wallet has no funds, contract requires a real EOA
- *   signature) — the gate explains honestly and offers
- *   "Switch to a wallet" which closes this dialog and opens the
- *   login modal. No silent redirects.
+ * Why local state, not derived from flow.state.stage
+ *   `flow.state.stage` only moves once `flow.start()` is called. The
+ *   steps `review`, `login`, and `pay` all live in `stage === "idle"`.
+ *   The dialog needs to know which of those three is visible, and
+ *   that state is UI, not pipeline. Keeping it local avoids bloating
+ *   `useUploadFlow` with UI concerns.
+ *
+ * Three transitions driven by effects
+ *   1. `isOpen` changes → set initial step based on current session
+ *      (review for null/wallet, pay for OAuth). Fires on every open.
+ *
+ *   2. `sessionKind` becomes non-null while `dialogStep === "login"`
+ *      → the user completed login. Wallet: load pending files from
+ *      IndexedDB, start the flow, advance to progress. OAuth: advance
+ *      to pay.
+ *
+ *   3. `sessionKind` becomes null while in progress/kept/pay → the
+ *      user's session dropped (sign out elsewhere). Close + reset to
+ *      avoid a zombie flow. Pay resets to login (re-auth).
+ *
+ *   4. `flow.state.stage === "kept"` while in progress → advance to
+ *      kept.
+ *
+ * Single instance of useUploadFlow
+ *   The hook is called exactly ONCE here. Step components receive
+ *   `flow` as prop. If each step called the hook itself, each would
+ *   hold its own `useState` — `flow.start()` from review would not
+ *   move the dialog's stage.
+ *
+ * IndexedDB — the login persistence mechanism
+ *   When Continue is clicked without a session, the raw `File[]` is
+ *   saved to IndexedDB. After OAuth redirect and return, the dialog
+ *   loads those files back and starts the flow automatically. TTL 1
+ *   hour. See `lib/upload/pending-uploads.ts`.
  *
  * Close-block during active flow
- *   `preparing` / `hashing` / `compressing` / `encrypting` /
- *   `funding` / `uploading` / `registering` all represent in-flight
- *   work. During those stages:
- *     - Escape is blocked (`onCancel` → `preventDefault()`).
- *     - Backdrop click is ignored.
- *     - The X button is disabled.
- *   Rationale: the wallet transactions are already broadcast or
- *   about to be. Closing the UI mid-flow would lose progress and
- *   leave the user confused. On `idle` / `kept` / `error` the modal
- *   closes normally.
+ *   `preparing` through `registering` are in-flight. X disabled,
+ *   Escape `preventDefault`, backdrop click ignored. Reset on close
+ *   is triggered by the `close` listener.
  *
- * Reset on close
- *   The `close` event listener calls `flow.reset()`. Fires for
- *   programmatic `dialog.close()` (our sync effect) and any other
- *   close path. Revokes preview URLs and returns to `idle` so the
- *   next open starts fresh.
+ * OAuth cannot upload
+ *   The pay step is the honest boundary. The only live route is
+ *   "Switch to a wallet", which disconnects the OAuth session and
+ *   reopens the login modal. The current MVP contract has no account
+ *   abstraction for OAuth identities — that arrives with the new
+ *   contracts.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@context/I18nContext";
 import { useWallet } from "@context/WalletContext";
 import { useLoginModal } from "@context/LoginModalContext";
 import { useUploadDialog } from "@context/UploadDialogContext";
 import { useUploadFlow, type UploadStage } from "@hooks/vault/useUploadFlow";
-import { LockIcon } from "@components/space/space-icons";
-import { stepFromStage } from "./upload-types";
+import {
+  clearPendingUploads,
+  loadPendingUploads,
+  savePendingUploads,
+} from "@lib/upload/pending-uploads";
 import { UploadReview } from "./upload-review";
+import { UploadLoginStep } from "./upload-login-step";
+import { UploadPayStep } from "./upload-pay-step";
 import { UploadProgress } from "./upload-progress";
 import { UploadKept } from "./upload-kept";
+import type { UploadStep } from "./upload-types";
 
 const ACTIVE_STAGES: ReadonlySet<UploadStage> = new Set([
   "preparing",
@@ -61,20 +87,20 @@ const ACTIVE_STAGES: ReadonlySet<UploadStage> = new Set([
 
 export function UploadDialog() {
   const { t } = useI18n();
-  const { session } = useWallet();
+  const { session, disconnect } = useWallet();
   const { openLogin } = useLoginModal();
   const { isOpen, close } = useUploadDialog();
 
-  // Single instance of the flow — passed to step components as a
-  // prop. Do NOT call `useUploadFlow()` from inside those components.
   const flow = useUploadFlow();
 
-  // `flowRef` for the `close` listener so it does not re-subscribe on
-  // every render (flow identity changes when state changes).
   const flowRef = useRef(flow);
   flowRef.current = flow;
 
+  const sessionKind = session?.kind ?? null;
+  const flowStage = flow.state.stage;
+
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [dialogStep, setDialogStep] = useState<UploadStep>("review");
 
   // Sync `<dialog>` visibility with `isOpen`.
   useEffect(() => {
@@ -84,73 +110,143 @@ export function UploadDialog() {
     else if (!isOpen && dialog.open) dialog.close();
   }, [isOpen]);
 
-  // Reset flow on any close (X, backdrop, Escape when not blocked,
-  // "Open my space"). Keep deps on `close` only — `flowRef.current`
-  // gives the latest `reset` without re-subscribing.
+  // Reset flow + step on any close path (X, backdrop, Escape allowed,
+  // programmatic close, "Open my space").
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const handleClose = () => {
       close();
       flowRef.current.reset();
+      setDialogStep("review");
+      void clearPendingUploads();
     };
     dialog.addEventListener("close", handleClose);
     return () => dialog.removeEventListener("close", handleClose);
   }, [close]);
 
+  // Set initial step on every fresh open. Wallet or null session →
+  // review. OAuth → pay (nothing to review; the flow cannot proceed
+  // past pay without a wallet).
+  useEffect(() => {
+    if (!isOpen) return;
+    setDialogStep(sessionKind === "oauth" ? "pay" : "review");
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Transition login → progress (wallet) / pay (OAuth) after auth.
+  useEffect(() => {
+    if (dialogStep !== "login") return;
+    if (sessionKind === null) return;
+
+    if (sessionKind === "wallet") {
+      let cancelled = false;
+      void loadPendingUploads().then((files) => {
+        if (cancelled) return;
+        if (files && files.length > 0) {
+          setDialogStep("progress");
+          void flowRef.current.start(files);
+          void clearPendingUploads();
+        } else {
+          setDialogStep("review");
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setDialogStep("pay");
+  }, [dialogStep, sessionKind]);
+
+  // Session dropped mid-flow — defensive reset. Not the common path,
+  // but avoids a zombie dialog when the user signs out elsewhere.
+  useEffect(() => {
+    if (sessionKind !== null) return;
+    if (dialogStep === "progress" || dialogStep === "kept") {
+      close();
+      flowRef.current.reset();
+      setDialogStep("review");
+    } else if (dialogStep === "pay") {
+      setDialogStep("login");
+    }
+  }, [sessionKind, dialogStep, close]);
+
+  // Pipeline reached `kept` → move from progress to kept.
+  useEffect(() => {
+    if (flowStage === "kept" && dialogStep === "progress") {
+      setDialogStep("kept");
+    }
+  }, [flowStage, dialogStep]);
+
   const handleCancel = (e: React.SyntheticEvent<HTMLDialogElement>) => {
-    // Escape fires `cancel`. Block during active stages.
-    if (ACTIVE_STAGES.has(flow.state.stage)) {
+    if (ACTIVE_STAGES.has(flowStage)) {
       e.preventDefault();
     }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
     if (e.target !== dialogRef.current) return;
-    if (ACTIVE_STAGES.has(flow.state.stage)) return;
+    if (ACTIVE_STAGES.has(flowStage)) return;
     close();
   };
 
-  const handleSwitchAccount = () => {
-    close();
-    openLogin();
+  const handleReviewContinue = async (files: File[]) => {
+    if (!session) {
+      await savePendingUploads(files);
+      setDialogStep("login");
+      openLogin({ returnTo: "/" });
+      return;
+    }
+    if (session.kind === "wallet") {
+      setDialogStep("progress");
+      void flowRef.current.start(files);
+      void clearPendingUploads();
+      return;
+    }
+    // OAuth — save so "Switch to a wallet" can restore files later.
+    await savePendingUploads(files);
+    setDialogStep("pay");
   };
 
-  const isActive = ACTIVE_STAGES.has(flow.state.stage);
+  const handleSignIn = () => {
+    openLogin({ returnTo: "/" });
+  };
 
-  // OAuth sessions cannot upload. Gate before the step switch.
+  const handleSwitchToWallet = () => {
+    disconnect();
+    openLogin({ returnTo: "/" });
+  };
+
+  const handleRetry = () => {
+    flowRef.current.reset();
+    setDialogStep("review");
+  };
+
+  const isActive = ACTIVE_STAGES.has(flowStage);
+
   const body = (() => {
-    if (session?.kind === "oauth") {
-      return (
-        <div className="flex flex-col items-center gap-3 py-4 text-center">
-          <LockIcon size={28} className="text-muted" />
-          <div>
-            <h3 className="text-[17px] font-semibold text-ink">
-              {t("space.upload.oauthGateTitle")}
-            </h3>
-            <p className="mt-1.5 max-w-[320px] text-[13px] leading-[1.5] text-muted">
-              {t("space.upload.oauthGateBody")}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleSwitchAccount}
-            className="mt-2 inline-flex h-[44px] items-center justify-center rounded-[12px] bg-emerald px-5 text-[14px] font-semibold text-on-emerald transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.5,1)] hover:scale-[1.02]"
-          >
-            {t("space.upload.oauthGateAction")}
-          </button>
-        </div>
-      );
+    switch (dialogStep) {
+      case "review":
+        return <UploadReview onContinue={handleReviewContinue} />;
+      case "login":
+        return (
+          <UploadLoginStep
+            onSignIn={handleSignIn}
+            onBack={() => setDialogStep("review")}
+          />
+        );
+      case "pay":
+        return (
+          <UploadPayStep
+            onSwitchToWallet={handleSwitchToWallet}
+            onBack={() => setDialogStep("review")}
+          />
+        );
+      case "progress":
+        return <UploadProgress flow={flow} onRetry={handleRetry} />;
+      case "kept":
+        return <UploadKept flow={flow} onClose={close} />;
     }
-
-    const step = stepFromStage(flow.state.stage);
-    if (step === "review") {
-      return <UploadReview flow={flow} />;
-    }
-    if (step === "progress") {
-      return <UploadProgress flow={flow} />;
-    }
-    return <UploadKept flow={flow} onClose={close} />;
   })();
 
   return (

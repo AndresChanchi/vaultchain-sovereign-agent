@@ -1,52 +1,36 @@
 "use client";
 
 /**
- * Upload step 1 — review the batch before committing.
+ * Upload step 1 — review the batch before continuing.
  *
- * Sub-states
- *   - Empty (0 files): a large dashed dropzone that opens the native
- *     file picker. Uses the same visual language as the landing's
- *     upload CTA, so the two flows feel consistent.
- *   - Filled: previews row (72×72 thumbnails + "+" to add more),
- *     locked-note, term selector, price breakdown, Continue.
+ * IndexedDB restore
+ *   On mount, tries to restore files from IndexedDB. This is what
+ *   makes the login-return UX work: the user picked files, clicked
+ *   Continue, went through login, and is back at Review with the
+ *   same files still visible. `loadPendingUploads` is called once;
+ *   if the entry is empty or expired, the review shows the empty
+ *   dropzone.
  *
- * Local file state
- *   `useUploadFlow.state.files` is empty until `start()` runs. The
- *   review keeps its OWN local list (with previewUrls) for the
- *   pre-commit UI. When Continue is clicked, the raw `File[]` is
- *   passed to `start()` — the flow creates its own preview URLs for
- *   the progress / kept steps. Review unmounts when the flow starts,
- *   its useEffect cleanup revokes its local URLs.
+ * Continue goes to the parent
+ *   `onContinue(files)` is called with the raw `File[]`. The parent
+ *   (dialog) decides what happens next based on session state:
+ *     - no session → save to IndexedDB + login step
+ *     - wallet → flow.start + progress step
+ *     - OAuth → save + pay step
+ *   Review does NOT call `flow.start` directly anymore — that
+ *   coupling lives in one place (the dialog).
  *
- * Terms selector
- *   Forever is active. 30 days / 1 year are disabled with an honest
- *   tooltip ("Only with the new contract"). When the new contracts
- *   activate, dropping the `disabled` flag enables them without
- *   changing the layout.
- *
- * Price
- *   `useUploadQuote({ bytes, term: "permanent", currency: "USD" })`
- *   reuses the landing's pricing engine. `bytes` is the sum of the
- *   raw file sizes — an upper bound because compression happens in
- *   the flow. The actual cost is re-queried during upload with the
- *   real encrypted size.
- *
- *   Formatting lives in a local `formatUSD` helper (below) instead of
- *   `@lib/i18n/format` so this component has zero coupling to the
- *   i18n format API. The review always shows USD — the currency
- *   picker is a landing-only surface; the upload modal shows the
- *   network-denominated price for maximum clarity.
- *
- * OAuth
- *   The dialog gates OAuth BEFORE mounting this component (10.4).
- *   Review assumes a wallet session and does not check again.
+ * Preview URL hygiene
+ *   Local previews (ObjectURL) are revoked on unmount and on remove.
+ *   The parent's `flow.start` creates its own previews from the raw
+ *   `File[]`, so the review URLs are throwaway display-only.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@context/I18nContext";
-import type { useUploadFlow } from "@hooks/vault/useUploadFlow";
 import { useUploadQuote } from "@hooks/pricing/useUploadQuote";
 import { DEFAULT_CURRENCY, type CurrencyCode } from "@config/pricing";
 import type { Term } from "@lib/pricing/types";
+import { loadPendingUploads } from "@lib/upload/pending-uploads";
 import { PlusIcon } from "@components/space/space-icons";
 import { MAX_BATCH_SIZE } from "./upload-types";
 
@@ -56,15 +40,6 @@ type LocalFile = {
   previewUrl: string;
 };
 
-type UploadReviewProps = {
-  flow: ReturnType<typeof useUploadFlow>;
-};
-
-/**
- * Only `permanent` is active today. The other two are visible but
- * disabled — the current contract stores every upload "forever" with
- * no term concept.
- */
 const TERM: Term = { kind: "permanent" };
 const CURRENCY: CurrencyCode = DEFAULT_CURRENCY;
 
@@ -82,19 +57,17 @@ const USD_4DP = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 4,
 });
 
-/**
- * Format a USD amount. Uses 4 decimals under $0.01 so a real
- * storage cost (e.g. $0.003) does not collapse to "$0.00" — the
- * whole point of showing the price is that it is honest about the
- * number.
- */
 function formatUSD(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   if (value > 0 && value < 0.01) return USD_4DP.format(value);
   return USD_2DP.format(value);
 }
 
-export function UploadReview({ flow }:UploadReviewProps) {
+type UploadReviewProps = {
+  onContinue: (files: File[]) => void | Promise<void>;
+};
+
+export function UploadReview({ onContinue }: UploadReviewProps) {
   const { t } = useI18n();
 
   const [files, setFiles] = useState<LocalFile[]>([]);
@@ -105,8 +78,25 @@ export function UploadReview({ flow }:UploadReviewProps) {
     filesRef.current = files;
   }, [files]);
 
-  // Revoke every local preview URL when review unmounts (Continue,
-  // cancel, or page nav). The flow owns its own URLs.
+  // Restore from IndexedDB on mount (covers the login-return path).
+  useEffect(() => {
+    let mounted = true;
+    void loadPendingUploads().then((pending) => {
+      if (!mounted || !pending || pending.length === 0) return;
+      setFiles(
+        pending.map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      );
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Revoke every local preview URL on unmount.
   useEffect(() => {
     return () => {
       for (const f of filesRef.current) {
@@ -137,8 +127,6 @@ export function UploadReview({ flow }:UploadReviewProps) {
         setFiles((prev) => [...prev, ...additions]);
       }
 
-      // Reset input value so selecting the same file again fires
-      // onChange (browsers de-dupe by value otherwise).
       e.target.value = "";
     },
     [files.length],
@@ -161,14 +149,11 @@ export function UploadReview({ flow }:UploadReviewProps) {
     enabled: totalBytes > 0,
   });
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
     if (files.length === 0) return;
     const raw = files.map((f) => f.file);
-    // Flow will own its own preview URLs; drop our locals now.
-    for (const f of files) URL.revokeObjectURL(f.previewUrl);
-    setFiles([]);
-    void flow.start(raw);
-  }, [files, flow]);
+    await onContinue(raw);
+  }, [files, onContinue]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -184,7 +169,6 @@ export function UploadReview({ flow }:UploadReviewProps) {
         </span>
       </div>
 
-      {/* Files row / empty dropzone */}
       {files.length === 0 ? (
         <button
           type="button"
@@ -320,11 +304,6 @@ export function UploadReview({ flow }:UploadReviewProps) {
   );
 }
 
-/**
- * Disabled term card. Kept as a separate component so the tooltip
- * + disabled styling stay in one place when the future terms
- * activate.
- */
 function DisabledTerm({ label, hint }: { label: string; hint: string }) {
   return (
     <div
