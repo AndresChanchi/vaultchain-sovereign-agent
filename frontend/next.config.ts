@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  
+
+  allowedDevOrigins: ["*.trycloudflare.com"],
+
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.pexels.com" },
@@ -17,13 +19,12 @@ const nextConfig: NextConfig = {
 
   turbopack: {
     rules: {
-      'wasm': {
-        loaders: ['asset/resource'],
-        as: 'url',
+      wasm: {
+        loaders: ["asset/resource"],
+        as: "url",
       },
     },
   },
-  
 };
 
 export default nextConfig;
