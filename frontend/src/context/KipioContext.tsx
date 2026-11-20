@@ -140,7 +140,6 @@ export function KipioProvider({ children }: { children: React.ReactNode }) {
       setEncryptionKey(key);
       return key;
     } catch (error) {
-      console.error("[KIPIO_CONTEXT] Critical unlock failure:", error);
       throw error;
     } finally {
       setIsUnlocking(false);

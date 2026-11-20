@@ -59,34 +59,32 @@
  * Provider listeners
  *   Wallet sessions only. `accountsChanged` / `chainChanged` keep the
  *   session in sync. Zero accounts (revoked access) → full disconnect.
- *
- *   Attach and detach are wrapped in try/catch. MetaMask 11.x can
- *   throw from `provider.on(...)` when the EIP-6963 provider has
- *   announced itself before the extension finished initialising its
- *   event emitter. The session remains valid; we simply lose live
- *   sync. `removeListener` gets the same treatment.
+ *   Attach/detach are wrapped in try/catch (MetaMask 11.x can throw
+ *   from `provider.on` during EIP-6963 announcement).
  *
  * Resume — auto-acquiring the provider
  *   On mount, after restoring a wallet session, `getWalletById` looks
- *   up the provider. `"ledger"` and `"injected"` are excluded — see
- *   the original rationale in `lib/wallet/discovery.ts`.
+ *   up the provider. `"ledger"` and `"injected"` are excluded.
  *
  * `disconnect` semantics
- *   Clears the local session, the provider reference, the ephemeral
- *   key, and both `sessionStorage` entries. Does **not** call
- *   `wallet_revokePermissions` or the OAuth provider's revocation
- *   endpoint — a failed revoke must never block local logout.
+ *   Clears the local session, provider ref, ephemeral key, and both
+ *   `sessionStorage` entries. Does NOT call `wallet_revokePermissions`
+ *   or the OAuth provider's revocation endpoint.
  *
  * `connect` / `connectOAuth` / `setOAuthAddress`
  *   `connect(provider, wallet)` — wallet session. Calls
- *   `eth_requestAccounts` and `eth_chainId`, normalises the address,
- *   persists.
+ *   `eth_requestAccounts` and `eth_chainId`, normalises, persists.
  *
  *   `connectOAuth(provider, subject?)` — OAuth session. Generates an
  *   ephemeral keypair, persists both the key and the session.
  *
  *   `setOAuthAddress(address, chainId)` — called by the contract
  *   layer once `kipio_account` derives the CREATE2 address.
+ *
+ * `getEip1193Provider`
+ *   Raw EIP-1193 provider getter, used by `useIrys` and `useVault`.
+ *   Re-derives from `mipd` when the ref is empty (resume path).
+ *   Returns `null` for OAuth, Ledger and `"injected"`.
  *
  * `signTypedData`
  *   Session-aware EIP-712 signer, consumed by
@@ -97,48 +95,45 @@
  *   **the same augmentation viem performs internally**. Skipping it
  *   produces a different hash, a different signature, and a different
  *   HKDF key, which is what broke decryption of photos encrypted by
- *   the legacy dashboard (that path went through viem, which adds
- *   `EIP712Domain` automatically).
+ *   the legacy dashboard.
  *
  *   OAuth: signs locally with the ephemeral account via
- *   `viem/accounts.signTypedData`, which also augments `types`
- *   identically.
+ *   `viem/accounts.signTypedData`, which also augments `types`.
  *
  *   Ledger: throws `unsupported` until the DMK signer is wired into
  *   KipioContext (Fase 10).
  *
- *   Domain augmentation delegates to `getTypesForEIP712Domain` from
- *   viem — the exact helper viem uses internally in `hashTypedData`
- *   and `signTypedData`. Reimplementing that helper (as the first
- *   iteration did) matches viem only for the well-formed cases;
- *   delegation matches viem by construction, including edge cases
- *   like a `chainId` passed as a string (viem omits it — `typeof
- *   !== "number"`), a `name` passed as a number (viem omits it), or
- *   a `verifyingContract` as `null` (viem omits it). For the current
- *   `KIPIO_SIGN_DOMAIN = { name, version }` both approaches agree,
- *   but the delegation is future-proof: adding `chainId` or
- *   `verifyingContract` to the domain in a future contract revision
- *   cannot silently diverge from viem.
+ *   Stale-permission retry — the 4100 fix
+ *     MetaMask 12.x (and forks) can leave a sticky "connected for
+ *     reads but not for signing" state after a rejected signature.
+ *     The origin stays authorized for `eth_accounts` but the next
+ *     `eth_signTypedData_v4` returns 4100 without opening a popup.
+ *     This is a known issue (wevm/wagmi#4131) and reproduces on Brave
+ *     as well (community.brave.app/t/649840). It cannot be worked
+ *     around at the UI layer — the retry must happen at the provider.
  *
- *   Errors from the wallet are normalised with
- *   `normalizeWalletError`. That gives callers a `WalletError` with
- *   `code` and `cancelled` fields — a user clicking "reject" in
- *   MetaMask (code 4001) arrives as `cancelled: true`, which the UI
- *   can treat as a no-op (silent) instead of showing a "something
- *   went wrong" retry banner.
+ *     The chain:
+ *       1. First `eth_signTypedData_v4` → if 4100:
+ *       2. `eth_requestAccounts` — cheap reset (no popup when already
+ *          connected), re-establishes the signing permission for the
+ *          current account.
+ *       3. Retry the sign. If still 4100:
+ *       4. `wallet_requestPermissions({ eth_accounts: {} })` — forces
+ *          a fresh permission prompt. MetaMask's PermissionController
+ *          clears the stale slot when this runs.
+ *       5. Retry the sign one last time. Any remaining 4100 is a real
+ *          authorization failure and propagates as `WalletError`.
  *
- * `getEip1193Provider`
- *   Raw EIP-1193 provider getter, used by `useIrys` (to build a
- *   `BrowserProvider` for the Irys SDK) and `useVault` (to build a
- *   `custom(provider)` viem transport for the register tx). Not a
- *   signing entry point — use `signTypedData` for that.
+ *     The order matters: `eth_requestAccounts` is silent when it
+ *     works, `wallet_requestPermissions` only fires when the silent
+ *     reset did not. A user who is fully authorized never sees
+ *     either — the first sign succeeds.
  *
- *   Re-derives from `mipd` when `providerRef.current` is empty —
- *   covers the resume path where the session was restored from
- *   `sessionStorage` but the listener effect has not attached yet.
- *   Returns `null` for OAuth sessions (no provider), Ledger (DMK
- *   signer path not wired yet), and `"injected"` (no stable key to
- *   disambiguate which injected wallet created the session).
+ *     If the retry still fails, the error surfaces as
+ *     `code: "unauthorized"`. The upload flow classifies it as
+ *     `WALLET_UNAUTHORIZED` so the UI can show an actionable message
+ *     ("Open your wallet and reconnect this site") instead of a
+ *     generic "Try again".
  *
  * TODO: when the route restructure (Fase 9) ships, nothing in this
  *       file moves — the session has no route knowledge.
@@ -205,11 +200,6 @@ export type Session = WalletSession | OAuthSession;
 
 export type WalletStatus = "restoring" | "connected" | "disconnected";
 
-/**
- * EIP-712 typed data shape. Structurally compatible with viem's
- * `signTypedData` payload. `types` may or may not include
- * `EIP712Domain` — `signTypedData` augments it before signing.
- */
 export type TypedDataPayload = {
   domain: Record<string, unknown>;
   types: Readonly<
@@ -219,12 +209,6 @@ export type TypedDataPayload = {
   message: Record<string, unknown>;
 };
 
-/**
- * viem's `TypedDataDomain` type, extracted from the parameter type of
- * `getTypesForEIP712Domain` so it stays in sync with viem. Used only
- * for the single cast at the boundary between our generic `Record`
- * and viem's structured domain.
- */
 type ViemDomain = Parameters<typeof getTypesForEIP712Domain>[0]["domain"];
 
 export type WalletContextValue = {
@@ -240,12 +224,6 @@ export type WalletContextValue = {
   ) => Promise<OAuthSession>;
   setOAuthAddress: (address: `0x${string}`, chainId: number) => void;
   signTypedData: (typedData: TypedDataPayload) => Promise<`0x${string}`>;
-  /**
-   * Return the live EIP-1193 provider for the current wallet session.
-   * Re-derives from `mipd` when the ref is empty (resume path).
-   * Returns `null` for OAuth, Ledger and `"injected"` — see the
-   * file header's `getEip1193Provider` section.
-   */
   getEip1193Provider: () => EIP1193Provider | null;
   disconnect: () => void;
 };
@@ -432,25 +410,6 @@ function clearEphemeralKey(): void {
   }
 }
 
-/**
- * Return a shallow copy of `types` with `EIP712Domain` guaranteed
- * present.
- *
- * When the caller already provided `EIP712Domain`, it is used as-is —
- * the caller wins, matching viem's precedence in `signTypedData`.
- * When absent, it is derived from `domain` using
- * `getTypesForEIP712Domain` from viem — the exact helper viem uses
- * internally in `hashTypedData`. Delegating to that helper (instead
- * of reimplementing the five conditional checks) means the augmented
- * types match viem byte-for-byte by construction, including the edge
- * cases viem deliberately handles (omits `chainId` if it is not a
- * number, omits `name` if it is not a string, etc.).
- *
- * The output is cloned so the caller's object is never mutated —
- * callers pass frozen objects (or objects they expect to remain
- * frozen). `viem/accounts.signTypedData` also accepts an explicit
- * `EIP712Domain` in `types` and uses it as-is.
- */
 function withEip712Domain(typedData: TypedDataPayload): {
   types: Record<string, Array<{ name: string; type: string }>>;
 } {
@@ -486,7 +445,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     clearEphemeralKey();
   }, []);
 
-  // ── Resume on mount ─────────────────────────────────────────────
   useEffect(() => {
     const stored = readStoredSession();
     if (!stored) {
@@ -509,7 +467,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // ── Provider listeners (wallet sessions only) ───────────────────
   const walletKind = session?.kind === "wallet" ? session.wallet : null;
 
   useEffect(() => {
@@ -567,7 +524,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
   }, [walletKind, clearSession]);
 
-  // ── connect (wallet) ────────────────────────────────────────────
   const connect = useCallback(
     async (
       provider: EIP1193Provider,
@@ -635,7 +591,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // ── connectOAuth ────────────────────────────────────────────────
   const connectOAuth = useCallback(
     async (
       provider: OAuthProvider,
@@ -665,7 +620,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // ── setOAuthAddress ─────────────────────────────────────────────
   const setOAuthAddress = useCallback(
     (address: `0x${string}`, chainId: number) => {
       let checked: `0x${string}`;
@@ -693,13 +647,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // ── getProvider ─────────────────────────────────────────────────
-  /**
-   * Re-derive the EIP-1193 provider when the ref is empty. The resume
-   * effect attaches the provider for known wallet brands, but the ref
-   * starts `null` on Ledger, on `"injected"` and after a reload for
-   * every wallet that hasn't been re-discovered yet.
-   */
   const getProvider = useCallback((): EIP1193Provider | null => {
     if (providerRef.current) return providerRef.current;
     if (
@@ -716,17 +663,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return null;
   }, [session]);
 
-  // ── signTypedData ───────────────────────────────────────────────
   const signTypedData = useCallback(
     async (typedData: TypedDataPayload): Promise<`0x${string}`> => {
       if (!session) {
         throw walletError("unauthorized", "No active session.");
       }
 
-      // Augment the types with `EIP712Domain` before any signing path
-      // — the wallet and the ephemeral signer must hash the same
-      // payload viem would hash. See "signTypedData" in the file
-      // header.
       const { types } = withEip712Domain(typedData);
 
       if (session.kind === "wallet") {
@@ -744,9 +686,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           );
         }
 
-        let signature: unknown;
-        try {
-          signature = await provider.request({
+        const signCall = () =>
+          provider.request({
             method: "eth_signTypedData_v4",
             params: [
               session.address,
@@ -758,8 +699,48 @@ export function WalletProvider({ children }: { children: ReactNode }) {
               }),
             ],
           });
-        } catch (error) {
-          throw normalizeWalletError(error);
+
+        let signature: unknown;
+        try {
+          signature = await signCall();
+        } catch (firstError) {
+          const normalized = normalizeWalletError(firstError);
+
+          if (normalized.code !== "unauthorized") {
+            throw normalized;
+          }
+
+          // Stale-permission retry — see "Stale-permission retry"
+          // in the file header. Two escalating attempts:
+          //   1. `eth_requestAccounts` — silent reset when already
+          //      connected.
+          //   2. `wallet_requestPermissions` — forced prompt when the
+          //      silent reset was not enough.
+          // Any error in the resets themselves propagates as a normal
+          // wallet error; the caller treats 4100 as a definitive
+          // authorization failure.
+          let recovered = false;
+
+          try {
+            await provider.request({ method: "eth_requestAccounts" });
+            signature = await signCall();
+            recovered = true;
+          } catch {
+            /* fall through to wallet_requestPermissions */
+          }
+
+          if (!recovered) {
+            try {
+              await provider.request({
+                method: "wallet_requestPermissions",
+                params: [{ eth_accounts: {} }],
+              });
+              signature = await signCall();
+              recovered = true;
+            } catch (retryError) {
+              throw normalizeWalletError(retryError);
+            }
+          }
         }
 
         if (typeof signature !== "string" || !signature.startsWith("0x")) {
@@ -771,7 +752,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return signature as `0x${string}`;
       }
 
-      // OAuth session — sign locally with the ephemeral account.
       const ephemeralKey = readEphemeralKey();
       if (!ephemeralKey) {
         throw walletError(
@@ -818,11 +798,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Access the wallet session. Throws when called outside the provider
- * — the provider must be mounted once, at the root, and every
- * consumer shares the same state.
- */
 export function useWallet(): WalletContextValue {
   const ctx = useContext(WalletContext);
   if (ctx === null) {
