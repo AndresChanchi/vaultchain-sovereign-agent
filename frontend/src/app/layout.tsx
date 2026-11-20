@@ -71,6 +71,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html
       lang="en"
       data-theme="dark"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
