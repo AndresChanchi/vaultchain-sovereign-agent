@@ -864,11 +864,12 @@
   }
 
   .journey-shrink {
+    transform-origin: left center;
     animation: journey-shrink 3s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
   }
   @keyframes journey-shrink {
-    0%, 100% { width: 100%; }
-    40%, 60% { width: 50%; }
+    0%, 100% { transform: scaleX(1); }
+    40%, 60% { transform: scaleX(0.5); }
   }
 
   .journey-sweep {
@@ -878,7 +879,7 @@
     0%        { width: 0%; }
     40%, 60%  { width: 100%; }
     100%      { width: 0%; }
-  }
+  } 
 
   .journey-beacon {
     animation: journey-beacon 2s cubic-bezier(0.34, 1.4, 0.5, 1) infinite;
@@ -889,13 +890,14 @@
   }
 
   .journey-bar {
+    transform-origin: left center;
     animation: journey-bar 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
     animation-delay: var(--journey-bar-delay, 0s);
   }
   @keyframes journey-bar {
-    0%, 20%   { width: 0; }
-    40%, 70%  { width: 110px; }
-    90%, 100% { width: 0; }
+    0%, 20%   { transform: scaleX(0); }
+    40%, 70%  { transform: scaleX(1); }
+    90%, 100% { transform: scaleX(0); }
   }
 
   /* Dashed lines — shared with `network-viz.tsx` and `sign-in.tsx`. */
