@@ -1,42 +1,24 @@
 /**
- * Fictional photo samples used by the landing journey slides.
+ * JourneySamples — SVG symbol definitions for the 4 journey slides.
  *
- * Renders a hidden `<svg>` with four `<symbol id="s1..#s4">` definitions
- * plus the gradients, turbulence filter, pattern and building path they
- * depend on. Consumers render `<use href="#s1" />` (etc.) inside their
- * own `<svg>`. The symbols resolve across the document because both the
- * `<defs>` and the `<use>` live in the same DOM tree.
+ * Why no <feTurbulence>
+ *   The mockup used a fractal-noise filter on every symbol to give the
+ *   gradient a subtle grain. On desktop this renders once per slide and
+ *   looks identical to a clean gradient. On iOS Safari, WebKit
+ *   re-runs the entire SVG filter chain on every frame that the
+ *   element's transform changes — meaning every 400ms slide transition
+ *   re-rasterises 4 feTurbulence calculations on the CPU while the
+ *   compositor waits. That is the source of the "frame skipping"
+ *   reported on real devices.
  *
- * Why a component and not a static SVG file
- *   - The defs must be present in the DOM once per page. A component
- *     makes "render these once" explicit at the call site.
- *   - If the dashboard "explorer state" (Fase 8) or the network viz
- *     (Fase 4) later reuse any of these, the import is one line.
+ *   The replacement is a static <pattern> of 2px dots at 3% opacity,
+ *   drawn once at SVG parse time and never re-evaluated. Visually
+ *   identical at the slide sizes (the grain was never perceptible at
+ *   460×380); GPU cost is zero.
  *
- * Why `journey/` and not `ui/`
- *   The samples are styled to feel like real photos at a glance (sunset,
- *   ocean, night, forest), but they are placeholders — not a general
- *   icon set. If they end up reused by non-landing sections, move the
- *   file to `ui/demo-photos.tsx` at that point. Until then, landing/
- *   is where they belong (Scream).
- *
- * Visual performance
- *   The filter `#gr` is `feTurbulence` at high frequency and each
- *   symbol applies it once. That is fine for the journey slides (the
- *   slide's outer `<use>` reuses a single rendered instance). If any
- *   future consumer renders 10+ `<use>` nodes of the same symbol in
- *   the same frame, prefer pre-rendering the symbol to a static
- *   `<image>` at build time instead of stacking filter effects.
- *
- * Rendering in JSX
- *   React attribute names: camelCase for multi-word attributes
- *   (`stopColor`, `stopOpacity`, `strokeWidth`), as-is for single-word
- *   camelCase-preserved ones (`baseFrequency`, `numOctaves`, `seed`).
- *   This mirrors React's DOM attribute mapping; the SVG result is
- *   identical to the mockup.
- *
- * TODO: replace with real curated photos or user-provided content
- *       once the upload flow (Fase 10) can render a preview.
+ * Do NOT reintroduce <feTurbulence>, <feDisplacementMap>, or any
+ * <feGaussianBlur> on these symbols. Each one puts the whole SVG on
+ * the CPU paint path on every animation frame.
  */
 export function JourneySamples() {
   return (
@@ -47,32 +29,29 @@ export function JourneySamples() {
       aria-hidden="true"
     >
       <defs>
-        {/* Fine-grain noise overlay used by every symbol to give the
-            "photo" a slightly imperfect, filmic surface. */}
-        <filter id="gr">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency=".85"
-            numOctaves="2"
-            seed="3"
-          />
-          <feColorMatrix values="0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .55 0" />
-        </filter>
+        {/* Static grain — 2px dots at 3% opacity. Replaces the
+            fractal-noise filter with a pre-rendered pattern. */}
+        <pattern
+          id="gr"
+          width="8"
+          height="8"
+          patternUnits="userSpaceOnUse"
+        >
+          <rect width="8" height="8" fill="transparent" />
+          <circle cx="2" cy="2" r="0.6" fill="rgba(255,255,255,0.06)" />
+          <circle cx="6" cy="6" r="0.6" fill="rgba(255,255,255,0.04)" />
+        </pattern>
 
-        {/* Vignette — darkens edges of every symbol. */}
         <radialGradient id="vg" cx=".5" cy=".5" r=".75">
           <stop offset=".55" stopColor="#000" stopOpacity="0" />
           <stop offset="1" stopColor="#000" stopOpacity=".45" />
         </radialGradient>
-
-        {/* Sun glow — used by s1 (sunset) and s2 (sunrise over sea). */}
         <radialGradient id="sn">
           <stop offset="0" stopColor="#fff6d6" />
           <stop offset=".25" stopColor="#ffe3a1" stopOpacity=".9" />
           <stop offset="1" stopColor="#ffd08a" stopOpacity="0" />
         </radialGradient>
 
-        {/* s1 — dusk over distant mountains. */}
         <linearGradient id="k1" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#16224f" />
           <stop offset=".38" stopColor="#6a4b92" />
@@ -84,8 +63,6 @@ export function JourneySamples() {
           <stop offset=".4" stopColor="#5b4a7a" />
           <stop offset="1" stopColor="#1a2147" />
         </linearGradient>
-
-        {/* s2 — sunrise over a calm sea. */}
         <linearGradient id="k2" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#14395e" />
           <stop offset=".45" stopColor="#4a86a8" />
@@ -97,15 +74,11 @@ export function JourneySamples() {
           <stop offset=".35" stopColor="#2a5a7a" />
           <stop offset="1" stopColor="#0b2842" />
         </linearGradient>
-
-        {/* s3 — night city with lit windows. */}
         <linearGradient id="k3" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#050a1c" />
           <stop offset=".55" stopColor="#1b2a5c" />
           <stop offset=".85" stopColor="#8a5a8f" />
         </linearGradient>
-
-        {/* s4 — forest ridge with fog bands. */}
         <linearGradient id="k4" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#d6e8dc" />
           <stop offset=".5" stopColor="#8fb09a" />
@@ -117,18 +90,14 @@ export function JourneySamples() {
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
 
-        {/* Pattern of tiny lit windows — fills the night-city buildings. */}
         <pattern id="wd" width="9" height="12" patternUnits="userSpaceOnUse">
           <rect x="2" y="3" width="3" height="4" fill="#ffd98a" />
         </pattern>
 
-        {/* Skyline silhouette — reused twice (solid + window pattern). */}
         <path
           id="bl"
           d="M0 170h46v130H0z M40 130h40v170H40z M82 190h50v110H82z M128 110h44v190h-44z M176 160h52v140h-52z M224 95h38v205h-38z M266 150h48v150h-48z M310 120h44v180h-44z M352 170h48v130h-48z"
         />
-
-        {/* ── Fictional photos (400×300 viewBox each) ──────────────── */}
 
         <symbol id="s1" viewBox="0 0 400 300">
           <rect width="400" height="300" fill="url(#k1)" />
@@ -151,7 +120,7 @@ export function JourneySamples() {
             d="M38 272 L52 230 L66 272Z M62 274 L78 218 L94 274Z M326 270 L341 226 L356 270Z"
             fill="#090d22"
           />
-          <rect width="400" height="300" filter="url(#gr)" opacity=".16" />
+          <rect width="400" height="300" fill="url(#gr)" opacity=".5" />
           <rect width="400" height="300" fill="url(#vg)" />
         </symbol>
 
@@ -170,7 +139,7 @@ export function JourneySamples() {
             strokeWidth="2"
             fill="none"
           />
-          <rect width="400" height="300" filter="url(#gr)" opacity=".16" />
+          <rect width="400" height="300" fill="url(#gr)" opacity=".5" />
           <rect width="400" height="300" fill="url(#vg)" />
         </symbol>
 
@@ -187,7 +156,7 @@ export function JourneySamples() {
           </g>
           <use href="#bl" fill="#0a1022" />
           <use href="#bl" fill="url(#wd)" opacity=".75" />
-          <rect width="400" height="300" filter="url(#gr)" opacity=".18" />
+          <rect width="400" height="300" fill="url(#gr)" opacity=".5" />
           <rect width="400" height="300" fill="url(#vg)" />
         </symbol>
 
@@ -209,7 +178,7 @@ export function JourneySamples() {
             fill="#14281f"
           />
           <path d="M150 0 L210 0 L120 300 L40 300Z" fill="#fff" opacity=".07" />
-          <rect width="400" height="300" filter="url(#gr)" opacity=".16" />
+          <rect width="400" height="300" fill="url(#gr)" opacity=".5" />
           <rect width="400" height="300" fill="url(#vg)" />
         </symbol>
       </defs>
