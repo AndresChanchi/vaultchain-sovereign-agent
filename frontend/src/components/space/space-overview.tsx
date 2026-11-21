@@ -9,6 +9,25 @@
  *     (3fr). Collapses to a single column below `md`.
  *   - Recent uploads (gallery) — full width.
  *
+ * Gallery limit — why it is not fixed at 8
+ *   A fixed `limit={8}` made the gallery show 8 tiles while the "Photos
+ *   kept" counter above said 10. Silent discrepancy that reads as a
+ *   bug. The counter is the truth; the grid must agree up to a cap.
+ *
+ *   The cap is `GALLERY_MAX_ITEMS` (48). Below it, fetch exactly
+ *   `photoCount` so the grid and the counter agree. Above it, fetch 48
+ *   and leave the remainder for `/library` (Fase 11) — the "View all"
+ *   button on the gallery is already prepared for that route.
+ *
+ *   `Math.max(8, ...)` keeps the original minimum so a user with 1–8
+ *   photos sees a grid of the same layout as before (the grid handles
+ *   empties gracefully). `Math.min(48, photoCount)` bounds the fetch.
+ *
+ *   Cost: N+1 parallel RPC reads for N photos (one
+ *   getMyGalleryPaginated + one getMyPhoto per hash). At 48 photos
+ *   that is 49 reads, ~200-500ms on Sepolia. Acceptable for a
+ *   dashboard load; `/library` will move this to paginated reads.
+ *
  * Cards not yet rendered
  *   - Expiring soon: the legacy contract has no term concept (every
  *     photo is Forever). Renders only once the new contracts ship
@@ -44,9 +63,24 @@
  *   warm and does not depend on the clock. Time-based is a future
  *   enhancement if it ever matters.
  */
+
 import { useI18n } from "@context/I18nContext";
 import { SpaceGallery } from "./space-gallery";
 import { UploadIcon } from "./space-icons";
+
+/**
+ * Hard cap on the number of tiles the "Recent uploads" grid fetches.
+ *
+ * The grid is meant as a "recent" surface — a sample of the vault, not
+ * an exhaustive view. Above this cap, the future `/library` route
+ * (Fase 11) is the right destination for the full list. Below it, we
+ * fetch everything the user has so the dashboard is complete for the
+ * typical case.
+ *
+ * See "Gallery limit — why it is not fixed at 8" in the file header
+ * for the trade-offs behind the specific value.
+ */
+const GALLERY_MAX_ITEMS = 48;
 
 type SpaceOverviewProps = {
   photoCount: number;
@@ -55,6 +89,12 @@ type SpaceOverviewProps = {
 export function SpaceOverview({ photoCount }: SpaceOverviewProps) {
   const { t } = useI18n();
   const soon = t("space.sidebar.comingSoon");
+
+  // Below the cap: fetch exactly what exists so the grid and the
+  // counter stay in agreement. Above the cap: fetch the cap; the rest
+  // is `/library`'s job (Fase 11). Floor at 8 so a user with fewer
+  // photos still gets the same layout the gallery was designed for.
+  const galleryLimit = Math.max(8, Math.min(photoCount, GALLERY_MAX_ITEMS));
 
   return (
     <div className="flex flex-1 flex-col gap-6 pt-6">
@@ -99,7 +139,7 @@ export function SpaceOverview({ photoCount }: SpaceOverviewProps) {
         </div>
       </div>
 
-      <SpaceGallery limit={8} />
+      <SpaceGallery limit={galleryLimit} />
     </div>
   );
 }
